@@ -1,0 +1,16 @@
+# Config consumed by `scripts/run_all_domains.py`.
+#
+# Each domain trains on its `problems[0]` from the manifest, then validates
+# on `problems[problem_offset : problem_offset + num_problems]`. The pipeline
+# runs once per (domain, seed) pair.
+
+# Validation knobs (forwarded to ModelValidation.setup / validate).
+num_samples: 250
+sample_population: 500
+
+# Which problems (from the manifest's `problems` list) to validate on.
+num_problems: 3
+problem_offset: 1
+
+# Seeds to run per domain. The paper uses 0..9 (10 seeds per domain).
+seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]

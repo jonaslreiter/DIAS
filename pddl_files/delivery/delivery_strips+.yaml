@@ -1,0 +1,7 @@
+pick-package:
+  - [0, 1]
+drop-package:
+  - [1]
+  - [0]
+move:
+  - [0, 2]

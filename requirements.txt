@@ -1,0 +1,9 @@
+torch>=2.0
+pymimir==0.13.62
+lightning
+jsonargparse[signatures]>=4.27.7
+torch-geometric
+numpy
+pyyaml
+matplotlib
+wandb

@@ -1,0 +1,88 @@
+# DIAS base training config for single-domain runs.
+#
+# Switch domains by editing `data.init_args.{domain_path, problem_path}`.
+# To reproduce the noise ablation, set `edge_add_ratio` / `edge_remove_ratio`
+# in the data section to a non-zero value (paper sweeps 0.0–0.5).
+
+seed_everything: 43
+experiment: "dias-debug"
+
+model:
+  class_path: dias.models.graph_learner.DiasModel
+  init_args:
+    object_dim: 32
+    num_slots: 5
+    force_action_args: false
+    per_action_slots: false
+    learn_preconditions: true
+    successor_relations: true
+    gumbel_sinkhorn: false
+    gumbel_softmax: false
+    random_node_embeddings: true
+    parameter_plotting:
+      effect_and_precondition: true
+      selection: true
+    pcgrad_dyn_clip: true
+    loss_weight_schedule:
+      gmean_weight:
+        type: exponential
+        v0: 1.0
+        vT: 0.1
+        T: 500
+      learning_rate:
+        type: linear
+        keypoints: {0: 0.005}
+      tau:
+        type: linear
+        keypoints: {0: 1.0}
+      alpha:
+        type: linear
+        keypoints: {0: 0.2}
+      gamma:
+        type: linear
+        keypoints: {0: 0.0}
+      sinkhorn_temperature:
+        type: linear
+        keypoints: {0: 1.0}
+
+data:
+  class_path: dias.data.datamodule.PddlGraphDataModule
+  init_args:
+    # ── Domain / problem ────────────────────────────────────────────────
+    domain_path: pddl_files/satellite/satellite.pddl
+    problem_path: pddl_files/satellite/satellite_9.pddl
+
+    # ── Noise ablation ──────────────────────────────────────────────────
+    # Fraction of edges to randomly remove / add to the input adjacency
+    # before training. Set both to 0.0 for the clean setup.
+    edge_remove_ratio: 0.0
+    edge_add_ratio: 0.0
+
+    # ── Sampling ────────────────────────────────────────────────────────
+    min_per_label_train: 100
+    min_per_label_valid: 50
+    max_per_label_train: 1000
+    max_per_label_valid: 500
+    num_train: null
+    num_valid: null
+    max_steps: 1000000
+    seed: 43
+    include_statics: true
+    action_arguments: false
+    strips_plus_actions: false
+    batch_size: 200
+
+    # `random`     — shuffled DataLoader over the split (one pass per epoch).
+    # `stratified` — infinite IterableDataset; action-balanced batches drawn
+    #                with replacement. Bound length via trainer.max_steps /
+    #                limit_train_batches / limit_val_batches.
+    batch_sampling_strategy: stratified
+    shuffle_train: true
+    num_workers: 0
+
+trainer:
+  max_steps: 10000
+  val_check_interval: 50
+  limit_val_batches: 10
+  accelerator: gpu
+  devices: 1
