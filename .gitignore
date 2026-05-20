@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+.eggs/
+build/
+dist/
+
+# Environments
+.venv/
+venv/
+env/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Training artifacts
+logs/
+wandb/
+lightning_logs/
+checkpoints/
+*.ckpt
+
+# Slurm
+slurm/*.out
+slurm/*.err
+
+# Local data caches
+*.pt
+data/samples*.pt
