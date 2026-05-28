@@ -1,56 +1,25 @@
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import FastRGCNConv
 
 
 class DynamicsModelRGCNST(nn.Module):
-    def __init__(
-        self,
-        latent_dim,
-        number_relations,
-    ):
-        super().__init__()
+    """6-layer FastRGCN with LayerNorm + SiLU between layers."""
 
+    def __init__(self, latent_dim: int, number_relations: int):
+        super().__init__()
         self.latent_dim = latent_dim
         self.number_relations = number_relations
 
-        self.conv1 = FastRGCNConv(
-            self.latent_dim,
-            32,
-            number_relations,
-            aggr="add",
-        )
-        self.conv2 = FastRGCNConv(
-            32,
-            64,
-            number_relations,
-            aggr="add",
-        )
-        self.conv3 = FastRGCNConv(
-            64,
-            64,
-            number_relations,
-            aggr="add",
-        )
-        self.conv4 = FastRGCNConv(
-            64,
-            64,
-            number_relations,
-            aggr="add",
-        )
-        self.conv5 = FastRGCNConv(
-            64,
-            64,
-            number_relations,
-            aggr="add",
-        )
-        self.conv6 = FastRGCNConv(
-            64,
-            self.latent_dim,
-            number_relations,
-            aggr="add",
-        )
+        def conv(in_d, out_d):
+            return FastRGCNConv(in_d, out_d, number_relations, aggr="add")
+
+        self.conv1 = conv(latent_dim, 32)
+        self.conv2 = conv(32, 64)
+        self.conv3 = conv(64, 64)
+        self.conv4 = conv(64, 64)
+        self.conv5 = conv(64, 64)
+        self.conv6 = conv(64, latent_dim)
 
         self.ln1 = nn.LayerNorm(32)
         self.ln2 = nn.LayerNorm(64)
@@ -59,26 +28,12 @@ class DynamicsModelRGCNST(nn.Module):
         self.ln5 = nn.LayerNorm(64)
 
     def forward(self, x, edge_index, edge_type):
-        x = self.conv1(x, edge_index, edge_type)
-        x = F.silu(x)
-        x = self.ln1(x)
-
-        x = self.conv2(x, edge_index, edge_type)
-        x = F.silu(x)
-        x = self.ln2(x)
-
-        x = self.conv3(x, edge_index, edge_type)
-        x = F.silu(x)
-        x = self.ln3(x)
-
-        x = self.conv4(x, edge_index, edge_type)
-        x = F.silu(x)
-        x = self.ln4(x)
-
-        x = self.conv5(x, edge_index, edge_type)
-        x = F.silu(x)
-        x = self.ln5(x)
-
-        x = self.conv6(x, edge_index, edge_type)
-
-        return x
+        for conv, ln in (
+            (self.conv1, self.ln1),
+            (self.conv2, self.ln2),
+            (self.conv3, self.ln3),
+            (self.conv4, self.ln4),
+            (self.conv5, self.ln5),
+        ):
+            x = ln(F.silu(conv(x, edge_index, edge_type)))
+        return self.conv6(x, edge_index, edge_type)

@@ -14,18 +14,62 @@ from dias.utils import add_adj_noise, adj_to_pyg_data
 from .generate_samples import generate_random_walk, get_metadata, samples_to_tensors
 
 
+def _flip_stats(state: torch.Tensor, clean: torch.Tensor):
+    diff = state - clean
+    pos = diff > 0
+    neg = diff < 0
+    return (
+        int(pos.sum().item()),
+        int(neg.sum().item()),
+        pos.sum(dim=(1, 2)).long(),
+        neg.sum(dim=(1, 2)).long(),
+    )
+
+
+def _build_sample(
+    base: "PddlTransitionDataset",
+    real_idx: int,
+    noisy_state: Optional[torch.Tensor],
+    noisy_next: Optional[torch.Tensor],
+    idx_tensor: torch.Tensor,
+):
+    sample = base[real_idx]
+    clean_s, clean_ns = sample["state"], sample["next_state"]
+    R = clean_s.shape[0]
+    zeros = torch.zeros(R, dtype=torch.long)
+
+    if noisy_state is not None:
+        state = noisy_state
+        added_s, removed_s, added_s_pr, removed_s_pr = _flip_stats(state, clean_s)
+    else:
+        state, added_s, removed_s, added_s_pr, removed_s_pr = clean_s, 0, 0, zeros, zeros
+    if noisy_next is not None:
+        next_state = noisy_next
+        added_ns, removed_ns, added_ns_pr, removed_ns_pr = _flip_stats(next_state, clean_ns)
+    else:
+        next_state, added_ns, removed_ns, added_ns_pr, removed_ns_pr = (
+            clean_ns, 0, 0, zeros, zeros,
+        )
+
+    action = sample["action_index"]
+    action_args = sample["action_args"]
+    data_s1 = adj_to_pyg_data(state, base.num_objects)
+    data_s2 = adj_to_pyg_data(next_state, base.num_objects)
+
+    data_s1.y_action = action
+    data_s1.y_action_args = action_args.unsqueeze(0)
+    data_s1.num_flips_added = torch.tensor([added_s + added_ns])
+    data_s1.num_flips_removed = torch.tensor([removed_s + removed_ns])
+    data_s1.num_flips_added_per_rel = (added_s_pr + added_ns_pr)[None, :]
+    data_s1.num_flips_removed_per_rel = (removed_s_pr + removed_ns_pr)[None, :]
+    data_s1.num_true_predicates = torch.tensor([int(state.sum().item())])
+    data_s2.num_true_predicates = torch.tensor([int(next_state.sum().item())])
+
+    return data_s1, data_s2, idx_tensor, state, next_state, action, action_args
+
+
 class StratifiedActionIterableDataset(IterableDataset):
-    """Infinite stream of action-stratified PyG samples.
-
-    Given a disjoint sub-pool of transitions this dataset yields samples in
-    chunks of ``batch_size`` where every action label present in the
-    sub-pool contributes ~``batch_size // K`` samples per chunk — plus a
-    round-robin remainder when ``batch_size % K != 0``. Within each
-    action's pool, samples are drawn uniformly **with replacement**.
-
-    Pair with a ``DataLoader(batch_size=B, shuffle=False)`` so every ``B``
-    consecutive items forms one stratified batch.
-    """
+    """Infinite stream of action-stratified samples drawn with replacement."""
 
     def __init__(
         self,
@@ -37,6 +81,8 @@ class StratifiedActionIterableDataset(IterableDataset):
         noisy_next_states: Optional[torch.Tensor] = None,
     ):
         super().__init__()
+        if not indices:
+            raise ValueError("StratifiedActionIterableDataset: empty data pool.")
         self.base = base
         self.indices = list(indices)
         self.batch_size = int(batch_size)
@@ -44,8 +90,6 @@ class StratifiedActionIterableDataset(IterableDataset):
         self.noisy_states = noisy_states
         self.noisy_next_states = noisy_next_states
 
-        if not self.indices:
-            raise ValueError("StratifiedActionIterableDataset: empty data pool.")
         labels = base.action_indices[torch.tensor(self.indices)].tolist()
         self.per_action: dict[int, list[int]] = {}
         for pos, a in enumerate(labels):
@@ -55,11 +99,9 @@ class StratifiedActionIterableDataset(IterableDataset):
     def __iter__(self):
         info = torch.utils.data.get_worker_info()
         worker_id = info.id if info is not None else 0
-
         gen = torch.Generator().manual_seed(self.seed + worker_id + 1)
         K = len(self.actions)
-        base_cnt = self.batch_size // K
-        remainder = self.batch_size - base_cnt * K
+        base_cnt, remainder = divmod(self.batch_size, K)
 
         while True:
             order = [self.actions[i] for i in torch.randperm(K, generator=gen).tolist()]
@@ -70,86 +112,23 @@ class StratifiedActionIterableDataset(IterableDataset):
                 pool = self.per_action[a]
                 picks = torch.randint(len(pool), (n,), generator=gen).tolist()
                 for p in picks:
-                    yield self._build_item(pool[p])
-
-    def _build_item(self, pos: int):
-        real_idx = self.indices[pos]
-        sample = self.base[real_idx]
-        clean_state = sample["state"]
-        clean_next = sample["next_state"]
-        R = clean_state.shape[0]
-
-        if self.noisy_states is not None:
-            state = self.noisy_states[pos]
-            diff = state - clean_state
-            added_s = int((diff > 0).sum().item())
-            removed_s = int((diff < 0).sum().item())
-            added_s_per_rel = (diff > 0).sum(dim=(1, 2)).long()
-            removed_s_per_rel = (diff < 0).sum(dim=(1, 2)).long()
-        else:
-            state, added_s, removed_s = clean_state, 0, 0
-            added_s_per_rel = torch.zeros(R, dtype=torch.long)
-            removed_s_per_rel = torch.zeros(R, dtype=torch.long)
-        if self.noisy_next_states is not None:
-            next_state = self.noisy_next_states[pos]
-            diff = next_state - clean_next
-            added_ns = int((diff > 0).sum().item())
-            removed_ns = int((diff < 0).sum().item())
-            added_ns_per_rel = (diff > 0).sum(dim=(1, 2)).long()
-            removed_ns_per_rel = (diff < 0).sum(dim=(1, 2)).long()
-        else:
-            next_state, added_ns, removed_ns = clean_next, 0, 0
-            added_ns_per_rel = torch.zeros(R, dtype=torch.long)
-            removed_ns_per_rel = torch.zeros(R, dtype=torch.long)
-
-        action = sample["action_index"]
-        action_args = sample["action_args"]
-
-        data_s1 = adj_to_pyg_data(state, self.base.num_objects)
-        data_s2 = adj_to_pyg_data(next_state, self.base.num_objects)
-
-        data_s1.y_action = action
-        data_s1.y_action_args = action_args.unsqueeze(0)
-        data_s1.num_flips_added = torch.tensor([added_s + added_ns])
-        data_s1.num_flips_removed = torch.tensor([removed_s + removed_ns])
-        data_s1.num_flips_added_per_rel = (added_s_per_rel + added_ns_per_rel)[None, :]
-        data_s1.num_flips_removed_per_rel = (
-            removed_s_per_rel + removed_ns_per_rel
-        )[None, :]
-
-        data_s1.num_true_predicates = torch.tensor([int(state.sum().item())])
-        data_s2.num_true_predicates = torch.tensor([int(next_state.sum().item())])
-
-        return (
-            data_s1,
-            data_s2,
-            torch.tensor(real_idx),
-            state,
-            next_state,
-            action,
-            action_args,
-        )
+                    yield _build_sample(
+                        self.base,
+                        self.indices[pool[p]],
+                        self.noisy_states[pool[p]] if self.noisy_states is not None else None,
+                        self.noisy_next_states[pool[p]] if self.noisy_next_states is not None else None,
+                        torch.tensor(self.indices[pool[p]]),
+                    )
 
 
 class PddlTransitionDataset(Dataset):
-    """Wraps pre-computed adjacency-matrix tensors as a PyTorch Dataset.
-
-    Each sample is a dict::
-
-        {
-            "state":        Tensor [R, O, O],
-            "next_state":   Tensor [R, O, O],
-            "action_index": Tensor scalar (long),
-            "action_args":  Tensor [max_arity] (long, padded with -1),
-        }
-    """
+    """Pre-computed adjacency tensors as a map-style Dataset."""
 
     def __init__(self, data: dict):
         self.states: torch.Tensor = data["states"]
         self.next_states: torch.Tensor = data["next_states"]
         self.action_indices: torch.Tensor = data["action_indices"]
         self.action_args: torch.Tensor = data["action_args"]
-
         self.relation_names: list[str] = data["relation_names"]
         self.relation_arities: list[int] = data["relation_arities"]
         self.object_names: dict = data["object_names"]
@@ -171,11 +150,7 @@ class PddlTransitionDataset(Dataset):
 
 
 class PddlGraphDataset(Dataset):
-    """Map-style dataset that returns PyG ``Data`` tuples.
-
-    Each ``__getitem__`` returns
-    ``(data_s1, data_s2, idx, state, next_state, action, action_args)``.
-    """
+    """Map-style dataset returning PyG ``Data`` tuples."""
 
     def __init__(
         self,
@@ -194,99 +169,23 @@ class PddlGraphDataset(Dataset):
 
     def __getitem__(self, idx: int):
         real_idx = self.indices[idx]
-        sample = self.base[real_idx]
-
-        clean_state = sample["state"]
-        clean_next = sample["next_state"]
-        R = clean_state.shape[0]
-
-        if self.noisy_states is not None:
-            state = self.noisy_states[idx]
-            diff = state - clean_state
-            added_s = int((diff > 0).sum().item())
-            removed_s = int((diff < 0).sum().item())
-            added_s_per_rel = (diff > 0).sum(dim=(1, 2)).long()
-            removed_s_per_rel = (diff < 0).sum(dim=(1, 2)).long()
-        else:
-            state, added_s, removed_s = clean_state, 0, 0
-            added_s_per_rel = torch.zeros(R, dtype=torch.long)
-            removed_s_per_rel = torch.zeros(R, dtype=torch.long)
-        if self.noisy_next_states is not None:
-            next_state = self.noisy_next_states[idx]
-            diff = next_state - clean_next
-            added_ns = int((diff > 0).sum().item())
-            removed_ns = int((diff < 0).sum().item())
-            added_ns_per_rel = (diff > 0).sum(dim=(1, 2)).long()
-            removed_ns_per_rel = (diff < 0).sum(dim=(1, 2)).long()
-        else:
-            next_state, added_ns, removed_ns = clean_next, 0, 0
-            added_ns_per_rel = torch.zeros(R, dtype=torch.long)
-            removed_ns_per_rel = torch.zeros(R, dtype=torch.long)
-
-        action = sample["action_index"]
-        action_args = sample["action_args"]
-
-        num_objects = self.base.num_objects
-        data_s1 = adj_to_pyg_data(state, num_objects)
-        data_s2 = adj_to_pyg_data(next_state, num_objects)
-
-        data_s1.y_action = action
-        data_s1.y_action_args = action_args.unsqueeze(0)
-        data_s1.num_flips_added = torch.tensor([added_s + added_ns])
-        data_s1.num_flips_removed = torch.tensor([removed_s + removed_ns])
-        data_s1.num_flips_added_per_rel = (added_s_per_rel + added_ns_per_rel)[None, :]
-        data_s1.num_flips_removed_per_rel = (
-            removed_s_per_rel + removed_ns_per_rel
-        )[None, :]
-
-        data_s1.num_true_predicates = torch.tensor([int(state.sum().item())])
-        data_s2.num_true_predicates = torch.tensor([int(next_state.sum().item())])
-
-        return (
-            data_s1,
-            data_s2,
+        return _build_sample(
+            self.base,
+            real_idx,
+            self.noisy_states[idx] if self.noisy_states is not None else None,
+            self.noisy_next_states[idx] if self.noisy_next_states is not None else None,
             torch.tensor([real_idx]),
-            state,
-            next_state,
-            action,
-            action_args,
         )
 
 
 class PddlGraphDataModule(L.LightningDataModule):
     """Random-walk PDDL data pipeline with configurable stopping / batching.
 
-    Exploration strategy is always a random walk. The stopping criterion is
-    driven by four parameters:
-
-    - ``min_per_label_train`` / ``min_per_label_valid``: require at least
-      ``min_per_label_train + min_per_label_valid`` unique-state transitions
-      per action label.
-    - ``num_train`` / ``num_valid``: require at least
-      ``num_train + num_valid`` total transitions.
-
-    If both pairs are set, both criteria must hold and the train:valid
-    ratios must match. If only one pair is set, only that criterion
-    applies. If none are set, ``ValueError`` is raised. The ratio from
-    the available pair is used to split the generated pool into disjoint
-    train / valid index sets.
-
-    Optional ``max_per_label_train`` / ``max_per_label_valid`` cap the
-    pool *after* the random walk finishes: each action label is
-    truncated to at most ``max_per_label_train + max_per_label_valid``
-    samples (kept in walk order). The cap does not change the stopping
-    criterion — it only trims the returned pool.
-
-    Two batch sampling strategies are available via
-    ``batch_sampling_strategy``:
-
-    - ``"random"``: a plain map-style dataset with a shuffled DataLoader —
-      one epoch iterates every train sample once in batches of
-      ``batch_size``.
-    - ``"stratified"``: an unbounded :class:`StratifiedActionIterableDataset`
-      that yields action-balanced batches drawn with replacement. Bound
-      length via the Lightning trainer (``max_steps`` /
-      ``limit_train_batches`` / ``limit_val_batches``).
+    Stopping is driven by ``(min_per_label_train, min_per_label_valid)`` and/or
+    ``(num_train, num_valid)``. If both are set, their train:valid ratios must
+    match. Optional ``max_per_label_*`` cap each label after sampling.
+    ``batch_sampling_strategy`` is ``"random"`` (shuffled DataLoader) or
+    ``"stratified"`` (unbounded action-balanced sampler).
     """
 
     def __init__(
@@ -340,34 +239,22 @@ class PddlGraphDataModule(L.LightningDataModule):
         self.edge_add_ratio = edge_add_ratio
         self.metadata_only = metadata_only
 
-        if self.batch_sampling_strategy not in ("random", "stratified"):
+        if batch_sampling_strategy not in ("random", "stratified"):
             raise ValueError(
                 f"batch_sampling_strategy must be 'random' or 'stratified', "
-                f"got {self.batch_sampling_strategy!r}."
+                f"got {batch_sampling_strategy!r}."
             )
-
         self._validate_sampling_config()
 
-        print(f"Loading domain:  {self.domain_path}", file=sys.stderr)
-        print(f"Loading problem: {self.problem_path}", file=sys.stderr)
-
-        self.domain = pymimir.Domain(Path(self.domain_path))
-        self.problem = pymimir.Problem(self.domain, Path(self.problem_path))
+        print(f"Loading domain:  {domain_path}", file=sys.stderr)
+        print(f"Loading problem: {problem_path}", file=sys.stderr)
+        self.domain = pymimir.Domain(Path(domain_path))
+        self.problem = pymimir.Problem(self.domain, Path(problem_path))
         self.metadata = get_metadata(self.domain, self.problem)
 
-        self.arity_relations: list[int] = []
-        for predicate in self.metadata["predicates"]:
-            if (
-                predicate["arity"] > 2
-                or (not self.include_statics and predicate["static"])
-                or (
-                    self.include_statics
-                    and predicate["static"]
-                    and predicate["name"] in self.default_statics
-                )
-            ):
-                continue
-            self.arity_relations.append(predicate["arity"])
+        self.arity_relations: list[int] = [
+            p["arity"] for p in self.metadata["predicates"] if self._keep_predicate(p)
+        ]
 
         self._base: Optional[PddlTransitionDataset] = None
         self._train_ds = None
@@ -375,16 +262,18 @@ class PddlGraphDataModule(L.LightningDataModule):
         self._train_idx: list[int] = []
         self._valid_idx: list[int] = []
 
-    # ------------------------------------------------------------------
-    #  config validation
-    # ------------------------------------------------------------------
+    def _keep_predicate(self, p: dict) -> bool:
+        if p["arity"] > 2:
+            return False
+        if not self.include_statics and p["static"]:
+            return False
+        if self.include_statics and p["static"] and p["name"] in self.default_statics:
+            return False
+        return True
 
     @property
     def _has_min(self) -> bool:
-        return (
-            self.min_per_label_train is not None
-            and self.min_per_label_valid is not None
-        )
+        return self.min_per_label_train is not None and self.min_per_label_valid is not None
 
     @property
     def _has_num(self) -> bool:
@@ -392,10 +281,7 @@ class PddlGraphDataModule(L.LightningDataModule):
 
     @property
     def _has_max(self) -> bool:
-        return (
-            self.max_per_label_train is not None
-            and self.max_per_label_valid is not None
-        )
+        return self.max_per_label_train is not None and self.max_per_label_valid is not None
 
     def _validate_sampling_config(self) -> None:
         if self.pt_file is not None or self.metadata_only:
@@ -407,9 +293,7 @@ class PddlGraphDataModule(L.LightningDataModule):
                 "(num_train, num_valid) must be set. "
                 "Pass metadata_only=True to build an empty dataset."
             )
-        if self._has_min and (
-            self.min_per_label_train <= 0 or self.min_per_label_valid <= 0
-        ):
+        if self._has_min and (self.min_per_label_train <= 0 or self.min_per_label_valid <= 0):
             raise ValueError("min_per_label_train and min_per_label_valid must be > 0.")
         if self._has_num and (self.num_train <= 0 or self.num_valid <= 0):
             raise ValueError("num_train and num_valid must be > 0.")
@@ -417,9 +301,7 @@ class PddlGraphDataModule(L.LightningDataModule):
             raise ValueError(
                 "max_per_label_train and max_per_label_valid must be set together."
             )
-        if self._has_max and (
-            self.max_per_label_train <= 0 or self.max_per_label_valid <= 0
-        ):
+        if self._has_max and (self.max_per_label_train <= 0 or self.max_per_label_valid <= 0):
             raise ValueError("max_per_label_train and max_per_label_valid must be > 0.")
         if self._has_max and self._has_min and (
             self.max_per_label_train < self.min_per_label_train
@@ -430,23 +312,16 @@ class PddlGraphDataModule(L.LightningDataModule):
                 f"max=({self.max_per_label_train},{self.max_per_label_valid}) "
                 f"vs min=({self.min_per_label_train},{self.min_per_label_valid})."
             )
-        if self._has_min and self._has_num:
-            # Require equal train:valid ratio across the two pairs.
-            if (
-                self.min_per_label_train * self.num_valid
-                != self.num_train * self.min_per_label_valid
-            ):
-                raise ValueError(
-                    f"Ratio mismatch: "
-                    f"min_per_label_train:min_per_label_valid = "
-                    f"{self.min_per_label_train}:{self.min_per_label_valid} "
-                    f"vs num_train:num_valid = "
-                    f"{self.num_train}:{self.num_valid}."
-                )
-
-    # ------------------------------------------------------------------
-    #  properties consumed by CLI link_arguments / model
-    # ------------------------------------------------------------------
+        if self._has_min and self._has_num and (
+            self.min_per_label_train * self.num_valid
+            != self.num_train * self.min_per_label_valid
+        ):
+            raise ValueError(
+                f"Ratio mismatch: "
+                f"min_per_label_train:min_per_label_valid="
+                f"{self.min_per_label_train}:{self.min_per_label_valid} "
+                f"vs num_train:num_valid={self.num_train}:{self.num_valid}."
+            )
 
     @property
     def base(self) -> PddlTransitionDataset:
@@ -467,23 +342,20 @@ class PddlGraphDataModule(L.LightningDataModule):
 
     @property
     def max_action_arity(self) -> int:
-        return max(action["arity"] for action in self.metadata["actions"])
+        return max(a["arity"] for a in self.metadata["actions"])
 
     @property
     def action_arities(self) -> list[int]:
-        return [action["arity"] for action in self.metadata["actions"]]
+        return [a["arity"] for a in self.metadata["actions"]]
 
     @property
     def action_arg_positions(self) -> list[list[int]]:
         if not self.action_arguments:
             return [[] for _ in self.metadata["actions"]]
         if self.strips_plus_actions:
-            free_pos_map = self._load_strips_plus_yaml(self.domain_path)
-            return [
-                sorted(free_pos_map.get(action["name"], []))
-                for action in self.metadata["actions"]
-            ]
-        return [list(range(action["arity"])) for action in self.metadata["actions"]]
+            free = self._load_strips_plus_yaml(self.domain_path)
+            return [sorted(free.get(a["name"], [])) for a in self.metadata["actions"]]
+        return [list(range(a["arity"])) for a in self.metadata["actions"]]
 
     @property
     def relation_names(self) -> list[str]:
@@ -501,10 +373,6 @@ class PddlGraphDataModule(L.LightningDataModule):
     def dataset_size(self) -> int:
         return len(self.base)
 
-    # ------------------------------------------------------------------
-    #  setup
-    # ------------------------------------------------------------------
-
     def setup(self, stage: Optional[str] = None) -> None:
         if self.pt_file is not None:
             data = torch.load(self.pt_file, weights_only=False)
@@ -519,14 +387,11 @@ class PddlGraphDataModule(L.LightningDataModule):
                 include_statics=self.include_statics,
                 default_statics=self.default_statics,
             )
-
         self._base = PddlTransitionDataset(data)
 
         total = len(self._base)
         self._train_idx, self._valid_idx = self._make_split(total)
-
         self.relation_true_ratio = self._compute_relation_true_ratio()
-
         if total > 0:
             self._log_action_distribution()
 
@@ -535,18 +400,12 @@ class PddlGraphDataModule(L.LightningDataModule):
         if self.batch_sampling_strategy == "stratified":
             self._check_coverage()
             self._train_ds = self._make_stratified(
-                self._train_idx,
-                seed_offset=2,
-                noisy_states=train_noisy_s,
-                noisy_next_states=train_noisy_ns,
+                self._train_idx, 2, train_noisy_s, train_noisy_ns
             )
-            self._valid_ds = self._make_stratified(self._valid_idx, seed_offset=3)
+            self._valid_ds = self._make_stratified(self._valid_idx, 3)
         else:
             self._train_ds = PddlGraphDataset(
-                self._base,
-                self._train_idx,
-                noisy_states=train_noisy_s,
-                noisy_next_states=train_noisy_ns,
+                self._base, self._train_idx, train_noisy_s, train_noisy_ns
             )
             self._valid_ds = PddlGraphDataset(self._base, self._valid_idx)
 
@@ -557,25 +416,16 @@ class PddlGraphDataModule(L.LightningDataModule):
             file=sys.stderr,
         )
 
-    # ------------------------------------------------------------------
-    #  sampling
-    # ------------------------------------------------------------------
-
     def _sample_transitions(self) -> list[dict]:
         random.seed(self.seed)
-
         print(
             f"Domain: {self.metadata['domain_name']},  "
             f"Objects: {self.metadata['num_objects']},  "
             f"Actions: {[a['name'] for a in self.metadata['actions']]}",
             file=sys.stderr,
         )
-
-        min_total = (
-            self.min_per_label_train + self.min_per_label_valid if self._has_min else 0
-        )
+        min_total = self.min_per_label_train + self.min_per_label_valid if self._has_min else 0
         num_total = self.num_train + self.num_valid if self._has_num else 0
-
         samples = generate_random_walk(
             problem=self.problem,
             min_num_samples=num_total,
@@ -584,28 +434,25 @@ class PddlGraphDataModule(L.LightningDataModule):
             max_steps=self.max_steps,
             include_statics=self.include_statics,
         )
-
         if self._has_max:
             samples = self._cap_per_label(samples)
-
         return samples
 
     def _cap_per_label(self, samples: list[dict]) -> list[dict]:
-        """Truncate each action label to ``max_per_label_train + max_per_label_valid``."""
-        max_total = self.max_per_label_train + self.max_per_label_valid
+        cap = self.max_per_label_train + self.max_per_label_valid
         kept_count: dict[str, int] = {}
         dropped: dict[str, int] = {}
         kept: list[dict] = []
         for s in samples:
             a = s["action"]
-            if kept_count.get(a, 0) < max_total:
+            if kept_count.get(a, 0) < cap:
                 kept.append(s)
                 kept_count[a] = kept_count.get(a, 0) + 1
             else:
                 dropped[a] = dropped.get(a, 0) + 1
         if dropped:
             print(
-                f"[info] Capped per-label samples to {max_total} "
+                f"[info] Capped per-label samples to {cap} "
                 f"(train={self.max_per_label_train} + valid={self.max_per_label_valid}); "
                 f"dropped per action: {dropped}",
                 file=sys.stderr,
@@ -613,48 +460,32 @@ class PddlGraphDataModule(L.LightningDataModule):
         return kept
 
     def _postprocess_action_args(self, samples: list[dict]) -> None:
-        """Mask action args according to action_arguments / strips_plus_actions."""
         if self.action_arguments and self.strips_plus_actions:
-            free_pos_map = self._load_strips_plus_yaml(self.domain_path)
-            for sample in samples:
-                for p in range(len(sample["action_args"])):
-                    if p not in free_pos_map.get(sample["action"], []):
-                        sample["action_args"][p] = -1
+            free = self._load_strips_plus_yaml(self.domain_path)
+            for s in samples:
+                allowed = free.get(s["action"], [])
+                s["action_args"] = [
+                    a if p in allowed else -1 for p, a in enumerate(s["action_args"])
+                ]
         elif not self.action_arguments:
-            for sample in samples:
-                sample["action_args"] = [-1 for _ in range(len(sample["action_args"]))]
-
-    # ------------------------------------------------------------------
-    #  split
-    # ------------------------------------------------------------------
+            for s in samples:
+                s["action_args"] = [-1] * len(s["action_args"])
 
     def _make_split(self, total: int) -> tuple[list[int], list[int]]:
         if total == 0:
             return [], []
-
-        if self._has_num:
-            train_w = self.num_train
-            valid_w = self.num_valid
-        else:
-            train_w = self.min_per_label_train
-            valid_w = self.min_per_label_valid
-
-        denom = train_w + valid_w
-        n_train_target = int(round(total * train_w / denom))
+        train_w = self.num_train if self._has_num else self.min_per_label_train
+        valid_w = self.num_valid if self._has_num else self.min_per_label_valid
+        n_train_target = int(round(total * train_w / (train_w + valid_w)))
         n_train_target = max(1, min(total - 1, n_train_target))
 
         g = torch.Generator().manual_seed(self.seed)
-
         assert self._base is not None
-        action_indices = self._base.action_indices.tolist()
         by_action: dict[int, list[int]] = {}
-        for i, a in enumerate(action_indices):
+        for i, a in enumerate(self._base.action_indices.tolist()):
             by_action.setdefault(a, []).append(i)
 
-        train_idx: list[int] = []
-        valid_idx: list[int] = []
-        pool: list[int] = []
-        singletons: list[int] = []
+        train_idx, valid_idx, pool, singletons = [], [], [], []
         for idxs in by_action.values():
             perm = torch.randperm(len(idxs), generator=g).tolist()
             shuffled = [idxs[p] for p in perm]
@@ -664,15 +495,12 @@ class PddlGraphDataModule(L.LightningDataModule):
                 pool.extend(shuffled[2:])
             else:
                 singletons.extend(shuffled)
-
-        # Singletons can't cover both splits; send them to train (the larger one).
         train_idx.extend(singletons)
 
-        n_train_extra = max(0, n_train_target - len(train_idx))
-        n_train_extra = min(n_train_extra, len(pool))
+        n_extra = min(max(0, n_train_target - len(train_idx)), len(pool))
         perm = torch.randperm(len(pool), generator=g).tolist()
-        train_idx.extend(pool[p] for p in perm[:n_train_extra])
-        valid_idx.extend(pool[p] for p in perm[n_train_extra:])
+        train_idx.extend(pool[p] for p in perm[:n_extra])
+        valid_idx.extend(pool[p] for p in perm[n_extra:])
 
         print(
             f"Split: {total} samples → train={len(train_idx)}, "
@@ -683,42 +511,27 @@ class PddlGraphDataModule(L.LightningDataModule):
         return train_idx, valid_idx
 
     def _check_coverage(self) -> None:
-        """Every non-empty split must cover all actions present in the pool."""
         assert self._base is not None
-        pool_action_set = set(self._base.action_indices.tolist())
-        action_names = self._base.action_names
-        for name, idx_list in (
-            ("train", self._train_idx),
-            ("valid", self._valid_idx),
-        ):
-            if not idx_list:
+        pool_actions = set(self._base.action_indices.tolist())
+        names = self._base.action_names
+        for split_name, idxs in (("train", self._train_idx), ("valid", self._valid_idx)):
+            if not idxs:
                 continue
-            sub_actions = set(self._base.action_indices[idx_list].tolist())
-            missing = pool_action_set - sub_actions
+            missing = pool_actions - set(self._base.action_indices[idxs].tolist())
             if missing:
-                missing_names = [action_names[m] for m in sorted(missing)]
                 raise ValueError(
-                    f"Stratified '{name}' split is missing action(s) "
-                    f"{missing_names} that appear in the full pool. "
-                    f"Increase min_per_label_* / num_* or relax the "
-                    f"train:valid ratio."
+                    f"Stratified '{split_name}' split is missing action(s) "
+                    f"{[names[m] for m in sorted(missing)]} that appear in the full pool. "
+                    f"Increase min_per_label_* / num_* or relax the train:valid ratio."
                 )
-
-    # ------------------------------------------------------------------
-    #  noise / diagnostics
-    # ------------------------------------------------------------------
 
     def _build_train_noise(
         self, train_idx: list[int]
     ) -> tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
-        if self.edge_remove_ratio == 0.0 and self.edge_add_ratio == 0.0:
-            return None, None
-        if not train_idx:
+        if (self.edge_remove_ratio == 0.0 and self.edge_add_ratio == 0.0) or not train_idx:
             return None, None
 
         gen = torch.Generator().manual_seed(self.seed + 1)
-
-        arities = self.arity_relations
         add_ratio_per_rel = [self.edge_add_ratio * r for r in self.relation_true_ratio]
         print(
             f"Applying edge noise to train split "
@@ -726,39 +539,23 @@ class PddlGraphDataModule(L.LightningDataModule):
             f"scaled add per rel={[f'{x:.4g}' for x in add_ratio_per_rel]})",
             file=sys.stderr,
         )
-        base = self._base
-        noise_state = torch.stack(
-            [
+
+        def noisy(src: torch.Tensor) -> torch.Tensor:
+            return torch.stack([
                 add_adj_noise(
-                    base.states[i],
-                    arities,
-                    self.edge_remove_ratio,
-                    add_ratio_per_rel,
-                    gen,
+                    src[i], self.arity_relations,
+                    self.edge_remove_ratio, add_ratio_per_rel, gen,
                 )
                 for i in train_idx
-            ]
-        )
-        next_noise_state = torch.stack(
-            [
-                add_adj_noise(
-                    base.next_states[i],
-                    arities,
-                    self.edge_remove_ratio,
-                    add_ratio_per_rel,
-                    gen,
-                )
-                for i in train_idx
-            ]
-        )
-        return noise_state, next_noise_state
+            ])
+
+        return noisy(self._base.states), noisy(self._base.next_states)
 
     def _compute_relation_true_ratio(self) -> list[float]:
         ds = self._base
         if ds is None or len(ds) == 0:
             return [0.0 for _ in self.arity_relations]
         all_adj = torch.cat([ds.states, ds.next_states], dim=0)
-
         ratios: list[float] = []
         for r, ar in enumerate(self.arity_relations):
             if ar == 2:
@@ -766,8 +563,7 @@ class PddlGraphDataModule(L.LightningDataModule):
             elif ar == 1:
                 region = all_adj[:, r].diagonal(dim1=-2, dim2=-1).reshape(-1)
             else:
-                raise ValueError(f"Arity should be one or two. Got {ar}.")
-
+                raise ValueError(f"Arity should be 1 or 2. Got {ar}.")
             ones = int(region.sum().item())
             zeros = region.numel() - ones
             ratios.append(ones / zeros if zeros > 0 else 0.0)
@@ -782,26 +578,15 @@ class PddlGraphDataModule(L.LightningDataModule):
         counts = torch.bincount(ds.action_indices, minlength=len(ds.action_names))
         print("Action frequency distribution:", file=sys.stderr)
         for name, count in zip(ds.action_names, counts.tolist()):
-            pct = 100.0 * count / len(ds)
-            print(f"  {name}: {count} ({pct:.1f}%)", file=sys.stderr)
+            print(f"  {name}: {count} ({100.0 * count / len(ds):.1f}%)", file=sys.stderr)
 
     def _empty_data(self) -> dict:
         n_obj = len(self.metadata["objects"])
         n_rel = len(self.arity_relations)
         max_arity = max((a["arity"] for a in self.metadata["actions"]), default=0)
-        relation_names: list[str] = []
-        for predicate in self.metadata["predicates"]:
-            if (
-                predicate["arity"] > 2
-                or (not self.include_statics and predicate["static"])
-                or (
-                    self.include_statics
-                    and predicate["static"]
-                    and predicate["name"] in self.default_statics
-                )
-            ):
-                continue
-            relation_names.append(predicate["name"])
+        relation_names = [
+            p["name"] for p in self.metadata["predicates"] if self._keep_predicate(p)
+        ]
         return {
             "states": torch.zeros(0, n_rel, n_obj, n_obj),
             "next_states": torch.zeros(0, n_rel, n_obj, n_obj),
@@ -817,10 +602,6 @@ class PddlGraphDataModule(L.LightningDataModule):
             "num_objects": n_obj,
             "num_relations": n_rel,
         }
-
-    # ------------------------------------------------------------------
-    #  loaders
-    # ------------------------------------------------------------------
 
     def _make_stratified(
         self,
@@ -841,11 +622,10 @@ class PddlGraphDataModule(L.LightningDataModule):
         )
 
     def _make_loader(self, ds, shuffle: bool):
-        is_iterable = isinstance(ds, IterableDataset)
         return PyGDataLoader(
             ds,
             batch_size=self.batch_size,
-            shuffle=shuffle and not is_iterable,
+            shuffle=shuffle and not isinstance(ds, IterableDataset),
             num_workers=self.num_workers,
             drop_last=False,
         )
@@ -856,30 +636,17 @@ class PddlGraphDataModule(L.LightningDataModule):
     def val_dataloader(self):
         return self._make_loader(self._valid_ds, shuffle=False)
 
-    # ------------------------------------------------------------------
-    #  strips+ yaml
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _load_strips_plus_yaml(domain_path) -> dict[str, list[int]]:
-        """Action name → list of argument positions free to vary."""
+        """Action name -> list of argument positions free to vary."""
         import yaml
 
-        domain_dir = Path(domain_path).parent
-        yaml_files = list(domain_dir.glob("*strips+.yaml"))
+        yaml_files = list(Path(domain_path).parent.glob("*strips+.yaml"))
         if not yaml_files:
             raise FileNotFoundError(
-                f"No *strips+.yaml file found in {domain_dir}. "
+                f"No *strips+.yaml file found in {Path(domain_path).parent}. "
                 f"Required when strips_plus_actions=True."
             )
-        yaml_path = yaml_files[0]
-        with open(yaml_path) as f:
+        with open(yaml_files[0]) as f:
             yaml_data = yaml.safe_load(f) or {}
-
-        result: dict[str, list[int]] = {}
-        for action_name, pos_lists in yaml_data.items():
-            if pos_lists and len(pos_lists) > 0:
-                result[action_name] = pos_lists[0]
-            else:
-                result[action_name] = []
-        return result
+        return {name: (lst[0] if lst else []) for name, lst in yaml_data.items()}

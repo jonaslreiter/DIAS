@@ -16,7 +16,7 @@ model:
     per_action_slots: false
     learn_preconditions: true
     successor_relations: true
-    gumbel_sinkhorn: false
+    gumbel_slot_noise: false
     gumbel_softmax: false
     random_node_embeddings: true
     parameter_plotting:
@@ -24,7 +24,7 @@ model:
       selection: true
     pcgrad_dyn_clip: true
     loss_weight_schedule:
-      gmean_weight:
+      gmean_temperature:
         type: exponential
         v0: 1.0
         vT: 0.1
@@ -32,15 +32,9 @@ model:
       learning_rate:
         type: linear
         keypoints: {0: 0.005}
-      tau:
-        type: linear
-        keypoints: {0: 1.0}
-      alpha:
+      aux_loss_weight:
         type: linear
         keypoints: {0: 0.2}
-      gamma:
-        type: linear
-        keypoints: {0: 0.0}
       sinkhorn_temperature:
         type: linear
         keypoints: {0: 1.0}
