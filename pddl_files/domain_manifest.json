@@ -180,13 +180,13 @@
     }
   },
   "sokoban-pull": {
-    "domain": "pddl_files/sokoban/pull_sokoban.pddl",
-    "strips_yaml": "pddl_files/sokoban/pull_sokoban_strips+.yaml",
+    "domain": "pddl_files/sokoban-pull/pull_sokoban.pddl",
+    "strips_yaml": "pddl_files/sokoban-pull/pull_sokoban_strips+.yaml",
     "problems": [
       "pddl_files/sokoban/sokoban-4-4_3.pddl",
-      "pddl_files/sokoban/pull_sokoban-6-6_3.pddl",
-      "pddl_files/sokoban/pull_sokoban-7-7_4.pddl",
-      "pddl_files/sokoban/pull_sokoban-9-9_5.pddl"
+      "pddl_files/sokoban-pull/pull_sokoban-6-6_3.pddl",
+      "pddl_files/sokoban-pull/pull_sokoban-7-7_4.pddl",
+      "pddl_files/sokoban-pull/pull_sokoban-9-9_5.pddl"
     ],
     "data_overrides": {
       "min_per_label_train": 100,
