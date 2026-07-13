@@ -7,10 +7,10 @@ import torch.nn.functional as F
 from torch_geometric.utils import to_dense_adj
 
 from dias.utils import LossWeightScheduleCollection, resolve_label_names
-
-from .components.dynamics_rgcn_st import DynamicsModelRGCNST
-from .components.sinkhorn_graph_edit import SinkhornGraphEdit
 from dias.utils.plotting import PlotWorker, queue_validation_heatmaps
+
+from .components.dynamics_rgcn_st import GNN
+from .components.sinkhorn_graph_edit import SinkhornGraphEdit
 
 
 class DiasModel(L.LightningModule):
@@ -62,14 +62,14 @@ class DiasModel(L.LightningModule):
         self.gmean_offset = gmean_offset
 
         if self.per_action_slots:
-            assert action_arities is not None, (
-                "action_arities must be provided when per_action_slots=True"
-            )
+            assert (
+                action_arities is not None
+            ), "action_arities must be provided when per_action_slots=True"
             self.num_slots = max(action_arities)
         else:
-            assert num_slots is not None, (
-                "num_slots must be set explicitly when per_action_slots=False"
-            )
+            assert (
+                num_slots is not None
+            ), "num_slots must be set explicitly when per_action_slots=False"
             if action_arities is not None:
                 assert num_slots >= max(action_arities), (
                     f"num_slots ({num_slots}) must be >= max action arity "
@@ -125,11 +125,15 @@ class DiasModel(L.LightningModule):
         self.register_buffer("_action_rel_lookup", lookup)
 
         # State-change relations (S→S'): delete+add, plus reverse counterparts.
-        self.num_successor_relations = self.num_relations * 4 if self.successor_relations else 0
+        self.num_successor_relations = (
+            self.num_relations * 4 if self.successor_relations else 0
+        )
 
-        self.dynamics_model = DynamicsModelRGCNST(
+        self.dynamics_model = GNN(
             self.object_dim,
-            self.num_relations * 2 + self.num_action_relations + self.num_successor_relations,
+            self.num_relations * 2
+            + self.num_action_relations
+            + self.num_successor_relations,
         )
 
         self.automatic_optimization = False
@@ -142,7 +146,9 @@ class DiasModel(L.LightningModule):
         }
         if loss_weight_schedule:
             defaults.update(loss_weight_schedule)
-        self.loss_weight_schedule_collection = LossWeightScheduleCollection(schedules=defaults)
+        self.loss_weight_schedule_collection = LossWeightScheduleCollection(
+            schedules=defaults
+        )
 
         self._plot_worker = PlotWorker()
         self._last_plot_step_submitted: int | None = None
@@ -161,7 +167,9 @@ class DiasModel(L.LightningModule):
         if edge_type.numel() == 0:
             return edge_type.new_empty((0,), dtype=torch.long)
         src, dst = edge_index
-        return (src.long() * num_nodes + dst.long()) * self.num_relations + edge_type.long()
+        return (
+            src.long() * num_nodes + dst.long()
+        ) * self.num_relations + edge_type.long()
 
     def _build_relation_change_edges(self, batch_s1, batch_s2):
         empty_ei = batch_s1.edge_index.new_empty((2, 0))
@@ -170,8 +178,12 @@ class DiasModel(L.LightningModule):
             return empty_ei, empty_et
 
         total_nodes = batch_s1.batch.size(0)
-        s1_codes = self._encode_relation_edges(batch_s1.edge_index, batch_s1.edge_attr, total_nodes)
-        s2_codes = self._encode_relation_edges(batch_s2.edge_index, batch_s2.edge_attr, total_nodes)
+        s1_codes = self._encode_relation_edges(
+            batch_s1.edge_index, batch_s1.edge_attr, total_nodes
+        )
+        s2_codes = self._encode_relation_edges(
+            batch_s2.edge_index, batch_s2.edge_attr, total_nodes
+        )
 
         deleted = ~torch.isin(s1_codes, s2_codes)
         added = ~torch.isin(s2_codes, s1_codes)
@@ -189,13 +201,17 @@ class DiasModel(L.LightningModule):
 
         if deleted.any():
             add_block(
-                batch_s1.edge_index[:, deleted], batch_s1.edge_attr[deleted],
-                base, base + R,
+                batch_s1.edge_index[:, deleted],
+                batch_s1.edge_attr[deleted],
+                base,
+                base + R,
             )
         if added.any():
             add_block(
-                batch_s2.edge_index[:, added], batch_s2.edge_attr[added],
-                base + 2 * R, base + 3 * R,
+                batch_s2.edge_index[:, added],
+                batch_s2.edge_attr[added],
+                base + 2 * R,
+                base + 3 * R,
             )
 
         if not ei_parts:
@@ -210,7 +226,10 @@ class DiasModel(L.LightningModule):
         total_nodes = batch_s1.batch.size(0)
 
         z_a_action = torch.zeros(
-            total_nodes, self.object_dim, device=self.device, dtype=torch.float32,
+            total_nodes,
+            self.object_dim,
+            device=self.device,
+            dtype=torch.float32,
         )
         if self.random_node_embeddings:
             half = self.object_dim // 2
@@ -267,7 +286,9 @@ class DiasModel(L.LightningModule):
             y_action=y_action,
             y_action_args=y_action_args,
             gmean_temperature=self.loss_weight_schedule_collection["gmean_temperature"],
-            sinkhorn_temperature=self.loss_weight_schedule_collection["sinkhorn_temperature"],
+            sinkhorn_temperature=self.loss_weight_schedule_collection[
+                "sinkhorn_temperature"
+            ],
         )
 
         self._last_selection = self.graph_edit._last_selection
@@ -277,10 +298,17 @@ class DiasModel(L.LightningModule):
     def step(self, batch, batch_idx, validation: bool = False):
         batch_s1, batch_s2, *_ = batch
         (
-            adj_out_probs, _adj_s1,
-            ignore_effects, _add_effects, _del_effects,
-            ignore_precond, _pos_precond, _neg_precond,
-            _selection, _logits, _delta,
+            adj_out_probs,
+            _adj_s1,
+            ignore_effects,
+            _add_effects,
+            _del_effects,
+            ignore_precond,
+            _pos_precond,
+            _neg_precond,
+            _selection,
+            _logits,
+            _delta,
         ) = self.forward(batch_s1, batch_s2)
 
         target_adj = torch.stack(
@@ -303,7 +331,8 @@ class DiasModel(L.LightningModule):
             total_numel = (
                 adj_out_probs.numel()
                 + (self.num_slots ** torch.tensor(self.arity_relations)).sum()
-                * len(batch_s1) * 2
+                * len(batch_s1)
+                * 2
             )
 
             loss_adjacency = (
@@ -312,7 +341,9 @@ class DiasModel(L.LightningModule):
 
             # Weight preconditions by slot weights so maximising preconditions
             # also requires slot activation.
-            slot_w = torch.sigmoid(self.graph_edit.slot_weight_logits[batch_s1.y_action])
+            slot_w = torch.sigmoid(
+                self.graph_edit.slot_weight_logits[batch_s1.y_action]
+            )
             sw_matrix = slot_w[:, None, :, None] * slot_w[:, None, None, :]
             one_minus_ip_w = ((1 - ignore_precond) * sw_matrix).clamp(eps, 1 - eps)
 
@@ -359,22 +390,38 @@ class DiasModel(L.LightningModule):
 
     def _log_noise(self, batch_s1) -> None:
         if hasattr(batch_s1, "num_flips_added"):
-            self.log("noise/num_flips_added", batch_s1.num_flips_added.float().mean(), on_step=True, on_epoch=False)
-            self.log("noise/num_flips_removed", batch_s1.num_flips_removed.float().mean(), on_step=True, on_epoch=False)
+            self.log(
+                "noise/num_flips_added",
+                batch_s1.num_flips_added.float().mean(),
+                on_step=True,
+                on_epoch=False,
+            )
+            self.log(
+                "noise/num_flips_removed",
+                batch_s1.num_flips_removed.float().mean(),
+                on_step=True,
+                on_epoch=False,
+            )
         if hasattr(batch_s1, "num_flips_added_per_rel"):
             _, relation_names, _ = self.label_names
             added = batch_s1.num_flips_added_per_rel.float().mean(dim=0)
             removed = batch_s1.num_flips_removed_per_rel.float().mean(dim=0)
             self.log_dict(
-                {
-                    f"noise/{n}/added": added[r] for r, n in enumerate(relation_names)
-                } | {
-                    f"noise/{n}/removed": removed[r] for r, n in enumerate(relation_names)
+                {f"noise/{n}/added": added[r] for r, n in enumerate(relation_names)}
+                | {
+                    f"noise/{n}/removed": removed[r]
+                    for r, n in enumerate(relation_names)
                 },
-                on_step=True, on_epoch=False,
+                on_step=True,
+                on_epoch=False,
             )
         if hasattr(batch_s1, "num_true_predicates"):
-            self.log("noise/num_true_predicates", batch_s1.num_true_predicates.float().mean(), on_step=True, on_epoch=False)
+            self.log(
+                "noise/num_true_predicates",
+                batch_s1.num_true_predicates.float().mean(),
+                on_step=True,
+                on_epoch=False,
+            )
 
     def training_step(self, batch, batch_idx):
         opt = self.optimizers()
@@ -389,8 +436,12 @@ class DiasModel(L.LightningModule):
         # PCGrad-style projection: remove the component of loss_aux's gradient
         # that conflicts with loss_adj's gradient.
         trainable_params = [p for p in self.parameters() if p.requires_grad]
-        grads_adj = torch.autograd.grad(loss_adj, trainable_params, retain_graph=True, allow_unused=True)
-        grads_aux = torch.autograd.grad(aux_w * loss_aux, trainable_params, retain_graph=True, allow_unused=True)
+        grads_adj = torch.autograd.grad(
+            loss_adj, trainable_params, retain_graph=True, allow_unused=True
+        )
+        grads_aux = torch.autograd.grad(
+            aux_w * loss_aux, trainable_params, retain_graph=True, allow_unused=True
+        )
 
         for p, g_adj, g_aux in zip(trainable_params, grads_adj, grads_aux):
             if g_adj is None and g_aux is None:
@@ -407,7 +458,11 @@ class DiasModel(L.LightningModule):
             dot = torch.dot(g_adj_flat, g_aux_flat)
             if dot < 0:
                 g_adj_norm_sq = torch.dot(g_adj_flat, g_adj_flat)
-                g_aux_final = g_aux - (dot / g_adj_norm_sq) * g_adj if g_adj_norm_sq > 1e-12 else g_aux
+                g_aux_final = (
+                    g_aux - (dot / g_adj_norm_sq) * g_adj
+                    if g_adj_norm_sq > 1e-12
+                    else g_aux
+                )
             else:
                 g_aux_final = g_aux
 
@@ -422,14 +477,17 @@ class DiasModel(L.LightningModule):
         opt.step()
 
         combined = loss_adj + aux_w * loss_aux
-        self.log_results("train", {
-            "loss": combined.detach(),
-            "loss_adjacency": loss_adj.detach(),
-            "loss_aux": loss_aux.detach(),
-            "loss_mse": results["loss_mse"],
-            "pre_mean": results["pre_mean"],
-            "pre_prod_mean": results["pre_prod_mean"],
-        })
+        self.log_results(
+            "train",
+            {
+                "loss": combined.detach(),
+                "loss_adjacency": loss_adj.detach(),
+                "loss_aux": loss_aux.detach(),
+                "loss_mse": results["loss_mse"],
+                "pre_mean": results["pre_mean"],
+                "pre_prod_mean": results["pre_prod_mean"],
+            },
+        )
         # Skip Lightning's auto backward — we set p.grad manually above.
         self.manual_backward_done = True
         return None
@@ -437,14 +495,17 @@ class DiasModel(L.LightningModule):
     def _eval_step(self, prefix: str, batch, batch_idx) -> torch.Tensor:
         results = self.step(batch, batch_idx, validation=True)
         combined = self._combined_loss(results)
-        self.log_results(prefix, {
-            "loss": combined,
-            "loss_adjacency": results["loss_adjacency"],
-            "loss_aux": results["loss_aux"],
-            "loss_mse": results["loss_mse"],
-            "pre_mean": results["pre_mean"],
-            "pre_prod_mean": results["pre_prod_mean"],
-        })
+        self.log_results(
+            prefix,
+            {
+                "loss": combined,
+                "loss_adjacency": results["loss_adjacency"],
+                "loss_aux": results["loss_aux"],
+                "loss_mse": results["loss_mse"],
+                "pre_mean": results["pre_mean"],
+                "pre_prod_mean": results["pre_prod_mean"],
+            },
+        )
         return combined
 
     def validation_step(self, batch, batch_idx):
@@ -476,11 +537,17 @@ class DiasModel(L.LightningModule):
                 continue
             if key.startswith("timing_"):
                 self.log(
-                    f"timing/{key[7:]}", value, prog_bar=False,
-                    on_step=is_train, on_epoch=not is_train,
+                    f"timing/{key[7:]}",
+                    value,
+                    prog_bar=False,
+                    on_step=is_train,
+                    on_epoch=not is_train,
                 )
             else:
                 self.log(
-                    f"{prefix}/{key}", value, prog_bar=(key == "loss"),
-                    on_step=is_train, on_epoch=not is_train,
+                    f"{prefix}/{key}",
+                    value,
+                    prog_bar=(key == "loss"),
+                    on_step=is_train,
+                    on_epoch=not is_train,
                 )
