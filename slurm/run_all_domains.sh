@@ -22,10 +22,10 @@
 set -euo pipefail
 
 PY=${PY:-python}
-MANIFEST=${MANIFEST:-pddl_files/domain_manifest.json}
+DOMAIN_SETTINGS=${DOMAIN_SETTINGS:-pddl_files/domain-settings.yaml}
 VALIDATION_CONFIG=${VALIDATION_CONFIG:-configs/validation.yaml}
 NUM_SEEDS=$($PY -c "import yaml; print(len(yaml.safe_load(open('$VALIDATION_CONFIG'))['seeds']))")
-NUM_DOMAINS=$($PY -c "import json; print(len(json.load(open('$MANIFEST'))))")
+NUM_DOMAINS=$($PY -c "import yaml; print(len(yaml.safe_load(open('$DOMAIN_SETTINGS'))))")
 TOTAL=$((NUM_DOMAINS * NUM_SEEDS))
 
 if (( SLURM_ARRAY_TASK_ID >= TOTAL )); then
@@ -35,7 +35,7 @@ fi
 
 DOMAIN_IDX=$((SLURM_ARRAY_TASK_ID / NUM_SEEDS))
 SEED_IDX=$((SLURM_ARRAY_TASK_ID % NUM_SEEDS))
-DOMAIN=$($PY -c "import json; print(sorted(json.load(open('$MANIFEST')))[$DOMAIN_IDX])")
+DOMAIN=$($PY -c "import yaml; print(sorted(yaml.safe_load(open('$DOMAIN_SETTINGS')))[$DOMAIN_IDX])")
 SEED=$($PY -c "import yaml; print(yaml.safe_load(open('$VALIDATION_CONFIG'))['seeds'][$SEED_IDX])")
 
 echo "task=$SLURM_ARRAY_TASK_ID  domain=$DOMAIN  seed=$SEED  group=${DIAS_GROUP:-<auto>}"
@@ -43,6 +43,6 @@ echo "task=$SLURM_ARRAY_TASK_ID  domain=$DOMAIN  seed=$SEED  group=${DIAS_GROUP:
 $PY scripts/run_all_domains.py \
     --domain "$DOMAIN" \
     --seed "$SEED" \
-    --manifest "$MANIFEST" \
+    --domain-settings "$DOMAIN_SETTINGS" \
     --validation-config "$VALIDATION_CONFIG" \
     ${DIAS_GROUP:+--group "$DIAS_GROUP"}

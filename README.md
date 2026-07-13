@@ -76,7 +76,7 @@ python scripts/validation/run_kr2024.py \
 ## Full paper sweep: all domains × all seeds
 
 `scripts/run_all_domains.py` runs train + validate for every
-`(domain, seed)` pair in `pddl_files/domain_manifest.json`. Per-domain
+`(domain, seed)` pair in `pddl_files/domain-settings.yaml`. Per-domain
 training uses `problems[0]`; validation runs on the next three problems
 (configurable via `configs/validation.yaml`). Each pair becomes one W&B
 run; all pairs share a W&B group for easy aggregation. Validation
@@ -131,7 +131,7 @@ configs/
 ├── pddl_graph_learner.yaml   # single-domain training base
 └── validation.yaml           # validation knobs + seed list
 
-pddl_files/              # 13 paper domains + domain_manifest.json
+pddl_files/              # 13 paper domains + domain-settings.yaml
 slurm/
 ├── train.sh             # single-domain sbatch template
 └── run_all_domains.sh   # slurm array (13×10) over the full grid
