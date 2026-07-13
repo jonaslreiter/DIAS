@@ -4,8 +4,9 @@ Usage:
     python scripts/validation/run_mlp_baseline.py \
         --model-id <wandb-run-id> \
         --logs-dir logs \
-        --problem pddl_files/satellite/satellite_9.pddl
+        --problem pddl_files/satellite/train.pddl
 """
+
 from __future__ import annotations
 
 import argparse

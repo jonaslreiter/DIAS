@@ -1,15 +1,15 @@
 # Gripper — Generated Scaling Instances
 
-Reference problem: `gripper_3_2.pddl` (3 balls, 2 grippers, 2 rooms → 7 objects)
+Reference problem: `train.pddl`.
 
 All balls start in `rooma`, goal is to move all balls to `roomb`.
 
-| File | Balls | Grippers | Rooms | Total objects |
-|---|---|---|---|---|
-| `gripper_6_4_gen.pddl` | 6 | 4 | 2 | 12 (≈2×) |
-| `gripper_12_8.pddl` | 12 | 8 | 2 | 22 (≈3×) |
-| `gripper_24_16.pddl` | 24 | 16 | 2 | 42 (≈6×) |
+| File          | Balls | Grippers | Rooms | Total objects |
+| ------------- | ----- | -------- | ----- | ------------- |
+| `test-1.pddl` | 6     | 4        | 2     | 12 (≈2×)      |
+| `test-2.pddl` | 12    | 8        | 2     | 22 (≈3×)      |
+| `test-3.pddl` | 24    | 16       | 2     | 42 (≈6×)      |
 
-Note: `gripper_6_4.pddl` already existed with a different setup (partial goal, named grippers), hence the `_gen` suffix.
+Note: `test-1.pddl` comes from the generated 6-ball/4-gripper instance rather than the older partial-goal variant.
 
 Generated with `pddl-generators/gripper/gripper-generator.py`.

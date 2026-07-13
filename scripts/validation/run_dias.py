@@ -4,10 +4,11 @@ Usage:
     python scripts/validation/run_dias.py \
         --model-id <wandb-run-id> \
         --logs-dir logs \
-        --problem pddl_files/satellite/satellite_9.pddl
+        --problem pddl_files/satellite/train.pddl
 
 Outputs precision/recall/accuracy on the action-grounding task.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -19,16 +20,25 @@ from dias.validation.dias_validate import ModelValidation
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--model-id", required=True,
-                   help="Wandb run id (used to locate the checkpoint under <logs-dir>).")
-    p.add_argument("--logs-dir", type=Path, default=Path("logs"),
-                   help="Directory containing wandb-style run subdirs.")
-    p.add_argument("--problem", type=Path, required=True,
-                   help="Path to the PDDL problem file.")
+    p.add_argument(
+        "--model-id",
+        required=True,
+        help="Wandb run id (used to locate the checkpoint under <logs-dir>).",
+    )
+    p.add_argument(
+        "--logs-dir",
+        type=Path,
+        default=Path("logs"),
+        help="Directory containing wandb-style run subdirs.",
+    )
+    p.add_argument(
+        "--problem", type=Path, required=True, help="Path to the PDDL problem file."
+    )
     p.add_argument("--num-samples", type=int, default=250)
     p.add_argument("--sample-population", type=int, default=500)
-    p.add_argument("--out", type=Path, default=None,
-                   help="Optional path to write the result JSON.")
+    p.add_argument(
+        "--out", type=Path, default=None, help="Optional path to write the result JSON."
+    )
     args = p.parse_args()
 
     v = ModelValidation(

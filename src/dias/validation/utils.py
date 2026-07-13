@@ -6,7 +6,6 @@ import numpy as np
 import torch
 from torch.nn import functional as F
 
-
 from dias.main import CLI
 
 
@@ -45,7 +44,7 @@ def process_model_logits(
 
     # When force_action_args is enabled, compute a mask of known argument
     # slots per action and force those slots to be active in slot_probs.
-    # - strips_plus: only the positions listed in the *strips+.yaml are known
+    # - strips_plus: only the positions listed in strips+.yaml are known
     # - otherwise:   all argument positions (up to action arity) are known
     if action_arguments and force_action_args:
         if strips_plus_actions:

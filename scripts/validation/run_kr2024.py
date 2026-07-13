@@ -6,10 +6,11 @@ compare it to the ground-truth (original) domain on a given problem.
 
 Usage:
     python scripts/validation/run_kr2024.py \
-        --original-domain pddl_files/satellite/satellite.pddl \
+        --original-domain pddl_files/satellite/domain.pddl \
         --learned-domain  path/to/kr2024_learned/satellite.pddl \
-        --problem         pddl_files/satellite/satellite_9.pddl
+        --problem         pddl_files/satellite/train.pddl
 """
+
 from __future__ import annotations
 
 import argparse
@@ -24,8 +25,12 @@ def main() -> None:
     p.add_argument("--original-domain", type=Path, required=True)
     p.add_argument("--learned-domain", type=Path, required=True)
     p.add_argument("--problem", type=Path, required=True)
-    p.add_argument("--logs-dir", type=Path, default=Path("logs"),
-                   help="Used for any auxiliary outputs the validator writes.")
+    p.add_argument(
+        "--logs-dir",
+        type=Path,
+        default=Path("logs"),
+        help="Used for any auxiliary outputs the validator writes.",
+    )
     p.add_argument("--num-samples", type=int, default=250)
     p.add_argument("--sample-population", type=int, default=500)
     p.add_argument("--out", type=Path, default=None)

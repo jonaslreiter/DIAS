@@ -1,6 +1,6 @@
 # DIAS
 
-**DIAS** — *Differentiable Induction of Action Schemas.*
+**DIAS** — _Differentiable Induction of Action Schemas._
 Code accompanying our NeurIPS 2026 paper.
 
 > **Status:** initial public release. Single-domain training and the
@@ -43,7 +43,7 @@ of the config:
 ```yaml
 data:
   init_args:
-    edge_remove_ratio: 0.1   # paper sweeps 0.0–0.5
+    edge_remove_ratio: 0.1 #  paper sweeps 0.0–0.5
     edge_add_ratio: 0.1
 ```
 
@@ -59,18 +59,18 @@ deferred sweep pipeline (see [`TODO.md`](TODO.md)).
 # DIAS model on a problem
 python scripts/validation/run_dias.py \
     --model-id <wandb-run-id> \
-    --problem  pddl_files/satellite/satellite_9.pddl
+    --problem  pddl_files/satellite/train.pddl
 
 # MLP baseline
 python scripts/validation/run_mlp_baseline.py \
     --model-id <wandb-run-id> \
-    --problem  pddl_files/satellite/satellite_9.pddl
+    --problem  pddl_files/satellite/train.pddl
 
 # KR2024 baseline (compares a *learned* PDDL domain against the ground truth)
 python scripts/validation/run_kr2024.py \
-    --original-domain pddl_files/satellite/satellite.pddl \
+    --original-domain pddl_files/satellite/domain.pddl \
     --learned-domain  path/to/kr2024_learned/satellite.pddl \
-    --problem         pddl_files/satellite/satellite_9.pddl
+    --problem         pddl_files/satellite/train.pddl
 ```
 
 ## Full paper sweep: all domains × all seeds

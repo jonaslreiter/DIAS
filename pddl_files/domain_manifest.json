@@ -1,12 +1,12 @@
 {
   "blocks_3": {
-    "domain": "pddl_files/blocks_3/blocks_world.pddl",
-    "strips_yaml": "pddl_files/blocks_3/blocks_world_strips+.yaml",
+    "domain": "pddl_files/blocks_3/domain.pddl",
+    "strips_yaml": "pddl_files/blocks_3/strips+.yaml",
     "problems": [
-      "pddl_files/blocks_3/blocks_world_5.pddl",
-      "pddl_files/blocks_3/blocks_world_10_0001.pddl",
-      "pddl_files/blocks_3/blocks_world_20_0001.pddl",
-      "pddl_files/blocks_3/blocks_world_40_0001.pddl"
+      "pddl_files/blocks_3/train.pddl",
+      "pddl_files/blocks_3/test-1.pddl",
+      "pddl_files/blocks_3/test-2.pddl",
+      "pddl_files/blocks_3/test-3.pddl"
     ],
     "data_overrides": {
       "min_per_label_train": 100,
@@ -18,13 +18,13 @@
     }
   },
   "delivery": {
-    "domain": "pddl_files/delivery/delivery.pddl",
-    "strips_yaml": "pddl_files/delivery/delivery_strips+.yaml",
+    "domain": "pddl_files/delivery/domain.pddl",
+    "strips_yaml": "pddl_files/delivery/strips+.yaml",
     "problems": [
-      "pddl_files/delivery/delivery-3-3-4-2.pddl",
-      "pddl_files/delivery/delivery-4x4-4.pddl",
-      "pddl_files/delivery/delivery-6x6-8.pddl",
-      "pddl_files/delivery/delivery-8x8-16.pddl"
+      "pddl_files/delivery/train.pddl",
+      "pddl_files/delivery/test-1.pddl",
+      "pddl_files/delivery/test-2.pddl",
+      "pddl_files/delivery/test-3.pddl"
     ],
     "data_overrides": {
       "min_per_label_train": 1000,
@@ -36,13 +36,13 @@
     }
   },
   "driverlog": {
-    "domain": "pddl_files/driverlog/driverlog.pddl",
-    "strips_yaml": "pddl_files/driverlog/driverlog_strips+.yaml",
+    "domain": "pddl_files/driverlog/domain.pddl",
+    "strips_yaml": "pddl_files/driverlog/strips+.yaml",
     "problems": [
-      "pddl_files/driverlog/driverlog-4.pddl",
-      "pddl_files/driverlog/driverlog_6_4_4_4_6.pddl",
-      "pddl_files/driverlog/driverlog_12_8_8_8_12.pddl",
-      "pddl_files/driverlog/driverlog_22_15_15_15_22.pddl"
+      "pddl_files/driverlog/train.pddl",
+      "pddl_files/driverlog/test-1.pddl",
+      "pddl_files/driverlog/test-2.pddl",
+      "pddl_files/driverlog/test-3.pddl"
     ],
     "data_overrides": {
       "min_per_label_train": 2000,
@@ -54,13 +54,13 @@
     }
   },
   "gripper": {
-    "domain": "pddl_files/gripper/gripper.pddl",
-    "strips_yaml": "pddl_files/gripper/gripper_strips+.yaml",
+    "domain": "pddl_files/gripper/domain.pddl",
+    "strips_yaml": "pddl_files/gripper/strips+.yaml",
     "problems": [
-      "pddl_files/gripper/gripper_5_3.pddl",
-      "pddl_files/gripper/gripper_6_4_gen.pddl",
-      "pddl_files/gripper/gripper_12_8.pddl",
-      "pddl_files/gripper/gripper_24_16.pddl"
+      "pddl_files/gripper/train.pddl",
+      "pddl_files/gripper/test-1.pddl",
+      "pddl_files/gripper/test-2.pddl",
+      "pddl_files/gripper/test-3.pddl"
     ],
     "data_overrides": {
       "min_per_label_train": 200,
@@ -72,13 +72,13 @@
     }
   },
   "hanoi": {
-    "domain": "pddl_files/hanoi/hanoi.pddl",
-    "strips_yaml": "pddl_files/hanoi/hanoi_strips+.yaml",
+    "domain": "pddl_files/hanoi/domain.pddl",
+    "strips_yaml": "pddl_files/hanoi/strips+.yaml",
     "problems": [
-      "pddl_files/hanoi/hanoi-3-6.pddl",
-      "pddl_files/hanoi/hanoi-3-12.pddl",
-      "pddl_files/hanoi/hanoi-3-24.pddl",
-      "pddl_files/hanoi/hanoi-3-48.pddl"
+      "pddl_files/hanoi/train.pddl",
+      "pddl_files/hanoi/test-1.pddl",
+      "pddl_files/hanoi/test-2.pddl",
+      "pddl_files/hanoi/test-3.pddl"
     ],
     "data_overrides": {
       "min_per_label_train": 1000,
@@ -90,13 +90,13 @@
     }
   },
   "logistics": {
-    "domain": "pddl_files/logistics/logistics.pddl",
-    "strips_yaml": "pddl_files/logistics/logistics_strips+.yaml",
+    "domain": "pddl_files/logistics/domain.pddl",
+    "strips_yaml": "pddl_files/logistics/strips+.yaml",
     "problems": [
-      "pddl_files/logistics/logistics-2-3-2-2-3.pddl",
-      "pddl_files/logistics/logistics_4_4_4_4_4_4.pddl",
-      "pddl_files/logistics/logistics_6_6_6_6_6_6.pddl",
-      "pddl_files/logistics/logistics_8_8_8_8_8_8.pddl"
+      "pddl_files/logistics/train.pddl",
+      "pddl_files/logistics/test-1.pddl",
+      "pddl_files/logistics/test-2.pddl",
+      "pddl_files/logistics/test-3.pddl"
     ],
     "data_overrides": {
       "min_per_label_train": 100,
@@ -108,13 +108,13 @@
     }
   },
   "miconic": {
-    "domain": "pddl_files/miconic/miconic.pddl",
-    "strips_yaml": "pddl_files/miconic/miconic_strips+.yaml",
+    "domain": "pddl_files/miconic/domain.pddl",
+    "strips_yaml": "pddl_files/miconic/strips+.yaml",
     "problems": [
-      "pddl_files/miconic/miconic_5_5.pddl",
-      "pddl_files/miconic/miconic_6_4.pddl",
-      "pddl_files/miconic/miconic_12_8.pddl",
-      "pddl_files/miconic/miconic_24_16.pddl"
+      "pddl_files/miconic/train.pddl",
+      "pddl_files/miconic/test-1.pddl",
+      "pddl_files/miconic/test-2.pddl",
+      "pddl_files/miconic/test-3.pddl"
     ],
     "data_overrides": {
       "min_per_label_train": 100,
@@ -126,13 +126,13 @@
     }
   },
   "cell_npuzzle": {
-    "domain": "pddl_files/npuzzle/cell-npuzzle.pddl",
-    "strips_yaml": "pddl_files/npuzzle/cell-npuzzle_strips+.yaml",
+    "domain": "pddl_files/npuzzle/domain.pddl",
+    "strips_yaml": "pddl_files/npuzzle/strips+.yaml",
     "problems": [
-      "pddl_files/npuzzle/cell-npuzzle-3-3.pddl",
-      "pddl_files/npuzzle/cell-npuzzle-4-4.pddl",
-      "pddl_files/npuzzle/cell-npuzzle-5-5.pddl",
-      "pddl_files/npuzzle/cell-npuzzle-6-6.pddl"
+      "pddl_files/npuzzle/train.pddl",
+      "pddl_files/npuzzle/test-1.pddl",
+      "pddl_files/npuzzle/test-2.pddl",
+      "pddl_files/npuzzle/test-3.pddl"
     ],
     "data_overrides": {
       "min_per_label_train": 100,
@@ -144,13 +144,13 @@
     }
   },
   "satellite": {
-    "domain": "pddl_files/satellite/satellite.pddl",
-    "strips_yaml": "pddl_files/satellite/satellite_strips+.yaml",
+    "domain": "pddl_files/satellite/domain.pddl",
+    "strips_yaml": "pddl_files/satellite/strips+.yaml",
     "problems": [
-      "pddl_files/satellite/satellite_9.pddl",
-      "pddl_files/satellite/satellite_10_3_5_5_22.pddl",
-      "pddl_files/satellite/satellite_12_3_5_6_21.pddl",
-      "pddl_files/satellite/satellite_13_3_5_7_25.pddl"
+      "pddl_files/satellite/train.pddl",
+      "pddl_files/satellite/test-1.pddl",
+      "pddl_files/satellite/test-2.pddl",
+      "pddl_files/satellite/test-3.pddl"
     ],
     "data_overrides": {
       "min_per_label_train": 100,
@@ -162,13 +162,13 @@
     }
   },
   "sokoban": {
-    "domain": "pddl_files/sokoban/sokoban.pddl",
-    "strips_yaml": "pddl_files/sokoban/sokoban_strips+.yaml",
+    "domain": "pddl_files/sokoban/domain.pddl",
+    "strips_yaml": "pddl_files/sokoban/strips+.yaml",
     "problems": [
-      "pddl_files/sokoban/sokoban-4-4_3.pddl",
-      "pddl_files/sokoban/sokoban-6-6_3.pddl",
-      "pddl_files/sokoban/sokoban-7-7_4.pddl",
-      "pddl_files/sokoban/sokoban-9-9_5.pddl"
+      "pddl_files/sokoban/train.pddl",
+      "pddl_files/sokoban/test-1.pddl",
+      "pddl_files/sokoban/test-2.pddl",
+      "pddl_files/sokoban/test-3.pddl"
     ],
     "data_overrides": {
       "min_per_label_train": 20,
@@ -180,13 +180,13 @@
     }
   },
   "sokoban-pull": {
-    "domain": "pddl_files/sokoban-pull/pull_sokoban.pddl",
-    "strips_yaml": "pddl_files/sokoban-pull/pull_sokoban_strips+.yaml",
+    "domain": "pddl_files/sokoban-pull/domain.pddl",
+    "strips_yaml": "pddl_files/sokoban-pull/strips+.yaml",
     "problems": [
-      "pddl_files/sokoban/sokoban-4-4_3.pddl",
-      "pddl_files/sokoban-pull/pull_sokoban-6-6_3.pddl",
-      "pddl_files/sokoban-pull/pull_sokoban-7-7_4.pddl",
-      "pddl_files/sokoban-pull/pull_sokoban-9-9_5.pddl"
+      "pddl_files/sokoban-pull/train.pddl",
+      "pddl_files/sokoban-pull/test-1.pddl",
+      "pddl_files/sokoban-pull/test-2.pddl",
+      "pddl_files/sokoban-pull/test-3.pddl"
     ],
     "data_overrides": {
       "min_per_label_train": 100,
@@ -199,12 +199,12 @@
   },
   "spanner": {
     "domain": "pddl_files/spanner/domain.pddl",
-    "strips_yaml": "pddl_files/spanner/spanner_strips+.yaml",
+    "strips_yaml": "pddl_files/spanner/strips+.yaml",
     "problems": [
-      "pddl_files/spanner/pfile3.pddl",
-      "pddl_files/spanner/pfile_12_8_12.pddl",
-      "pddl_files/spanner/pfile_24_16_24.pddl",
-      "pddl_files/spanner/pfile_32_21_32.pddl"
+      "pddl_files/spanner/train.pddl",
+      "pddl_files/spanner/test-1.pddl",
+      "pddl_files/spanner/test-2.pddl",
+      "pddl_files/spanner/test-3.pddl"
     ],
     "data_overrides": {
       "min_per_label_train": 200,
@@ -217,12 +217,12 @@
   },
   "visitall": {
     "domain": "pddl_files/visitall/domain.pddl",
-    "strips_yaml": "pddl_files/visitall/visitall-opt14-strips_strips+.yaml",
+    "strips_yaml": "pddl_files/visitall/strips+.yaml",
     "problems": [
-      "pddl_files/visitall/p-1-5.pddl",
-      "pddl_files/visitall/p-6x6.pddl",
-      "pddl_files/visitall/p-7x7.pddl",
-      "pddl_files/visitall/p-8x8.pddl"
+      "pddl_files/visitall/train.pddl",
+      "pddl_files/visitall/test-1.pddl",
+      "pddl_files/visitall/test-2.pddl",
+      "pddl_files/visitall/test-3.pddl"
     ],
     "data_overrides": {
       "min_per_label_train": 100,

@@ -42,13 +42,25 @@ def _build_sample(
         state = noisy_state
         added_s, removed_s, added_s_pr, removed_s_pr = _flip_stats(state, clean_s)
     else:
-        state, added_s, removed_s, added_s_pr, removed_s_pr = clean_s, 0, 0, zeros, zeros
+        state, added_s, removed_s, added_s_pr, removed_s_pr = (
+            clean_s,
+            0,
+            0,
+            zeros,
+            zeros,
+        )
     if noisy_next is not None:
         next_state = noisy_next
-        added_ns, removed_ns, added_ns_pr, removed_ns_pr = _flip_stats(next_state, clean_ns)
+        added_ns, removed_ns, added_ns_pr, removed_ns_pr = _flip_stats(
+            next_state, clean_ns
+        )
     else:
         next_state, added_ns, removed_ns, added_ns_pr, removed_ns_pr = (
-            clean_ns, 0, 0, zeros, zeros,
+            clean_ns,
+            0,
+            0,
+            zeros,
+            zeros,
         )
 
     action = sample["action_index"]
@@ -115,8 +127,16 @@ class StratifiedActionIterableDataset(IterableDataset):
                     yield _build_sample(
                         self.base,
                         self.indices[pool[p]],
-                        self.noisy_states[pool[p]] if self.noisy_states is not None else None,
-                        self.noisy_next_states[pool[p]] if self.noisy_next_states is not None else None,
+                        (
+                            self.noisy_states[pool[p]]
+                            if self.noisy_states is not None
+                            else None
+                        ),
+                        (
+                            self.noisy_next_states[pool[p]]
+                            if self.noisy_next_states is not None
+                            else None
+                        ),
                         torch.tensor(self.indices[pool[p]]),
                     )
 
@@ -273,7 +293,10 @@ class PddlGraphDataModule(L.LightningDataModule):
 
     @property
     def _has_min(self) -> bool:
-        return self.min_per_label_train is not None and self.min_per_label_valid is not None
+        return (
+            self.min_per_label_train is not None
+            and self.min_per_label_valid is not None
+        )
 
     @property
     def _has_num(self) -> bool:
@@ -281,7 +304,10 @@ class PddlGraphDataModule(L.LightningDataModule):
 
     @property
     def _has_max(self) -> bool:
-        return self.max_per_label_train is not None and self.max_per_label_valid is not None
+        return (
+            self.max_per_label_train is not None
+            and self.max_per_label_valid is not None
+        )
 
     def _validate_sampling_config(self) -> None:
         if self.pt_file is not None or self.metadata_only:
@@ -293,7 +319,9 @@ class PddlGraphDataModule(L.LightningDataModule):
                 "(num_train, num_valid) must be set. "
                 "Pass metadata_only=True to build an empty dataset."
             )
-        if self._has_min and (self.min_per_label_train <= 0 or self.min_per_label_valid <= 0):
+        if self._has_min and (
+            self.min_per_label_train <= 0 or self.min_per_label_valid <= 0
+        ):
             raise ValueError("min_per_label_train and min_per_label_valid must be > 0.")
         if self._has_num and (self.num_train <= 0 or self.num_valid <= 0):
             raise ValueError("num_train and num_valid must be > 0.")
@@ -301,20 +329,30 @@ class PddlGraphDataModule(L.LightningDataModule):
             raise ValueError(
                 "max_per_label_train and max_per_label_valid must be set together."
             )
-        if self._has_max and (self.max_per_label_train <= 0 or self.max_per_label_valid <= 0):
+        if self._has_max and (
+            self.max_per_label_train <= 0 or self.max_per_label_valid <= 0
+        ):
             raise ValueError("max_per_label_train and max_per_label_valid must be > 0.")
-        if self._has_max and self._has_min and (
-            self.max_per_label_train < self.min_per_label_train
-            or self.max_per_label_valid < self.min_per_label_valid
+        if (
+            self._has_max
+            and self._has_min
+            and (
+                self.max_per_label_train < self.min_per_label_train
+                or self.max_per_label_valid < self.min_per_label_valid
+            )
         ):
             raise ValueError(
                 f"max_per_label_* must be >= min_per_label_*: "
                 f"max=({self.max_per_label_train},{self.max_per_label_valid}) "
                 f"vs min=({self.min_per_label_train},{self.min_per_label_valid})."
             )
-        if self._has_min and self._has_num and (
-            self.min_per_label_train * self.num_valid
-            != self.num_train * self.min_per_label_valid
+        if (
+            self._has_min
+            and self._has_num
+            and (
+                self.min_per_label_train * self.num_valid
+                != self.num_train * self.min_per_label_valid
+            )
         ):
             raise ValueError(
                 f"Ratio mismatch: "
@@ -424,7 +462,9 @@ class PddlGraphDataModule(L.LightningDataModule):
             f"Actions: {[a['name'] for a in self.metadata['actions']]}",
             file=sys.stderr,
         )
-        min_total = self.min_per_label_train + self.min_per_label_valid if self._has_min else 0
+        min_total = (
+            self.min_per_label_train + self.min_per_label_valid if self._has_min else 0
+        )
         num_total = self.num_train + self.num_valid if self._has_num else 0
         samples = generate_random_walk(
             problem=self.problem,
@@ -514,7 +554,10 @@ class PddlGraphDataModule(L.LightningDataModule):
         assert self._base is not None
         pool_actions = set(self._base.action_indices.tolist())
         names = self._base.action_names
-        for split_name, idxs in (("train", self._train_idx), ("valid", self._valid_idx)):
+        for split_name, idxs in (
+            ("train", self._train_idx),
+            ("valid", self._valid_idx),
+        ):
             if not idxs:
                 continue
             missing = pool_actions - set(self._base.action_indices[idxs].tolist())
@@ -528,7 +571,9 @@ class PddlGraphDataModule(L.LightningDataModule):
     def _build_train_noise(
         self, train_idx: list[int]
     ) -> tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
-        if (self.edge_remove_ratio == 0.0 and self.edge_add_ratio == 0.0) or not train_idx:
+        if (
+            self.edge_remove_ratio == 0.0 and self.edge_add_ratio == 0.0
+        ) or not train_idx:
             return None, None
 
         gen = torch.Generator().manual_seed(self.seed + 1)
@@ -541,13 +586,18 @@ class PddlGraphDataModule(L.LightningDataModule):
         )
 
         def noisy(src: torch.Tensor) -> torch.Tensor:
-            return torch.stack([
-                add_adj_noise(
-                    src[i], self.arity_relations,
-                    self.edge_remove_ratio, add_ratio_per_rel, gen,
-                )
-                for i in train_idx
-            ])
+            return torch.stack(
+                [
+                    add_adj_noise(
+                        src[i],
+                        self.arity_relations,
+                        self.edge_remove_ratio,
+                        add_ratio_per_rel,
+                        gen,
+                    )
+                    for i in train_idx
+                ]
+            )
 
         return noisy(self._base.states), noisy(self._base.next_states)
 
@@ -578,7 +628,9 @@ class PddlGraphDataModule(L.LightningDataModule):
         counts = torch.bincount(ds.action_indices, minlength=len(ds.action_names))
         print("Action frequency distribution:", file=sys.stderr)
         for name, count in zip(ds.action_names, counts.tolist()):
-            print(f"  {name}: {count} ({100.0 * count / len(ds):.1f}%)", file=sys.stderr)
+            print(
+                f"  {name}: {count} ({100.0 * count / len(ds):.1f}%)", file=sys.stderr
+            )
 
     def _empty_data(self) -> dict:
         n_obj = len(self.metadata["objects"])
@@ -641,12 +693,12 @@ class PddlGraphDataModule(L.LightningDataModule):
         """Action name -> list of argument positions free to vary."""
         import yaml
 
-        yaml_files = list(Path(domain_path).parent.glob("*strips+.yaml"))
-        if not yaml_files:
+        yaml_path = Path(domain_path).parent / "strips+.yaml"
+        if not yaml_path.exists():
             raise FileNotFoundError(
-                f"No *strips+.yaml file found in {Path(domain_path).parent}. "
+                f"No strips+.yaml file found in {Path(domain_path).parent}. "
                 f"Required when strips_plus_actions=True."
             )
-        with open(yaml_files[0]) as f:
+        with open(yaml_path) as f:
             yaml_data = yaml.safe_load(f) or {}
         return {name: (lst[0] if lst else []) for name, lst in yaml_data.items()}
