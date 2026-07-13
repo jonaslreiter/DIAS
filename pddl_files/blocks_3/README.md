@@ -1,9 +1,10 @@
-# Blocks World — Generated Scaling Instances
-
-Reference problem: `train.pddl`.
+# Blocks World
 
 | File          | Blocks | Total objects |
 | ------------- | ------ | ------------- |
+| `train.pddl`  | 5      | 5             |
 | `test-1.pddl` | 10     | 10            |
 | `test-2.pddl` | 20     | 20            |
 | `test-3.pddl` | 40     | 40            |
+
+Generated from existing Blocks World benchmark instances in this repository.

@@ -1,11 +1,12 @@
-# Hanoi — Generated Scaling Instances
+# Hanoi
 
-Reference problem: `train.pddl`. Existing instances cover up to D=10.
+Existing instances cover up to D=10.
 
 All discs start stacked on `peg1` (largest at bottom), goal is to move all discs to `peg3`.
 
 | File          | Pegs | Discs | Total objects |
 | ------------- | ---- | ----- | ------------- |
+| `train.pddl`  | 3    | 6     | 9             |
 | `test-1.pddl` | 3    | 12    | 15            |
 | `test-2.pddl` | 3    | 24    | 27            |
 | `test-3.pddl` | 3    | 48    | 51            |
