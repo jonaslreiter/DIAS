@@ -5,10 +5,10 @@
 # in the data section to a non-zero value (paper sweeps 0.0–0.5).
 
 seed_everything: 43
-experiment: "dias-debug"
+experiment: "dias"
 
 model:
-  class_path: dias.models.graph_learner.DiasModel
+  class_path: dias.models.DIAS
   init_args:
     object_dim: 32
     num_slots: 5

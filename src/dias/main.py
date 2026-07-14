@@ -9,7 +9,7 @@ from lightning.pytorch.cli import LightningCLI, SaveConfigCallback
 from lightning.pytorch.loggers import Logger
 
 from dias.data.datamodule import PddlGraphDataModule  # noqa: F401  (registered for CLI)
-from dias.models.graph_learner import DiasModel  # noqa: F401  (registered for CLI)
+from dias.models.dias import DIAS  # noqa: F401  (registered for CLI)
 
 warnings.filterwarnings("ignore", message=".*Can't initialize NVML.*")
 warnings.filterwarnings("ignore", message=".*Lightning on SLURM.*")

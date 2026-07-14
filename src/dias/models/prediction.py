@@ -30,16 +30,19 @@ def _batched_sinkhorn_d1d2(
             log_x = log_x.masked_fill(row_mask, -torch.inf)
         log_y = -torch.logsumexp(log_A + log_x.unsqueeze(-1), dim=-2)
 
-        if max(
-            (log_x - log_x_prev).abs().max(),
-            (log_y - log_y_prev).abs().max(),
-        ) < tol:
+        if (
+            max(
+                (log_x - log_x_prev).abs().max(),
+                (log_y - log_y_prev).abs().max(),
+            )
+            < tol
+        ):
             break
 
     return torch.exp(log_x.unsqueeze(-1) + log_A + log_y.unsqueeze(-2))
 
 
-class SinkhornGraphEdit(nn.Module):
+class PredictionModule(nn.Module):
     """Slot-based graph-edit predictor.
 
     Builds slot-to-node attention via Sinkhorn normalisation, then combines
@@ -97,14 +100,18 @@ class SinkhornGraphEdit(nn.Module):
 
         if per_action_slots:
             with torch.no_grad():
-                unused = torch.arange(num_slots).unsqueeze(0) >= action_arities_t.unsqueeze(1)
+                unused = torch.arange(num_slots).unsqueeze(
+                    0
+                ) >= action_arities_t.unsqueeze(1)
                 self.slot_weight_logits.masked_fill_(unused, -torch.inf)
 
         # Unary relations: only diagonal slot pairs can be non-zero.
         relation_is_unary = torch.tensor(
             [a == 1 for a in arity_relations], dtype=torch.bool
         )
-        diag = torch.eye(num_slots, dtype=torch.bool).view(1, 1, num_slots, num_slots, 1)
+        diag = torch.eye(num_slots, dtype=torch.bool).view(
+            1, 1, num_slots, num_slots, 1
+        )
         unary_offdiag = relation_is_unary.view(1, self.num_relations, 1, 1, 1) & ~diag
         with torch.no_grad():
             for p in (self.preconditions, self.effects):
@@ -137,8 +144,12 @@ class SinkhornGraphEdit(nn.Module):
             adj_batch = adj_dense.float()
         else:
             adj_batch = torch.zeros(
-                B, self.num_relations, n_nodes, n_nodes,
-                device=node_embeddings.device, dtype=torch.float32,
+                B,
+                self.num_relations,
+                n_nodes,
+                n_nodes,
+                device=node_embeddings.device,
+                dtype=torch.float32,
             )
             graph_ids = batch_idx[edge_index[0]]
             local_src = edge_index[0] - graph_ids * n_nodes
@@ -152,9 +163,11 @@ class SinkhornGraphEdit(nn.Module):
         )
 
         if self.training and self.gumbel_slot_noise:
-            gumbel_noise = torch.distributions.gumbel.Gumbel(0.0, 1.0).sample(
-                attention.shape
-            ).to(attention.device)
+            gumbel_noise = (
+                torch.distributions.gumbel.Gumbel(0.0, 1.0)
+                .sample(attention.shape)
+                .to(attention.device)
+            )
             logits = attention + gumbel_noise
         else:
             logits = attention
@@ -167,7 +180,9 @@ class SinkhornGraphEdit(nn.Module):
 
         if self.per_action_slots:
             arity_per_sample = self.action_arities_t[y_action]
-            unused_mask = torch.arange(k, device=logits.device).unsqueeze(0) >= arity_per_sample.unsqueeze(1)
+            unused_mask = torch.arange(k, device=logits.device).unsqueeze(
+                0
+            ) >= arity_per_sample.unsqueeze(1)
             sinkhorn_row_mask = F.pad(unused_mask, (0, 1), value=False)  # (B, k+1)
         else:
             unused_mask = None
@@ -209,8 +224,12 @@ class SinkhornGraphEdit(nn.Module):
                 forced = y_action_args >= 0
                 if forced.any():
                     if forced.shape[1] < slot_weights.shape[1]:
-                        forced = F.pad(forced, (0, slot_weights.shape[1] - forced.shape[1]))
-                    slot_weights = torch.where(forced, torch.ones_like(slot_weights), slot_weights)
+                        forced = F.pad(
+                            forced, (0, slot_weights.shape[1] - forced.shape[1])
+                        )
+                    slot_weights = torch.where(
+                        forced, torch.ones_like(slot_weights), slot_weights
+                    )
             selection = selection * slot_weights.unsqueeze(-1)
 
         if self.training:
@@ -218,15 +237,23 @@ class SinkhornGraphEdit(nn.Module):
             self._last_y_action = y_action.detach().cpu()
 
         if self.training and self.gumbel_softmax:
-            preconditions = F.gumbel_softmax(self.preconditions[y_action], hard=False, dim=-1)
+            preconditions = F.gumbel_softmax(
+                self.preconditions[y_action], hard=False, dim=-1
+            )
             effects = F.gumbel_softmax(self.effects[y_action], hard=False, dim=-1)
         else:
             preconditions = F.softmax(self.preconditions[y_action], dim=-1)
             effects = F.softmax(self.effects[y_action], dim=-1)
 
-        ignore_effects, add_effects, del_effects = effects[..., 0], effects[..., 1], effects[..., -1]
+        ignore_effects, add_effects, del_effects = (
+            effects[..., 0],
+            effects[..., 1],
+            effects[..., -1],
+        )
         ignore_precond, pos_precond, neg_precond = (
-            preconditions[..., 0], preconditions[..., 1], preconditions[..., -1],
+            preconditions[..., 0],
+            preconditions[..., 1],
+            preconditions[..., -1],
         )
 
         def project(slots):
@@ -240,7 +267,9 @@ class SinkhornGraphEdit(nn.Module):
         precond_fulfilled = (
             (1 - pos_proj * (1 - adj_batch)) * (1 - neg_proj * adj_batch)
         ).flatten(start_dim=1)
-        pre = gmean(precond_fulfilled, dim=-1, temperature=gmean_temperature + self.gmean_offset)
+        pre = gmean(
+            precond_fulfilled, dim=-1, temperature=gmean_temperature + self.gmean_offset
+        )
         self._last_pre_mean = pre.mean().detach()
         self._last_pre_prod_mean = precond_fulfilled.prod(dim=-1).mean().detach()
 

@@ -11,28 +11,31 @@ from pymimir.advanced.formalism import FluentGroundAtomList, ObjectList
 from pymimir.wrapper_formalism import State
 from tqdm import tqdm
 
-from dias.data.generate_samples import generate_bfs
 from dias.data.datamodule import PddlGraphDataModule
-from dias.models.graph_learner import DiasModel
+from dias.data.generate_samples import generate_bfs
+from dias.models.dias import DIAS
 
 from .transpiler import PDDLTranspiler
 from .utils import extract_domain_header, process_model_logits, strip_problem_types
 
-import tempfile
-import re
-from pathlib import Path
 
 class ModelValidation:
     LEARNED_ACTION_PREFIX = "learned_"
     EQUALITY_PREDICATE_NAME = "eq"
 
-    def __init__(self, original_domain_path, learned_domain_path, logs_path_abs, problem_path=None):
+    def __init__(
+        self,
+        original_domain_path,
+        learned_domain_path,
+        logs_path_abs,
+        problem_path=None,
+    ):
         self.logs_path_abs = logs_path_abs
 
         # Read both files
         original_domain_text = Path(original_domain_path).read_text()
         learned_domain_text = Path(learned_domain_path).read_text()
-        
+
         has_equality = self._domain_uses_equality(original_domain_text)
         fluent_equal_predicates = self._fluent_equal_predicates(original_domain_text)
 
@@ -40,14 +43,14 @@ class ModelValidation:
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".pddl", dir="/tmp", delete=False
         ) as f:
-            
-            # Note: Removed pddl_transpiler kwargs. If extract_domain_header requires 
+
+            # Note: Removed pddl_transpiler kwargs. If extract_domain_header requires
             # them, you may need to adjust that utility function to just parse the original file.
             header, _ = extract_domain_header(
                 original_domain_path,
                 keep_equality_requirement=False,
             )
-            
+
             # Process Original Actions
             original_actions = self._extract_action_blocks(original_domain_text)
             transformed_original_actions = [
@@ -56,7 +59,7 @@ class ModelValidation:
                 )
                 for action_block in original_actions
             ]
-            
+
             # Process Learned Actions
             learned_actions = self._extract_action_blocks(learned_domain_text)
             transformed_learned_actions = [
@@ -154,11 +157,13 @@ class ModelValidation:
 
         # 1. Collect everything that looks like a word after an opening parenthesis in the header
         # This will safely catch 'at', 'carrying', 'link', etc., as well as PDDL keywords.
-        defined_words = set([m.group(1).lower() for m in re.finditer(r"\(\s*([a-zA-Z0-9_\-]+)", header)])
+        defined_words = set(
+            [m.group(1).lower() for m in re.finditer(r"\(\s*([a-zA-Z0-9_\-]+)", header)]
+        )
 
         # Standard keywords to ignore. Note: 'eq' is intentionally NOT here —
         # it is a user-defined replacement for '=' that must be declared.
-        keywords = {'and', 'or', 'not', 'imply', 'when', 'forall', 'exists', '=', '-'}
+        keywords = {"and", "or", "not", "imply", "when", "forall", "exists", "=", "-"}
 
         missing_preds = {}
 
@@ -172,7 +177,7 @@ class ModelValidation:
                 if name not in missing_preds:
                     # Count how many variables (words starting with '?') it uses
                     args_str = match.group(2)
-                    vars_count = len([w for w in args_str.split() if w.startswith('?')])
+                    vars_count = len([w for w in args_str.split() if w.startswith("?")])
                     missing_preds[name] = vars_count
 
         # 2a. If the original domain uses :equality, strip_problem_types will
@@ -187,14 +192,10 @@ class ModelValidation:
         # 2b. Pull every type name from the original domain's :types hierarchy and
         # declare them as unary predicates. strip_problem_types injects atoms for
         # parent types (e.g. (locatable bob)) that never appear in any action body.
-        types_match = re.search(
-            r"\(:types(.*?)\)", original_domain_text, re.DOTALL
-        )
+        types_match = re.search(r"\(:types(.*?)\)", original_domain_text, re.DOTALL)
         if types_match:
             type_names: set[str] = set()
-            for m2 in re.finditer(
-                r"([\w\s]+)-\s+(\w+)", types_match.group(1)
-            ):
+            for m2 in re.finditer(r"([\w\s]+)-\s+(\w+)", types_match.group(1)):
                 parent = m2.group(2).strip().lower()
                 for child in m2.group(1).split():
                     type_names.add(child.strip().lower())
@@ -217,7 +218,9 @@ class ModelValidation:
                 missing_str += f"\n    ({name} {args})"
 
             # Use regex substitution to patch the header
-            header = re.sub(r"(\(:predicates)", rf"\1{missing_str}", header, flags=re.IGNORECASE)
+            header = re.sub(
+                r"(\(:predicates)", rf"\1{missing_str}", header, flags=re.IGNORECASE
+            )
             print(f"Patched missing predicates: {list(missing_preds.keys())}")
 
         return header
@@ -296,9 +299,9 @@ class ModelValidation:
 
         self.state_set = random.sample(population_set, num_samples)
 
-        shared_preds = {
-            p.get_name() for p in self.original_domain.get_predicates()
-        } & {p.get_name() for p in self.merged_domain.get_predicates()}
+        shared_preds = {p.get_name() for p in self.original_domain.get_predicates()} & {
+            p.get_name() for p in self.merged_domain.get_predicates()
+        }
 
         merged_state_set = []
         for state in self.state_set:
@@ -332,6 +335,7 @@ class ModelValidation:
         fn_total = 0
 
         from collections import defaultdict
+
         action_tp = defaultdict(int)
         action_fp = defaultdict(int)
         action_fn = defaultdict(int)
@@ -352,8 +356,12 @@ class ModelValidation:
                 else:
                     orig_by_action[action_name].add(succ_id)
 
-            orig_succs = set().union(*orig_by_action.values()) if orig_by_action else set()
-            learned_succs = set().union(*learned_by_action.values()) if learned_by_action else set()
+            orig_succs = (
+                set().union(*orig_by_action.values()) if orig_by_action else set()
+            )
+            learned_succs = (
+                set().union(*learned_by_action.values()) if learned_by_action else set()
+            )
 
             tp = len(orig_succs & learned_succs)
             fp = len(learned_succs) - tp
@@ -554,9 +562,7 @@ class ModelValidation:
         return bool(req_match and ":equality" in req_match.group(1).lower())
 
     @staticmethod
-    def _inject_reflexive_atoms(
-        problem_text: str, predicate_names: list[str]
-    ) -> str:
+    def _inject_reflexive_atoms(problem_text: str, predicate_names: list[str]) -> str:
         """Inject `(p X X)` atoms for every predicate name in *predicate_names* and
         every object in the problem's :objects block, into the :init section.
         Works for both typed and untyped :objects.

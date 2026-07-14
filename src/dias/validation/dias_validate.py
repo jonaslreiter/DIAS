@@ -11,9 +11,9 @@ from pymimir.advanced.formalism import FluentGroundAtomList, ObjectList
 from pymimir.wrapper_formalism import State
 from tqdm import tqdm
 
-from dias.data.generate_samples import generate_bfs
 from dias.data.datamodule import PddlGraphDataModule
-from dias.models.graph_learner import DiasModel
+from dias.data.generate_samples import generate_bfs
+from dias.models.dias import DIAS
 
 from .transpiler import PDDLTranspiler
 from .utils import extract_domain_header, process_model_logits, strip_problem_types
@@ -64,9 +64,7 @@ class ModelValidation:
         self.datamodule = PddlGraphDataModule(**datamodule_hparams)
         self.datamodule.setup()
 
-        self.model = DiasModel.load_from_checkpoint(
-            self.ckpt_file, map_location="cpu"
-        )
+        self.model = DIAS.load_from_checkpoint(self.ckpt_file, map_location="cpu")
         self.model.to("cpu")
         self.model.eval()
 
@@ -80,7 +78,7 @@ class ModelValidation:
         effect_logits = self.model.graph_edit.preconditions.detach().cpu()
         slot_weights = self.model.graph_edit.slot_weight_logits.detach().cpu()
 
-        (add_eff, del_eff, pos_prec, neg_prec, active_slots) = process_model_logits(
+        add_eff, del_eff, pos_prec, neg_prec, active_slots = process_model_logits(
             preconditions_logits=precondition_logits,
             effect_logits=effect_logits,
             slot_weight_logits=slot_weights,
@@ -220,9 +218,9 @@ class ModelValidation:
 
         self.state_set = random.sample(population_set, num_samples)
 
-        shared_preds = {
-            p.get_name() for p in self.original_domain.get_predicates()
-        } & {p.get_name() for p in self.merged_domain.get_predicates()}
+        shared_preds = {p.get_name() for p in self.original_domain.get_predicates()} & {
+            p.get_name() for p in self.merged_domain.get_predicates()
+        }
 
         merged_state_set = []
         for state in self.state_set:
@@ -256,6 +254,7 @@ class ModelValidation:
         fn_total = 0
 
         from collections import defaultdict
+
         action_tp = defaultdict(int)
         action_fp = defaultdict(int)
         action_fn = defaultdict(int)
@@ -276,8 +275,12 @@ class ModelValidation:
                 else:
                     orig_by_action[action_name].add(succ_id)
 
-            orig_succs = set().union(*orig_by_action.values()) if orig_by_action else set()
-            learned_succs = set().union(*learned_by_action.values()) if learned_by_action else set()
+            orig_succs = (
+                set().union(*orig_by_action.values()) if orig_by_action else set()
+            )
+            learned_succs = (
+                set().union(*learned_by_action.values()) if learned_by_action else set()
+            )
 
             tp = len(orig_succs & learned_succs)
             fp = len(learned_succs) - tp

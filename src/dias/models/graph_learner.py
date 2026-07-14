@@ -9,8 +9,8 @@ from torch_geometric.utils import to_dense_adj
 from dias.utils import LossWeightScheduleCollection, resolve_label_names
 from dias.utils.plotting import PlotWorker, queue_validation_heatmaps
 
-from .components.dynamics_rgcn_st import GNN
-from .components.sinkhorn_graph_edit import SinkhornGraphEdit
+from .gnn import GNNModule
+from .prediction import PredictionModule
 
 
 class DiasModel(L.LightningModule):
@@ -92,7 +92,7 @@ class DiasModel(L.LightningModule):
 
         self.num_relations = len(arity_relations)
 
-        self.graph_edit = SinkhornGraphEdit(
+        self.graph_edit = PredictionModule(
             num_objects=self.num_objects,
             arity_relations=self.arity_relations,
             num_actions=self.num_actions,
@@ -129,7 +129,7 @@ class DiasModel(L.LightningModule):
             self.num_relations * 4 if self.successor_relations else 0
         )
 
-        self.dynamics_model = GNN(
+        self.dynamics_model = GNNModule(
             self.object_dim,
             self.num_relations * 2
             + self.num_action_relations

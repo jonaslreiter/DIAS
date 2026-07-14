@@ -3,7 +3,7 @@ import torch.nn.functional as F
 from torch_geometric.nn import FastRGCNConv
 
 
-class GNN(nn.Module):
+class GNNModule(nn.Module):
     """6-layer FastRGCN with LayerNorm + SiLU between layers."""
 
     def __init__(self, latent_dim: int, number_relations: int):

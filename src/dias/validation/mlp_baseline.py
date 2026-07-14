@@ -15,9 +15,9 @@ from pymimir.advanced.formalism import FluentGroundAtomList, ObjectList
 from pymimir.wrapper_formalism import State
 from tqdm import tqdm
 
-from dias.data.generate_samples import generate_bfs
 from dias.data.datamodule import PddlGraphDataModule
-from dias.models.graph_learner import DiasModel
+from dias.data.generate_samples import generate_bfs
+from dias.models.dias import DIAS
 
 from .transpiler import PDDLTranspiler
 from .utils import extract_domain_header, process_model_logits, strip_problem_types
@@ -53,9 +53,7 @@ def _phase1_worker(
     prefix_len = len(prefix)
     max_arity = config["max_arity"]
     keep_channels = (
-        np.array(
-            [i for i in range(R) if i != eq_channel_idx], dtype=np.int64
-        )
+        np.array([i for i in range(R) if i != eq_channel_idx], dtype=np.int64)
         if eq_channel_idx is not None
         else None
     )
@@ -99,16 +97,16 @@ def _phase1_worker(
             adv_atom = adv_problem.get_or_create_ground_atom(fluent_pred, objs)
             target_adv_atoms.append(adv_atom)
         fluent_list = FluentGroundAtomList(target_adv_atoms)
-        adv_state, _ = (
-            target_problem._search_context.get_state_repository()
-            .get_or_create_state(fluent_list, [])
+        (
+            adv_state,
+            _,
+        ) = target_problem._search_context.get_state_repository().get_or_create_state(
+            fluent_list, []
         )
         return State(adv_state, target_problem)
 
     chunk_S = len(payloads)
-    input_adjs_arr = np.zeros(
-        (chunk_S, R, num_objects, num_objects), dtype=np.uint8
-    )
+    input_adjs_arr = np.zeros((chunk_S, R, num_objects, num_objects), dtype=np.uint8)
     orig_sigs_list: list[set[bytes]] = []
     state_idx_local: list[int] = []
     action_idx_local: list[int] = []
@@ -205,9 +203,7 @@ class ModelValidation:
         self.datamodule = PddlGraphDataModule(**datamodule_hparams)
         self.datamodule.setup()
 
-        self.model = DiasModel.load_from_checkpoint(
-            self.ckpt_file, map_location="cpu"
-        )
+        self.model = DIAS.load_from_checkpoint(self.ckpt_file, map_location="cpu")
         self.model.to("cpu")
         self.model.eval()
 
@@ -240,7 +236,7 @@ class ModelValidation:
         # precondition arrays + active_slots).
         zero_effect_logits = torch.zeros_like(precondition_logits)
 
-        (_, _, pos_prec, neg_prec, active_slots) = process_model_logits(
+        _, _, pos_prec, neg_prec, active_slots = process_model_logits(
             preconditions_logits=zero_effect_logits,
             effect_logits=precondition_logits,
             slot_weight_logits=slot_weights,
@@ -440,9 +436,9 @@ class ModelValidation:
 
         # Sanity check: the shared-fluents view should agree across
         # original / learned problems for every sampled state.
-        shared_preds = {
-            p.get_name() for p in self.original_domain.get_predicates()
-        } & {p.get_name() for p in self.learned_domain.get_predicates()}
+        shared_preds = {p.get_name() for p in self.original_domain.get_predicates()} & {
+            p.get_name() for p in self.learned_domain.get_predicates()
+        }
 
         self.state_pairs = []
         for orig_state in sampled_orig_states:
@@ -458,7 +454,6 @@ class ModelValidation:
                 f"  only in learned:  {learned_shared - orig_shared}"
             )
             self.state_pairs.append((orig_state, learned_state))
-
 
     def validate(self, batch_size: int = 4096, num_workers: int = 1):
         """
@@ -506,9 +501,7 @@ class ModelValidation:
         # active slot), so we can compute it upfront and tell the workers
         # to return already-padded binding rows -- no per-grounding Python
         # loop in the main process.
-        max_arity = max(
-            (len(s) for s in self.active_slot_indices), default=0
-        )
+        max_arity = max((len(s) for s in self.active_slot_indices), default=0)
 
         worker_config = {
             "original_domain_path": self.original_domain_path,
@@ -545,9 +538,7 @@ class ModelValidation:
                 max_workers=num_workers, mp_context=mp_ctx
             ) as pool:
                 for chunk_idx, (start, chunk_payloads) in enumerate(chunks):
-                    fut = pool.submit(
-                        _phase1_worker, chunk_payloads, worker_config
-                    )
+                    fut = pool.submit(_phase1_worker, chunk_payloads, worker_config)
                     fut_to_idx[fut] = chunk_idx
                 for fut in tqdm(
                     as_completed(fut_to_idx),
@@ -568,9 +559,7 @@ class ModelValidation:
             per_state_orig_sigs.extend(orig_sigs_list)
             input_adj_parts.append(input_adjs_arr)
             # Offset local state indices to global.
-            state_idx_parts.append(
-                s_local + start if s_local.size else s_local
-            )
+            state_idx_parts.append(s_local + start if s_local.size else s_local)
             action_idx_parts.append(a_local)
             binding_parts.append(bind_local)
 
@@ -580,15 +569,18 @@ class ModelValidation:
             input_adj_np = np.zeros((0, R, N, N), dtype=np.uint8)
         flat_state_idx_np = (
             np.concatenate(state_idx_parts)
-            if state_idx_parts else np.zeros(0, dtype=np.int64)
+            if state_idx_parts
+            else np.zeros(0, dtype=np.int64)
         )
         flat_action_idx_np = (
             np.concatenate(action_idx_parts)
-            if action_idx_parts else np.zeros(0, dtype=np.int64)
+            if action_idx_parts
+            else np.zeros(0, dtype=np.int64)
         )
         flat_bindings_np = (
             np.concatenate(binding_parts, axis=0)
-            if binding_parts else np.zeros((0, max_arity), dtype=np.int64)
+            if binding_parts
+            else np.zeros((0, max_arity), dtype=np.int64)
         )
 
         # Move model to GPU only after Phase 1 finishes — keeps spawned
@@ -644,20 +636,16 @@ class ModelValidation:
 
                     adj_batch = all_input_adj.index_select(0, s_chunk)  # (B,R,N,N)
 
-                    slots_chunk = padded_slots.index_select(0, a_chunk)   # (B, P)
-                    bind_chunk = padded_bind[chunk_start:chunk_end]       # (B, P)
+                    slots_chunk = padded_slots.index_select(0, a_chunk)  # (B, P)
+                    bind_chunk = padded_bind[chunk_start:chunk_end]  # (B, P)
                     valid = (slots_chunk >= 0) & (bind_chunk >= 0)
                     b_idx = (
                         torch.arange(B, device=device)
                         .unsqueeze(1)
                         .expand(-1, max_arity)
                     )
-                    selection = torch.zeros(
-                        B, K, N, dtype=torch.float32, device=device
-                    )
-                    selection[
-                        b_idx[valid], slots_chunk[valid], bind_chunk[valid]
-                    ] = 1.0
+                    selection = torch.zeros(B, K, N, dtype=torch.float32, device=device)
+                    selection[b_idx[valid], slots_chunk[valid], bind_chunk[valid]] = 1.0
 
                     adj_selection = torch.einsum(
                         "bai,brij,bcj->brac", selection, adj_batch, selection
@@ -687,9 +675,7 @@ class ModelValidation:
                     sigs_flat = sigs_np.reshape(B, -1)
                     s_chunk_cpu = flat_state_idx_list[chunk_start:chunk_end]
                     for b in range(B):
-                        per_state_pred_sigs[s_chunk_cpu[b]].add(
-                            sigs_flat[b].tobytes()
-                        )
+                        per_state_pred_sigs[s_chunk_cpu[b]].add(sigs_flat[b].tobytes())
                 print("\n")
                 print("GPU task done.")
 
@@ -713,7 +699,7 @@ class ModelValidation:
             "recall": tp_total / denom_r if denom_r else 0.0,
             "tp": tp_total,
             "fp": fp_total,
-            "fn": fn_total
+            "fn": fn_total,
         }
 
     # ──────────────────────────────────────────────────────────────────
@@ -728,7 +714,7 @@ class ModelValidation:
         """Return predicted next-state adjacencies for each grounding.
 
         Mirrors the state-dependent branch in
-        :class:`SinkhornGraphEdit.forward`:
+        :class:`PredictionModule.forward`:
 
             adj_selection = einsum("bai,brij,bcj->brac", sel, adj, sel)
             effects = softmax(effects_mlp(adj_selection))[arange(B), y_action]
@@ -771,12 +757,8 @@ class ModelValidation:
         add_effects = effects[..., 1]
         del_effects = effects[..., -1]
 
-        add_proj = torch.einsum(
-            "bai,brac,bcj->brij", selection, add_effects, selection
-        )
-        del_proj = torch.einsum(
-            "bai,brac,bcj->brij", selection, del_effects, selection
-        )
+        add_proj = torch.einsum("bai,brac,bcj->brij", selection, add_effects, selection)
+        del_proj = torch.einsum("bai,brac,bcj->brij", selection, del_effects, selection)
 
         delta = (1.0 - adj_batch) * add_proj - adj_batch * del_proj
         adj_out = (adj_batch + delta).clamp(0.0, 1.0)
@@ -788,7 +770,9 @@ class ModelValidation:
     # ──────────────────────────────────────────────────────────────────
     def _state_to_adj(self, state) -> torch.Tensor:
         adj = torch.zeros(
-            len(self.relation_names), self.num_objects, self.num_objects,
+            len(self.relation_names),
+            self.num_objects,
+            self.num_objects,
             dtype=torch.uint8,
         )
         for atom in state.get_atoms(ignore_static=False, ignore_derived=True):
@@ -818,7 +802,7 @@ class ModelValidation:
             out = adj.clone()
             N = out.shape[-1]
             eye_idx = torch.arange(N, device=out.device)
-            for r, ar in enumerate(self.relation_arities[0:adj.shape[1]]):
+            for r, ar in enumerate(self.relation_arities[0 : adj.shape[1]]):
                 if ar == 1:
                     diag = out[r, eye_idx, eye_idx].clone()
                     out[r] = 0
@@ -832,7 +816,7 @@ class ModelValidation:
             out = adj.clone()
             N = out.shape[-1]
             eye_idx = torch.arange(N, device=out.device)
-            for r, ar in enumerate(self.relation_arities[0:adj.shape[1]]):
+            for r, ar in enumerate(self.relation_arities[0 : adj.shape[1]]):
                 if ar == 1:
                     diag = out[:, r, eye_idx, eye_idx].clone()  # (B, N)
                     out[:, r] = 0

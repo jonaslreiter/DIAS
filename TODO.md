@@ -16,10 +16,10 @@ Follow-up items intentionally deferred from the initial public release.
 
 ## Code organization
 
-- Re-examine the model file (`graph_learner.py`, ~1056 lines) for
+- Re-examine the model file (`dias.py`, ~1056 lines) for
   ablation branches that are no longer exercised by the shipped configs
   and can be removed (separate from the utils pass).
-- Re-examine the model file (`graph_learner.py`) for ablation branches that
+- Re-examine the model file (`dias.py`) for ablation branches that
   are no longer exercised by the shipped configs and can be removed.
 
 ## Docs
