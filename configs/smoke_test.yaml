@@ -1,0 +1,74 @@
+# Smoke-test training config: 10 steps on blocks_3, CPU, no W&B.
+#
+# Intended for CI and quick sanity checks:
+#   dias-train fit --config configs/smoke_test.yaml
+#
+# Override domain/problem on the command line:
+#   dias-train fit --config configs/smoke_test.yaml \
+#       --data.init_args.domain_path pddl_files/satellite/domain.pddl \
+#       --data.init_args.problem_path pddl_files/satellite/train.pddl
+
+seed_everything: 0
+
+model:
+  class_path: dias.models.DIAS
+  init_args:
+    object_dim: 16
+    num_slots: 3
+    force_action_args: false
+    per_action_slots: false
+    learn_preconditions: true
+    successor_relations: false
+    random_node_embeddings: true
+    parameter_plotting: null
+    pcgrad_dyn_clip: true
+    loss_weight_schedule:
+      gmean_temperature:
+        type: linear
+        keypoints: { 0: 1.0 }
+      learning_rate:
+        type: linear
+        keypoints: { 0: 0.001 }
+      aux_loss_weight:
+        type: linear
+        keypoints: { 0: 0.2 }
+
+data:
+  class_path: dias.data.datamodule.PddlGraphDataModule
+  init_args:
+    domain_path: pddl_files/blocks_3/domain.pddl
+    problem_path: pddl_files/blocks_3/train.pddl
+    edge_remove_ratio: 0.0
+    edge_add_ratio: 0.0
+    min_per_label_train: 10
+    min_per_label_valid: 5
+    max_per_label_train: 50
+    max_per_label_valid: 25
+    seed: 0
+    include_statics: true
+    action_arguments: false
+    strips_plus_actions: false
+    batch_size: 20
+    batch_sampling_strategy: stratified
+    shuffle_train: true
+    num_workers: 0
+
+trainer:
+  max_steps: 10
+  val_check_interval: 5
+  limit_val_batches: 2
+  accelerator: cpu
+  devices: 1
+  logger:
+    class_path: lightning.pytorch.loggers.CSVLogger
+    init_args:
+      save_dir: /tmp/dias-smoke-test
+      name: smoke
+  callbacks:
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args:
+        filename: final-{epoch}-{step}
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args:
+        filename: best-epoch{epoch}-{step}
+        monitor: valid/loss_adjacency

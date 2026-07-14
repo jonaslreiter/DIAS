@@ -97,6 +97,33 @@ python scripts/run_all_domains.py \
 DIAS_GROUP=paper-main-2026 sbatch slurm/run_all_domains.sh
 ```
 
+### Baseline sweeps
+
+Run MLP-baseline or KR-2024 validation across all (domain, seed) pairs:
+
+```bash
+# MLP baseline — reuses checkpoints from a prior DIAS sweep
+python scripts/run_all_domains_mlp.py --dias-group paper-main-2026
+
+# KR-2024 baseline — validates pre-generated learned PDDL domains
+python scripts/run_all_domains_kr2024.py \
+    --learned-domains-dir path/to/kr2024_output \
+    --group paper-main-2026-kr2024
+```
+
+### Aggregating results
+
+After any sweep, aggregate per-seed JSON files into a summary table:
+
+```bash
+# Pretty table (default)
+python scripts/aggregate_results.py --group paper-main-2026
+
+# CSV for further processing
+python scripts/aggregate_results.py --group paper-main-2026 \
+    --format csv --out results/paper-main-2026.csv
+```
+
 ## Slurm (single-domain)
 
 `slurm/train.sh` is a minimal cluster-agnostic template for one training
@@ -118,18 +145,19 @@ src/dias/
 └── validation/          # ModelValidation classes (DIAS / MLP / KR2024)
 
 configs/
-└── main.yaml   # single-domain training config
+├── main.yaml            # single-domain training base
+├── smoke_test.yaml      # 10-step CPU config for CI / sanity checks
+└── validation.yaml      # validation knobs + seed list
 
 scripts/
-├── run_all_domains.py   # full sweep: train + validate for every (domain, seed)
+├── aggregate_results.py          # aggregate per-seed JSONs → paper table
+├── run_all_domains.py            # full DIAS sweep: train + validate
+├── run_all_domains_mlp.py        # MLP-baseline validation sweep
+├── run_all_domains_kr2024.py     # KR-2024 validation sweep
 └── validation/
     ├── run_dias.py
     ├── run_mlp_baseline.py
     └── run_kr2024.py
-
-configs/
-├── main.yaml   # single-domain training base
-└── validation.yaml           # validation knobs + seed list
 
 pddl_files/              # 13 paper domains + domain-settings.yaml
 slurm/
