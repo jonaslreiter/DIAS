@@ -222,7 +222,7 @@ def main() -> int:
     p.add_argument(
         "--train-config",
         type=Path,
-        default=PROJECT_ROOT / "configs" / "pddl_graph_learner.yaml",
+        default=PROJECT_ROOT / "configs" / "main.yaml",
     )
     p.add_argument(
         "--validation-config",

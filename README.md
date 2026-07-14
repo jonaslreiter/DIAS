@@ -27,12 +27,12 @@ Additional instances can be regenerated with the upstream generators:
 Train DIAS on a single domain/problem:
 
 ```bash
-dias-train fit --config configs/pddl_graph_learner.yaml
+dias-train fit --config configs/main.yaml
 ```
 
 The base config points at one `(domain_path, problem_path)` pair under
 `pddl_files/`. Edit those two fields in
-`configs/pddl_graph_learner.yaml` (or override on the CLI) to switch
+`configs/main.yaml` (or override on the CLI) to switch
 domain. Training logs and checkpoints land under `logs/`.
 
 ### Noise ablation
@@ -118,7 +118,7 @@ src/dias/
 └── validation/          # ModelValidation classes (DIAS / MLP / KR2024)
 
 configs/
-└── pddl_graph_learner.yaml   # single-domain training config
+└── main.yaml   # single-domain training config
 
 scripts/
 ├── run_all_domains.py   # full sweep: train + validate for every (domain, seed)
@@ -128,7 +128,7 @@ scripts/
     └── run_kr2024.py
 
 configs/
-├── pddl_graph_learner.yaml   # single-domain training base
+├── main.yaml   # single-domain training base
 └── validation.yaml           # validation knobs + seed list
 
 pddl_files/              # 13 paper domains + domain-settings.yaml

@@ -13,4 +13,4 @@
 
 PY=${PY:-python}
 
-$PY -m dias.main fit --config configs/pddl_graph_learner.yaml
+$PY -m dias.main fit --config configs/main.yaml
