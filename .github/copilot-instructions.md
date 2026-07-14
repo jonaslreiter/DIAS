@@ -92,6 +92,7 @@ When working on data generation or dataset code, preserve these assumptions unle
 
 Use these as conceptual ground truth when reasoning about intended behavior:
 
+- If the summary in this file is not enough and the workspace contains `local/dias-paper.pdf`, consult that local paper copy for additional modeling or experimental detail.
 - DIAS learns lifted positive preconditions, lifted negative preconditions, add effects, and delete effects.
 - Object selection is performed via a GNN plus query-slot matching with a rectangular Sinkhorn-style assignment.
 - Slot activations determine learned action arity.
