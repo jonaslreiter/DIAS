@@ -30,8 +30,6 @@ class DIAS(L.LightningModule):
         action_arities: list[int] | None = None,
         action_arg_positions: list[list[int]] | None = None,
         successor_relations: bool = False,
-        gumbel_slot_noise: bool = True,
-        gumbel_softmax: bool = True,
         random_node_embeddings: bool = True,
         parameter_plotting: Optional[dict[str, bool]] = {
             "effect_and_precondition": False,
@@ -56,8 +54,6 @@ class DIAS(L.LightningModule):
         self.learn_preconditions = learn_preconditions
         self.action_arities = action_arities
         self.successor_relations = successor_relations
-        self.gumbel_slot_noise = gumbel_slot_noise
-        self.gumbel_softmax = gumbel_softmax
         self.random_node_embeddings = random_node_embeddings
         self.pcgrad_dyn_clip = pcgrad_dyn_clip
         self.gmean_offset = gmean_offset
@@ -103,8 +99,6 @@ class DIAS(L.LightningModule):
             per_action_slots=self.per_action_slots,
             learn_preconditions=self.learn_preconditions,
             action_arities=self.action_arities,
-            gumbel_slot_noise=self.gumbel_slot_noise,
-            gumbel_softmax=self.gumbel_softmax,
             gmean_offset=self.gmean_offset,
         )
 

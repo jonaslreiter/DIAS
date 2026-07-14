@@ -26,8 +26,6 @@ class PredictionModule(nn.Module):
         per_action_slots: bool = False,
         learn_preconditions: bool = True,
         action_arities: list[int] | None = None,
-        gumbel_slot_noise: bool = False,
-        gumbel_softmax: bool = False,
         gmean_offset: float = 0.0,
     ):
         super().__init__()
@@ -39,8 +37,6 @@ class PredictionModule(nn.Module):
         self.force_action_args = force_action_args
         self.per_action_slots = per_action_slots
         self.learn_preconditions = learn_preconditions
-        self.gumbel_slot_noise = gumbel_slot_noise
-        self.gumbel_softmax = gumbel_softmax
         self.gmean_offset = gmean_offset
         self.num_relations = len(arity_relations)
 
@@ -121,23 +117,13 @@ class PredictionModule(nn.Module):
 
         embeddings_batch = node_embeddings.view(B, n_nodes, -1)
         slot_encodings = self.slot_encodings[y_action]  # (B, k, D)
-        attention = torch.bmm(slot_encodings, embeddings_batch.transpose(1, 2)) / (
+        logits = torch.bmm(slot_encodings, embeddings_batch.transpose(1, 2)) / (
             self.object_dim**0.5
         )
 
-        if self.training and self.gumbel_slot_noise:
-            gumbel_noise = (
-                torch.distributions.gumbel.Gumbel(0.0, 1.0)
-                .sample(attention.shape)
-                .to(attention.device)
-            )
-            logits = attention + gumbel_noise
-        else:
-            logits = attention
-
         # Extended logit matrix: (B, k+1, n_nodes) — slack row, no slack column.
         logits_ext = torch.zeros(
-            (B, k + 1, n_nodes), device=attention.device, dtype=torch.float32
+            (B, k + 1, n_nodes), device=logits.device, dtype=torch.float32
         )
         logits_ext[:, :-1, :] = logits
 
@@ -197,14 +183,8 @@ class PredictionModule(nn.Module):
             self._last_selection = selection.detach().cpu()
             self._last_y_action = y_action.detach().cpu()
 
-        if self.training and self.gumbel_softmax:
-            preconditions = F.gumbel_softmax(
-                self.preconditions[y_action], hard=False, dim=-1
-            )
-            effects = F.gumbel_softmax(self.effects[y_action], hard=False, dim=-1)
-        else:
-            preconditions = F.softmax(self.preconditions[y_action], dim=-1)
-            effects = F.softmax(self.effects[y_action], dim=-1)
+        preconditions = F.softmax(self.preconditions[y_action], dim=-1)
+        effects = F.softmax(self.effects[y_action], dim=-1)
 
         ignore_effects, add_effects, del_effects = (
             effects[..., 0],

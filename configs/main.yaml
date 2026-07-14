@@ -16,8 +16,6 @@ model:
     per_action_slots: false
     learn_preconditions: true
     successor_relations: true
-    gumbel_slot_noise: false
-    gumbel_softmax: false
     random_node_embeddings: true
     parameter_plotting:
       effect_and_precondition: true
