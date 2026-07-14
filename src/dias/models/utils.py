@@ -4,14 +4,12 @@ import torch
 def batched_sinkhorn_d1d2(
     log_A: torch.Tensor,
     max_iter: int = 10000,
-    temperature: float = 1.0,
     row_mask: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Batched Sinkhorn D1D2 in log-space (https://hal.science/hal-03768664)."""
     tol = 1.0e-2
     batch_size, np1, _ = log_A.shape
     n = np1 - 1
-    log_A = log_A / temperature
 
     log_x = torch.zeros(batch_size, np1, device=log_A.device, dtype=log_A.dtype)
     log_y = torch.zeros(

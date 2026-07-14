@@ -95,7 +95,6 @@ class PredictionModule(nn.Module):
         y_action_args: torch.Tensor | None = None,
         adj_dense: torch.Tensor | None = None,
         gmean_temperature: float = 1.0,
-        sinkhorn_temperature: float = 1.0,
     ):
         # Sinkhorn / log-space are float16-unsafe under AMP.
         node_embeddings = node_embeddings.float()
@@ -173,9 +172,7 @@ class PredictionModule(nn.Module):
 
                 logits_ext[b_idx, s_idx, obj_idx] = 0.0
 
-        selection_all = batched_sinkhorn_d1d2(
-            logits_ext, temperature=sinkhorn_temperature, row_mask=sinkhorn_row_mask
-        )
+        selection_all = batched_sinkhorn_d1d2(logits_ext, row_mask=sinkhorn_row_mask)
 
         if self.per_action_slots:
             selection = selection_all[:, :-1, :].clone()

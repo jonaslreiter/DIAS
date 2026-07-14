@@ -143,7 +143,6 @@ class DIAS(L.LightningModule):
             "gmean_temperature": {"type": "linear", "keypoints": {0: 1.0}},
             "learning_rate": {"type": "linear", "keypoints": {0: 0.01}},
             "aux_loss_weight": {"type": "exponential", "v0": 1.0, "vT": 1.0, "T": 1.0},
-            "sinkhorn_temperature": {"type": "linear", "keypoints": {0: 1.0}},
         }
         if loss_weight_schedule:
             defaults.update(loss_weight_schedule)
@@ -237,9 +236,6 @@ class DIAS(L.LightningModule):
             y_action=y_action,
             y_action_args=y_action_args,
             gmean_temperature=self.loss_weight_schedule_collection["gmean_temperature"],
-            sinkhorn_temperature=self.loss_weight_schedule_collection[
-                "sinkhorn_temperature"
-            ],
         )
 
         self._last_selection = self.graph_edit._last_selection
