@@ -69,7 +69,9 @@ class LossWeightScheduleCollection:
         return {name: schedule(epoch) for name, schedule in self.schedules.items()}
 
 
-def resolve_label_names(datamodule, num_actions: int, num_relations: int, num_objects: int):
+def resolve_label_names(
+    datamodule, num_actions: int, num_relations: int, num_objects: int
+):
     """Resolve action / relation / object display names from a datamodule with numeric fallbacks."""
 
     def _normalise(names, target_len, prefix):
@@ -78,8 +80,12 @@ def resolve_label_names(datamodule, num_actions: int, num_relations: int, num_ob
             lst.extend(f"{prefix} {i}" for i in range(len(lst), target_len))
         return lst[:target_len]
 
-    action_names = _normalise(getattr(datamodule, "action_names", None), num_actions, "Action")
-    relation_names = _normalise(getattr(datamodule, "relation_names", None), num_relations, "Rel")
+    action_names = _normalise(
+        getattr(datamodule, "action_names", None), num_actions, "Action"
+    )
+    relation_names = _normalise(
+        getattr(datamodule, "relation_names", None), num_relations, "Rel"
+    )
 
     obj_dict = getattr(datamodule, "object_names", None)
     if obj_dict is not None:
@@ -142,9 +148,9 @@ def add_adj_noise(
         add_ratio_per_rel = [float(add_ratio)] * R
     else:
         add_ratio_per_rel = [float(x) for x in add_ratio]
-        assert len(add_ratio_per_rel) == R, (
-            f"add_ratio length {len(add_ratio_per_rel)} != R={R}"
-        )
+        assert (
+            len(add_ratio_per_rel) == R
+        ), f"add_ratio length {len(add_ratio_per_rel)} != R={R}"
 
     noisy = adj.clone()
     for r, ar in enumerate(arities):

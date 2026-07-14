@@ -19,7 +19,9 @@ class PlotWorker:
     def __init__(self):
         self._q: queue.Queue = queue.Queue(maxsize=1)
         self._stopping = False
-        self._thread = threading.Thread(target=self._run, name="PlotWorker", daemon=True)
+        self._thread = threading.Thread(
+            target=self._run, name="PlotWorker", daemon=True
+        )
         self._thread.start()
 
     def submit(self, fn, *args, **kwargs) -> None:
@@ -65,7 +67,12 @@ def _annotate(ax, mat, k_rows, k_cols, threshold: float = 0.5) -> None:
         for j in range(k_cols):
             val = mat[i, j]
             ax.text(
-                j, i, f"{val:.2f}", ha="center", va="center", fontsize=7,
+                j,
+                i,
+                f"{val:.2f}",
+                ha="center",
+                va="center",
+                fontsize=7,
                 color="white" if abs(float(val) - threshold) > 0.3 else "black",
             )
 
@@ -80,9 +87,11 @@ def render_action_relation_heatmap(
     num_actions, num_relations, k, _ = values.shape
     slot_labels = [f"Slot {s}" for s in range(k)]
     fig, axes = plt.subplots(
-        num_actions, num_relations,
+        num_actions,
+        num_relations,
         figsize=(3 * num_relations + 1, 3 * num_actions),
-        squeeze=False, constrained_layout=True,
+        squeeze=False,
+        constrained_layout=True,
     )
 
     im = None
@@ -128,9 +137,11 @@ def render_selection_heatmap(
     node_labels = object_names[:n_nodes]
 
     fig, axes = plt.subplots(
-        num_actions, 2,
+        num_actions,
+        2,
         figsize=(max(4, 0.5 * n_nodes) + 2, 2 * num_actions),
-        squeeze=False, constrained_layout=True,
+        squeeze=False,
+        constrained_layout=True,
         gridspec_kw={"width_ratios": [n_nodes, 1]},
     )
 
@@ -170,14 +181,22 @@ def _render_and_log_validation_heatmaps(payload: dict, wandb_run) -> None:
     media: dict = {}
     for values, title, log_key in payload.get("components", []):
         media[log_key] = render_action_relation_heatmap(
-            values, payload["action_names"], payload["relation_names"], title, payload["epoch"],
+            values,
+            payload["action_names"],
+            payload["relation_names"],
+            title,
+            payload["epoch"],
         )
 
     samples = payload.get("selection_samples")
     slot_weights = payload.get("selection_slot_weights")
     if samples and slot_weights:
         media["selection_heatmap"] = render_selection_heatmap(
-            samples, slot_weights, payload["action_names"], payload["object_names"], payload["epoch"],
+            samples,
+            slot_weights,
+            payload["action_names"],
+            payload["object_names"],
+            payload["epoch"],
         )
 
     if media:
@@ -211,13 +230,33 @@ def queue_validation_heatmaps(model) -> None:
             precond_probs = F.softmax(model.graph_edit.preconditions.detach(), dim=-1)
             effect_probs = F.softmax(model.graph_edit.effects.detach(), dim=-1)
             payload["components"] = [
-                (effect_probs[..., 1].cpu().numpy(), "Add Effects", "add_effects_heatmap"),
-                (effect_probs[..., -1].cpu().numpy(), "Delete Effects", "delete_effects_heatmap"),
-                (precond_probs[..., 1].cpu().numpy(), "Positive Preconditions", "positive_preconditions_heatmap"),
-                (precond_probs[..., -1].cpu().numpy(), "Negative Preconditions", "negative_preconditions_heatmap"),
+                (
+                    effect_probs[..., 1].cpu().numpy(),
+                    "Add Effects",
+                    "add_effects_heatmap",
+                ),
+                (
+                    effect_probs[..., -1].cpu().numpy(),
+                    "Delete Effects",
+                    "delete_effects_heatmap",
+                ),
+                (
+                    precond_probs[..., 1].cpu().numpy(),
+                    "Positive Preconditions",
+                    "positive_preconditions_heatmap",
+                ),
+                (
+                    precond_probs[..., -1].cpu().numpy(),
+                    "Negative Preconditions",
+                    "negative_preconditions_heatmap",
+                ),
             ]
 
-    if plot_selection and model._last_selection is not None and model._last_y_action is not None:
+    if (
+        plot_selection
+        and model._last_selection is not None
+        and model._last_y_action is not None
+    ):
         selection = model._last_selection.numpy()
         y_action = model._last_y_action.numpy()
         samples: dict = {}
@@ -226,7 +265,11 @@ def queue_validation_heatmaps(model) -> None:
             samples.setdefault(a, selection[idx].copy())
         if samples:
             with torch.no_grad():
-                all_sw = torch.sigmoid(model.graph_edit.slot_weight_logits.detach()).cpu().numpy()
+                all_sw = (
+                    torch.sigmoid(model.graph_edit.slot_weight_logits.detach())
+                    .cpu()
+                    .numpy()
+                )
             payload["selection_samples"] = samples
             payload["selection_slot_weights"] = {a: all_sw[a] for a in samples}
 
