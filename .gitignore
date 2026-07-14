@@ -31,3 +31,4 @@ slurm/*.err
 # Local data caches
 *.pt
 data/samples*.pt
+local/
