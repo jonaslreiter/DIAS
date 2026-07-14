@@ -2,44 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from dias.models.utils import batched_sinkhorn_d1d2
 from dias.utils import gmean
-
-
-def _batched_sinkhorn_d1d2(
-    log_A: torch.Tensor,
-    max_iter: int = 10000,
-    temperature: float = 1.0,
-    row_mask: torch.Tensor | None = None,
-) -> torch.Tensor:
-    """Batched Sinkhorn D1D2 in log-space (https://hal.science/hal-03768664)."""
-    tol = 1.0e-2
-    B_size, np1, _ = log_A.shape
-    n = np1 - 1
-    log_A = log_A / temperature
-
-    log_x = torch.zeros(B_size, np1, device=log_A.device, dtype=log_A.dtype)
-    log_y = torch.zeros(B_size, log_A.size(-1), device=log_A.device, dtype=log_A.dtype)
-    if row_mask is not None:
-        log_x = log_x.masked_fill(row_mask, -torch.inf)
-
-    for _ in range(max_iter):
-        log_x_prev, log_y_prev = log_x, log_y
-        log_x = -torch.logsumexp(log_A + log_y.unsqueeze(-2), dim=-1)
-        log_x[:, n] = 0.0  # slack row stays unscaled
-        if row_mask is not None:
-            log_x = log_x.masked_fill(row_mask, -torch.inf)
-        log_y = -torch.logsumexp(log_A + log_x.unsqueeze(-1), dim=-2)
-
-        if (
-            max(
-                (log_x - log_x_prev).abs().max(),
-                (log_y - log_y_prev).abs().max(),
-            )
-            < tol
-        ):
-            break
-
-    return torch.exp(log_x.unsqueeze(-1) + log_A + log_y.unsqueeze(-2))
 
 
 class PredictionModule(nn.Module):
@@ -209,7 +173,7 @@ class PredictionModule(nn.Module):
 
                 logits_ext[b_idx, s_idx, obj_idx] = 0.0
 
-        selection_all = _batched_sinkhorn_d1d2(
+        selection_all = batched_sinkhorn_d1d2(
             logits_ext, temperature=sinkhorn_temperature, row_mask=sinkhorn_row_mask
         )
 

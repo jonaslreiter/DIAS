@@ -11,6 +11,7 @@ from dias.utils.plotting import PlotWorker, queue_validation_heatmaps
 
 from .gnn import GNNModule
 from .prediction import PredictionModule
+from .utils import build_relation_change_edges
 
 
 class DIAS(L.LightningModule):
@@ -163,61 +164,6 @@ class DIAS(L.LightningModule):
             [p for p in self.parameters() if p.requires_grad], lr=self.learning_rate
         )
 
-    def _encode_relation_edges(self, edge_index, edge_type, num_nodes: int):
-        if edge_type.numel() == 0:
-            return edge_type.new_empty((0,), dtype=torch.long)
-        src, dst = edge_index
-        return (
-            src.long() * num_nodes + dst.long()
-        ) * self.num_relations + edge_type.long()
-
-    def _build_relation_change_edges(self, batch_s1, batch_s2):
-        empty_ei = batch_s1.edge_index.new_empty((2, 0))
-        empty_et = batch_s1.edge_attr.new_empty((0,))
-        if batch_s2 is None:
-            return empty_ei, empty_et
-
-        total_nodes = batch_s1.batch.size(0)
-        s1_codes = self._encode_relation_edges(
-            batch_s1.edge_index, batch_s1.edge_attr, total_nodes
-        )
-        s2_codes = self._encode_relation_edges(
-            batch_s2.edge_index, batch_s2.edge_attr, total_nodes
-        )
-
-        deleted = ~torch.isin(s1_codes, s2_codes)
-        added = ~torch.isin(s2_codes, s1_codes)
-        base = 2 * self.num_relations + self.num_action_relations
-        R = self.num_relations
-
-        ei_parts: list[torch.Tensor] = []
-        et_parts: list[torch.Tensor] = []
-
-        def add_block(ei, et, offset_fwd, offset_rev):
-            ei_parts.append(ei)
-            et_parts.append(et + offset_fwd)
-            ei_parts.append(ei.flip(0))
-            et_parts.append(et + offset_rev)
-
-        if deleted.any():
-            add_block(
-                batch_s1.edge_index[:, deleted],
-                batch_s1.edge_attr[deleted],
-                base,
-                base + R,
-            )
-        if added.any():
-            add_block(
-                batch_s2.edge_index[:, added],
-                batch_s2.edge_attr[added],
-                base + 2 * R,
-                base + 3 * R,
-            )
-
-        if not ei_parts:
-            return empty_ei, empty_et
-        return torch.cat(ei_parts, dim=1), torch.cat(et_parts, dim=0)
-
     def forward(self, batch_s1, batch_s2=None):
         edge_index = batch_s1.edge_index
         edge_type = batch_s1.edge_attr
@@ -267,7 +213,12 @@ class DIAS(L.LightningModule):
         dyn_et_parts = [edge_type, edge_type_rev, rel_types]
 
         if self.successor_relations and batch_s2 is not None:
-            ch_ei, ch_et = self._build_relation_change_edges(batch_s1, batch_s2)
+            ch_ei, ch_et = build_relation_change_edges(
+                batch_s1,
+                batch_s2,
+                num_relations=self.num_relations,
+                num_action_relations=self.num_action_relations,
+            )
             if ch_et.numel() > 0:
                 dyn_ei_parts.append(ch_ei)
                 dyn_et_parts.append(ch_et)
