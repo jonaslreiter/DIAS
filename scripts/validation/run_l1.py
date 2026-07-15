@@ -1,13 +1,13 @@
-"""Validate a learned PDDL domain (KR-2024 baseline format) on a problem.
+"""Validate an L1 learned PDDL domain on a problem.
 
 Unlike the DIAS / MLP runners this one does not load a torch checkpoint —
-the KR-2024 baseline produces a *symbolic* PDDL domain file directly. We
+L1 produces a *symbolic* PDDL domain file directly. We
 compare it to the ground-truth (original) domain on a given problem.
 
 Usage:
-    python scripts/validation/run_kr2024.py \
+    python scripts/validation/run_l1.py \
         --original-domain pddl_files/satellite/domain.pddl \
-        --learned-domain  path/to/kr2024_learned/satellite.pddl \
+        --learned-domain  path/to/l1_learned/satellite.pddl \
         --problem         pddl_files/satellite/train.pddl
 """
 
@@ -17,7 +17,7 @@ import argparse
 import json
 from pathlib import Path
 
-from dias.validation.kr2024 import ModelValidation
+from dias.validation.l1 import ModelValidation
 
 
 def main() -> None:

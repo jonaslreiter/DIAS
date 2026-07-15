@@ -3,9 +3,8 @@
 **DIAS** — _Differentiable Induction of Action Schemas._
 Code accompanying our NeurIPS 2026 paper.
 
-> **Status:** initial public release. Single-domain training and the
-> per-checkpoint MLP / KR2024 baseline validation are supported.
-> Multi-seed sweep reproduction is deferred — see [`TODO.md`](TODO.md).
+> **Status:** initial public release. Single-domain training, DIAS sweeps,
+> and per-checkpoint MLP / L1 baseline validation are supported.
 
 ## Installation
 
@@ -51,9 +50,8 @@ Set both to `0.0` for the clean setup.
 
 ## Baseline validation
 
-The shipped runners validate a single checkpoint (or learned PDDL
-domain) on a single PDDL problem. Multi-seed aggregation lives in the
-deferred sweep pipeline (see [`TODO.md`](TODO.md)).
+The shipped runners validate a single checkpoint (or learned PDDL domain)
+on a single PDDL problem.
 
 ```bash
 # DIAS model on a problem
@@ -66,10 +64,10 @@ python scripts/validation/run_mlp_baseline.py \
     --model-id <wandb-run-id> \
     --problem  pddl_files/satellite/train.pddl
 
-# KR2024 baseline (compares a *learned* PDDL domain against the ground truth)
-python scripts/validation/run_kr2024.py \
+# L1 baseline (compares a *learned* PDDL domain against the ground truth)
+python scripts/validation/run_l1.py \
     --original-domain pddl_files/satellite/domain.pddl \
-    --learned-domain  path/to/kr2024_learned/satellite.pddl \
+    --learned-domain  path/to/l1_learned/satellite.pddl \
     --problem         pddl_files/satellite/train.pddl
 ```
 
@@ -115,7 +113,7 @@ src/dias/
 ├── models/              # DIAS model + components
 ├── data/                # PDDL datamodule + sample generation
 ├── utils/               # schedules, noise, adjacency↔PyG helpers
-└── validation/          # ModelValidation classes (DIAS / MLP / KR2024)
+└── validation/          # ModelValidation classes (DIAS / MLP / L1)
 
 configs/
 └── main.yaml   # single-domain training config
@@ -125,7 +123,7 @@ scripts/
 └── validation/
     ├── run_dias.py
     ├── run_mlp_baseline.py
-    └── run_kr2024.py
+    └── run_l1.py
 
 configs/
 ├── main.yaml   # single-domain training base

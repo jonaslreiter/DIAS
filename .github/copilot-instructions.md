@@ -56,11 +56,11 @@ When working on data generation or dataset code, preserve these assumptions unle
 - `src/dias/models/gnn.py`: graph encoder components.
 - `src/dias/models/prediction.py`: prediction logic and related components.
 - `src/dias/validation/dias_validate.py`: reconstruct learned schemas from checkpoints and compare successor-state behavior.
-- `src/dias/validation/kr2024.py`: KR2024-style validation logic.
+- `src/dias/validation/l1.py`: L1 validation logic.
 - `src/dias/validation/mlp_baseline.py`: MLP-effects baseline validation.
 - `src/dias/validation/transpiler.py`: transpilation from learned tensors to PDDL-like action schema output.
 - `scripts/run_all_domains.py`: full train-plus-validate sweep over `(domain, seed)` pairs.
-- `scripts/validation/run_dias.py`, `run_kr2024.py`, `run_mlp_baseline.py`: single-checkpoint validation entry points.
+- `scripts/validation/run_dias.py`, `run_l1.py`, `run_mlp_baseline.py`: single-checkpoint validation entry points.
 
 ## Training Conventions
 

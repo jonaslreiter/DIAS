@@ -10,7 +10,7 @@ Follow-up items intentionally deferred from the initial public release.
   (P, R, N_S, N_C, N_SC) aggregated over the 10 seeds per domain still
   need a dedicated collector. Port `scripts/aggregate_mlp_baseline_results.py`
   conceptually to read these JSONs (or the W&B group) and emit the table.
-- **MLP / KR2024 baseline sweeps.** `scripts/run_all_domains.py` covers
+- **MLP / L1 baseline sweeps.** `scripts/run_all_domains.py` covers
   the DIAS model. Add analogous orchestrators for the baselines so the
   full paper grid can be reproduced from this repo alone.
 
