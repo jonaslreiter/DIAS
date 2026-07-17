@@ -7,3 +7,5 @@ numpy
 pyyaml
 matplotlib
 wandb
+pytest
+coverage
