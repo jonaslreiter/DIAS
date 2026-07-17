@@ -46,7 +46,6 @@ class DIAS(L.LightningModule):
         self.arity_relations = arity_relations
         self.num_actions = num_actions
         self.object_dim = object_dim
-        self.batch_size = batch_size
         self.learning_rate = learning_rate
         self.parameter_plotting = parameter_plotting
         self.force_action_args = force_action_args
@@ -105,7 +104,6 @@ class DIAS(L.LightningModule):
         # Action self-loop relation types: one per (action, active-position) pair.
         if action_arg_positions is None:
             action_arg_positions = [[] for _ in range(self.num_actions)]
-        self.action_arg_positions = action_arg_positions
 
         max_arity = max(
             (max(pos) + 1 if pos else 0 for pos in action_arg_positions), default=0
@@ -164,7 +162,7 @@ class DIAS(L.LightningModule):
         y_action_args = batch_s1.y_action_args  # (B, max_arity)
         total_nodes = batch_s1.batch.size(0)
 
-        z_a_action = torch.zeros(
+        initial_node_embeddings = torch.zeros(
             total_nodes,
             self.object_dim,
             device=self.device,
@@ -172,38 +170,51 @@ class DIAS(L.LightningModule):
         )
         if self.random_node_embeddings:
             half = self.object_dim // 2
-            z_a_action[:, :half] = 0.1 * torch.randn(
+            initial_node_embeddings[:, :half] = 0.1 * torch.randn(
                 total_nodes, half, device=self.device, dtype=torch.float32
             )
 
         # Reverse-edge relations are offset by num_relations.
-        edge_index_rev = edge_index.flip(0)
-        edge_type_rev = edge_type + self.num_relations
+        reverse_edge_index = edge_index.flip(0)
+        reverse_edge_type = edge_type + self.num_relations
 
         # Action self-loops: arg at position p of action a -> self-loop on object
         # with relation type 2*num_relations + lookup[a, p].
-        B = y_action.size(0)
-        args = y_action_args
+        batch_size = y_action.size(0)
+        action_arguments = y_action_args
         lookup_arity = self._action_rel_lookup.size(1)
-        if args.size(1) < lookup_arity:
-            args = F.pad(args, (0, lookup_arity - args.size(1)), value=-1)
-        elif args.size(1) > lookup_arity:
-            args = args[:, :lookup_arity]
+        if action_arguments.size(1) < lookup_arity:
+            action_arguments = F.pad(
+                action_arguments,
+                (0, lookup_arity - action_arguments.size(1)),
+                value=-1,
+            )
+        elif action_arguments.size(1) > lookup_arity:
+            action_arguments = action_arguments[:, :lookup_arity]
 
-        b_idx, p_idx = (args >= 0).nonzero(as_tuple=True)
-        compact_idx = self._action_rel_lookup[y_action[b_idx], p_idx]
-        used = compact_idx >= 0
-        b_idx, p_idx, compact_idx = b_idx[used], p_idx[used], compact_idx[used]
-
-        global_node_idx = (
-            torch.arange(B, device=self.device)[b_idx] * self.num_objects
-            + args[b_idx, p_idx]
+        batch_indices, argument_positions = (action_arguments >= 0).nonzero(
+            as_tuple=True
         )
-        self_loop_ei = torch.stack([global_node_idx, global_node_idx], dim=0)
-        rel_types = 2 * self.num_relations + compact_idx
+        action_relation_indices = self._action_rel_lookup[
+            y_action[batch_indices], argument_positions
+        ]
+        used_positions = action_relation_indices >= 0
+        batch_indices = batch_indices[used_positions]
+        argument_positions = argument_positions[used_positions]
+        action_relation_indices = action_relation_indices[used_positions]
 
-        dyn_ei_parts = [edge_index, edge_index_rev, self_loop_ei]
-        dyn_et_parts = [edge_type, edge_type_rev, rel_types]
+        action_argument_nodes = (
+            torch.arange(batch_size, device=self.device)[batch_indices]
+            * self.num_objects
+            + action_arguments[batch_indices, argument_positions]
+        )
+        action_edge_index = torch.stack(
+            [action_argument_nodes, action_argument_nodes], dim=0
+        )
+        action_edge_type = 2 * self.num_relations + action_relation_indices
+
+        dynamics_edge_indices = [edge_index, reverse_edge_index, action_edge_index]
+        dynamics_edge_types = [edge_type, reverse_edge_type, action_edge_type]
 
         if self.successor_relations and batch_s2 is not None:
             ch_ei, ch_et = build_relation_change_edges(
@@ -213,17 +224,17 @@ class DIAS(L.LightningModule):
                 num_action_relations=self.num_action_relations,
             )
             if ch_et.numel() > 0:
-                dyn_ei_parts.append(ch_ei)
-                dyn_et_parts.append(ch_et)
+                dynamics_edge_indices.append(ch_ei)
+                dynamics_edge_types.append(ch_et)
 
-        z_b_dyn = self.dynamics_model(
-            z_a_action,
-            torch.cat(dyn_ei_parts, dim=1),
-            torch.cat(dyn_et_parts, dim=0),
+        encoded_node_embeddings = self.dynamics_model(
+            initial_node_embeddings,
+            torch.cat(dynamics_edge_indices, dim=1),
+            torch.cat(dynamics_edge_types, dim=0),
         )
 
-        out = self.graph_edit(
-            node_embeddings=z_b_dyn,
+        prediction = self.graph_edit(
+            node_embeddings=encoded_node_embeddings,
             edge_index=edge_index,
             edge_type=edge_type,
             batch_idx=batch_s1.batch,
@@ -234,9 +245,9 @@ class DIAS(L.LightningModule):
 
         self._last_selection = self.graph_edit._last_selection
         self._last_y_action = self.graph_edit._last_y_action
-        return out
+        return prediction
 
-    def step(self, batch, batch_idx, validation: bool = False):
+    def step(self, batch):
         batch_s1, batch_s2, *_ = batch
         (
             adj_out_probs,
@@ -307,10 +318,6 @@ class DIAS(L.LightningModule):
             "pre_prod_mean": self.graph_edit._last_pre_prod_mean,
         }
 
-    def _combined_loss(self, results: Mapping[str, torch.Tensor]) -> torch.Tensor:
-        w = self.loss_weight_schedule_collection
-        return results["loss_adjacency"] + w["aux_loss_weight"] * results["loss_aux"]
-
     def on_train_batch_start(self, batch, batch_idx):
         # x-axis is global_step (not epoch) so schedules advance per optimizer step.
         self.loss_weight_schedule_collection.update_loss_weights(self.global_step)
@@ -369,7 +376,7 @@ class DIAS(L.LightningModule):
         opt.zero_grad()
         self._log_noise(batch[0])
 
-        results = self.step(batch, batch_idx)
+        results = self.step(batch)
         loss_adj = results["loss_adjacency"]
         loss_aux = results["loss_aux"]
         aux_w = self.loss_weight_schedule_collection["aux_loss_weight"]
@@ -433,9 +440,13 @@ class DIAS(L.LightningModule):
         self.manual_backward_done = True
         return None
 
-    def _eval_step(self, prefix: str, batch, batch_idx) -> torch.Tensor:
-        results = self.step(batch, batch_idx, validation=True)
-        combined = self._combined_loss(results)
+    def _eval_step(self, prefix: str, batch) -> torch.Tensor:
+        results = self.step(batch)
+        combined = (
+            results["loss_adjacency"]
+            + self.loss_weight_schedule_collection["aux_loss_weight"]
+            * results["loss_aux"]
+        )
         self.log_results(
             prefix,
             {
@@ -450,10 +461,10 @@ class DIAS(L.LightningModule):
         return combined
 
     def validation_step(self, batch, batch_idx):
-        return self._eval_step("valid", batch, batch_idx)
+        return self._eval_step("valid", batch)
 
     def test_step(self, batch, batch_idx):
-        return self._eval_step("test", batch, batch_idx)
+        return self._eval_step("test", batch)
 
     def on_validation_epoch_end(self):
         if self.parameter_plotting:
@@ -476,19 +487,10 @@ class DIAS(L.LightningModule):
         for key, value in results.items():
             if isinstance(value, torch.Tensor) and value.isnan():
                 continue
-            if key.startswith("timing_"):
-                self.log(
-                    f"timing/{key[7:]}",
-                    value,
-                    prog_bar=False,
-                    on_step=is_train,
-                    on_epoch=not is_train,
-                )
-            else:
-                self.log(
-                    f"{prefix}/{key}",
-                    value,
-                    prog_bar=(key == "loss"),
-                    on_step=is_train,
-                    on_epoch=not is_train,
-                )
+            self.log(
+                f"{prefix}/{key}",
+                value,
+                prog_bar=(key == "loss"),
+                on_step=is_train,
+                on_epoch=not is_train,
+            )

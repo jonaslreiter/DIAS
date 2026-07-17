@@ -39,17 +39,13 @@ class DIASForwardTest(unittest.TestCase):
         )
 
         torch.manual_seed(23)
-        forward_result = model(
+        prediction = model(
             Batch.from_data_list([state]), Batch.from_data_list([next_state])
         )
 
-        self.assertEqual(forward_result.successor_adjacency.shape, (1, 2, 2, 2))
-        self.assertAlmostEqual(
-            forward_result.successor_adjacency.sum().item(), 2.2219810485839844
-        )
-        self.assertAlmostEqual(
-            forward_result.state_change.delta.sum().item(), 0.2367774397134781
-        )
+        self.assertEqual(prediction[0].shape, (1, 2, 2, 2))
+        self.assertAlmostEqual(prediction[0].sum().item(), 2.2219810485839844)
+        self.assertAlmostEqual(prediction[-1].sum().item(), 0.2367774397134781)
 
 
 if __name__ == "__main__":

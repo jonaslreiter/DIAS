@@ -9,9 +9,6 @@ class GNNModule(nn.Module):
     def __init__(self, latent_dim: int, number_relations: int):
         super().__init__()
 
-        self.latent_dim = latent_dim
-        self.number_relations = number_relations
-
         self.conv1 = FastRGCNConv(latent_dim, 32, number_relations, aggr="add")
         self.conv2 = FastRGCNConv(32, 64, number_relations, aggr="add")
         self.conv3 = FastRGCNConv(64, 64, number_relations, aggr="add")

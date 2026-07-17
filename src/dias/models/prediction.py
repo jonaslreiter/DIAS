@@ -30,8 +30,6 @@ class PredictionModule(nn.Module):
     ):
         super().__init__()
         self.num_objects = num_objects
-        self.arity_relations = arity_relations
-        self.num_actions = num_actions
         self.num_slots = num_slots
         self.object_dim = object_dim
         self.force_action_args = force_action_args
