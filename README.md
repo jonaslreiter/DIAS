@@ -1,7 +1,7 @@
 # DIAS
 
 **DIAS** — _Differentiable Induction of Action Schemas._
-Code accompanying our NeurIPS 2026 paper.
+Code accompanying our paper.
 
 > **Status:** initial public release. Single-domain training, DIAS sweeps,
 > and per-checkpoint MLP / L1 baseline validation are supported.

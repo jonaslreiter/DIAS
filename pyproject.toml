@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "dias"
 version = "0.1.0"
-description = "DIAS: Differentiable Induction of Action Schemas (NeurIPS 2026)"
+description = "DIAS: Differentiable Induction of Action Schemas"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
