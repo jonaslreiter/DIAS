@@ -11,29 +11,35 @@
 # Fill in real per-domain values as needed; an empty {} means "use defaults".
 
 defaults:
-  time: "10:00:00"
-  mem: "32G"
-  cpus: "8"
-  gres: "shard:8"
+  time: "02:00:00"
+  mem: "8G"
+  cpus: "4"
+  gres: "shard:4"
 
-blocks-3:
-  time: "02:00:00"
-  mem: "4G"
-  cpus: "4"
-  gres: "shard:4"
-delivery: {}
-driverlog: {}
-gripper:
-  time: "02:00:00"
-  mem: "4G"
-  cpus: "4"
-  gres: "shard:4"
+blocks-3: {}
+delivery:
+  time: "03:00:00"
+  gres: "shard:8"
+driverlog:
+  time: "04:00:00"
+  gres: "shard:8"
+gripper: {}
 hanoi: {}
-logistics: {}
+logistics:
+  time: "03:00:00"
 miconic: {}
 n-puzzle: {}
-satellite: {}
-sokoban: {}
-sokoban-pull: {}
-spanner: {}
-visitall: {}
+satellite:
+  time: "06:00:00"
+  gres: "shard:12"
+sokoban:
+  time: "03:00:00"
+  mem: "12G"
+  gres: "shard:8"
+sokoban-pull:
+  gres: "shard:8"
+spanner:
+  time: "03:00:00"
+  gres: "shard:8"
+visitall:
+  gres: "shard:8"
