@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61", "wheel"]
+requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,21 +8,11 @@ version = "0.1.0"
 description = "DIAS: Differentiable Induction of Action Schemas"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { file = "LICENSE" }
-dependencies = [
-    "torch>=2.0",
-    "pymimir==0.13.62",
-    "lightning",
-    "jsonargparse[signatures]>=4.27.7",
-    "torch-geometric",
-    "numpy",
-    "pyyaml",
-    "matplotlib",
-    "wandb",
-]
-
-[project.scripts]
-dias-train = "dias.main:main"
+license = "MIT"
+dynamic = ["dependencies"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
