@@ -1,0 +1,135 @@
+# DIAS Agent Instructions
+
+This file is the permanent repository-level guidance for AI coding agents (GitHub Copilot, Claude Code, and others) working in this workspace. Keep it up to date when the codebase, pipeline, naming, or experiment conventions change.
+
+## Purpose
+
+DIAS means Differentiable Induction of Action Schemas. The repository implements the training, validation, and experiment pipeline for learning lifted STRIPS-like action schemas from PDDL state transitions, matching the paper "Differentiable Learning of Lifted Action Schemas for Classical Planning".
+
+The core problem setting is:
+
+- Inputs are state-transition triplets `<s, a, s'>` sampled from a single planning problem.
+- States are symbolic PDDL states represented through unary and binary predicates.
+- Depending on the experiment, action labels may be full STRIPS actions, STRIPS+ actions, or action names only.
+- The goal is to learn lifted preconditions and lifted add/delete effects for each action schema.
+
+## Repository Truths
+
+- The installable package is `dias`, defined via `pyproject.toml` with console entry point `dias-train = dias.main:main`.
+- Main source code lives under `src/dias/`.
+- PDDL assets live under `pddl_files/`.
+- The per-domain manifest is `pddl_files/domain-settings.yaml`.
+- Validation sweep settings live in `configs/validation.yaml`.
+- The current single-domain base training config in this workspace is `configs/main.yaml`.
+- Standardized PDDL filenames per domain are `domain.pddl`, `train.pddl`, `test-1.pddl`, `test-2.pddl`, `test-3.pddl`, and `strips+.yaml`.
+
+## High-Level Pipeline
+
+The end-to-end DIAS pipeline is:
+
+1. Load one PDDL domain and one problem instance.
+2. Build symbolic transition samples from random-walk or BFS-based state exploration.
+3. Convert symbolic states into adjacency-tensor and PyG graph representations.
+4. Train the DIAS model with Lightning using stratified or random batching.
+5. Recover learned lifted action schemas from trained model parameters.
+6. Validate learned schemas by comparing reachable successor states against the original domain on held-out problems.
+7. Run this per `(domain, seed)` pair for sweep experiments and log results to W&B plus local JSON summaries.
+
+## Training Data Semantics
+
+When working on data generation or dataset code, preserve these assumptions unless a task explicitly changes them:
+
+- Only unary and binary predicates are supported.
+- Action binding is assumed injective.
+- Pure STRIPS-style action schemas are the default target.
+- Domain predicates are assumed known.
+- Training samples come from a single problem instance per domain.
+- For full sweep experiments, training uses `problems[0]` from `pddl_files/domain-settings.yaml`.
+- Validation uses later problems according to `configs/validation.yaml`, currently offset from the manifest by `problem_offset` and limited by `num_problems`.
+
+## Core Code Map
+
+- `src/dias/main.py`: Lightning CLI entry point for training.
+- `src/dias/data/datamodule.py`: PDDL loading, metadata extraction, sampling constraints, dataset construction, batching strategy, and optional adjacency noise.
+- `src/dias/data/generate_samples.py`: symbolic sample generation utilities.
+- `src/dias/models/dias.py`: main DIAS architecture.
+- `src/dias/models/gnn.py`: graph encoder components.
+- `src/dias/models/prediction.py`: prediction logic and related components.
+- `src/dias/validation/dias_validate.py`: reconstruct learned schemas from checkpoints and compare successor-state behavior.
+- `src/dias/validation/l1.py`: L1 validation logic.
+- `src/dias/validation/mlp_baseline.py`: MLP-effects baseline validation.
+- `src/dias/validation/transpiler.py`: transpilation from learned tensors to PDDL-like action schema output.
+- `scripts/run_all_domains.py`: full train-plus-validate sweep over `(domain, seed)` pairs.
+- `scripts/validation/run_dias.py`, `run_l1.py`, `run_mlp_baseline.py`: single-checkpoint validation entry points.
+
+## Training Conventions
+
+- Prefer the installed CLI entry point `dias-train fit --config configs/main.yaml` for single-domain training unless a script explicitly uses `python -m dias.main`.
+- The default logger is W&B with project name `dias` and save directory `logs`.
+- Training checkpoints are expected under `logs/dias/<run_id>/checkpoints/`.
+- Validation code looks for a checkpoint matching `best-epoch*.ckpt`; preserve this naming unless the validation loader is updated in the same change.
+- `src/dias/main.py` links datamodule metadata such as numbers of objects, actions, and relations into model init args through LightningCLI. Keep these interfaces synchronized.
+- The default batching strategy in `configs/main.yaml` is `stratified`, which yields an effectively unbounded iterable dataset; training length is therefore controlled by `trainer.max_steps` and related trainer limits, not dataset exhaustion.
+- Noise ablations are controlled via `edge_remove_ratio` and `edge_add_ratio` in the datamodule config.
+
+## Validation Conventions
+
+- Validation is behavior-based, not string-based. The important metric is whether the learned domain produces the same successor states as the original domain.
+- For DIAS checkpoints, `ModelValidation` reconstructs learned lifted schemas from model logits and merges them with transformed original actions into temporary untyped PDDL files.
+- Validation samples states from held-out problems and compares original versus learned reachable successor sets.
+- Sweep validation writes local results to `logs/validation/<group>/<domain>/seed<seed>.json`.
+- If checkpoint layout, run directory layout, or logger naming changes, update validation loaders and sweep scripts together.
+
+## Sweep Conventions
+
+- `scripts/run_all_domains.py` is the authoritative sweep runner.
+- One run corresponds to one `(domain, seed)` pair.
+- Domain-specific sample bounds and overrides come from `pddl_files/domain-settings.yaml`.
+- Global validation settings such as seed list, number of validation problems, and sampling counts come from `configs/validation.yaml`.
+- Slurm wrappers under `slurm/` should stay thin and defer experiment semantics to Python scripts and YAML configs.
+
+## Paper-Level Modeling Notes
+
+Use these as conceptual ground truth when reasoning about intended behavior:
+
+- If the summary in this file is not enough and the workspace contains `local/dias-paper.pdf`, consult that local paper copy for additional modeling or experimental detail.
+- DIAS learns lifted positive preconditions, lifted negative preconditions, add effects, and delete effects.
+- Object selection is performed via a GNN plus query-slot matching with a rectangular Sinkhorn-style assignment.
+- Slot activations determine learned action arity.
+- Successor-state prediction is trained from observed state transitions.
+- Auxiliary losses encourage minimal effects and restrictive preconditions, while PCGrad-style handling prevents auxiliary objectives from overriding the main prediction objective.
+- Evaluation is based on soundness and completeness of induced successor-state behavior on held-out problems.
+
+## Editing Rules For This Repository
+
+- Prefer minimal, behavior-preserving changes.
+- Preserve the distinction between single-domain training, per-checkpoint validation, and full sweep orchestration.
+- Do not silently change experiment semantics stored in YAML manifests or config defaults without updating the relevant documentation and runners.
+- Treat `pddl_files/domain-settings.yaml` as the source of truth for per-domain paths and sample settings.
+- Keep standardized filenames in `pddl_files/` intact unless there is an explicit migration.
+- When changing path conventions, update code, configs, docs, and validation scripts in the same task.
+- When changing checkpoint naming, W&B directory layout, or logger config, verify all validation entry points still resolve checkpoints correctly.
+- When changing datamodule arguments, check both CLI config compatibility and checkpoint reload compatibility.
+- Preserve compatibility with older checkpoints where practical; this repository already contains legacy-hparam filtering in validation code for that reason.
+
+## Documentation Rules
+
+- When documenting commands, prefer the commands that match the current workspace state, especially `configs/main.yaml` and `configs/validation.yaml`.
+- If you encounter stale references to `configs/main.yaml`, either update them or clearly mark them as stale.
+- Keep explanations aligned with the paper: symbolic states are fully observed in this repository pipeline, while action supervision varies by experiment.
+- Prefer precise planning terminology: predicates, lifted action schemas, preconditions, add effects, delete effects, successor states, STRIPS, and STRIPS+.
+
+## Maintenance Policy
+
+Whenever working in this repository, update this file if any of the following change:
+
+- main entry points
+- config filenames or locations
+- logging or checkpoint layout
+- sweep procedure
+- validation procedure
+- PDDL dataset layout
+- terminology or modeling assumptions that future code changes should respect
+- file or folder or parameter names
+
+If there is a conflict between this file and the code, fix the file after confirming the code path that is actually used.
