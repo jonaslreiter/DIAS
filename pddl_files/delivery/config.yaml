@@ -8,3 +8,9 @@ data:
     min_per_label_valid: 500
     max_per_label_train: 2000
     max_per_label_valid: 1000
+model:
+  init_args:
+    loss_weight_schedule:
+      aux_loss_weight:
+        type: linear
+        keypoints: { 0: 0.1 }
