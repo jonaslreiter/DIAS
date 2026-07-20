@@ -12,9 +12,9 @@
 
 defaults:
   time: "02:00:00"
-  mem: "32G"
+  mem: "24G"
   cpus: 8
-  gres: "gpu:1"
+  gres: "shard:8"
 
 blocks-3: {}
 delivery: {}

@@ -1,5 +1,6 @@
 #!/usr/bin/env zsh
 #SBATCH --job-name=dias-train
+#SBATCH --partition=rleap_gpu_24gb,rleap_gpu_48gb
 #SBATCH --output=slurm/logs/%x-%A_%a.out
 #
 # DIAS training array task. Do NOT run directly — submit via
@@ -19,7 +20,7 @@ RUN_ID=$(echo "${EXPERIMENT}-${DOMAIN}-s${SEED}" | sed 's/[^0-9A-Za-z_-]/-/g')
 
 echo "train  domain=$DOMAIN  seed=$SEED  run_id=$RUN_ID"
 
-dias-train fit "$@" \
+python -m dias.main fit "$@" \
   --seed_everything "$SEED" \
   --data.init_args.seed "$SEED" \
   --trainer.logger.init_args.id "$RUN_ID" \

@@ -1,5 +1,6 @@
 #!/usr/bin/env zsh
 #SBATCH --job-name=dias-val
+#SBATCH --partition=rleap_gpu_24gb,rleap_gpu_48gb
 #SBATCH --output=slurm/logs/%x-%A_%a.out
 #
 # DIAS validation array task. Do NOT run directly — submit via
