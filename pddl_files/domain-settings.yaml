@@ -2,14 +2,14 @@
 # Per-domain training overrides live in <domain-folder>/config.yaml.
 # Slurm resources live in configs/slurm-resources.yaml.
 
-blocks_3:
-  domain: pddl_files/blocks_3/domain.pddl
-  strips_yaml: pddl_files/blocks_3/strips+.yaml
+blocks-3:
+  domain: pddl_files/blocks-3/domain.pddl
+  strips_yaml: pddl_files/blocks-3/strips+.yaml
   problems:
-    - pddl_files/blocks_3/train.pddl
-    - pddl_files/blocks_3/test-1.pddl
-    - pddl_files/blocks_3/test-2.pddl
-    - pddl_files/blocks_3/test-3.pddl
+    - pddl_files/blocks-3/train.pddl
+    - pddl_files/blocks-3/test-1.pddl
+    - pddl_files/blocks-3/test-2.pddl
+    - pddl_files/blocks-3/test-3.pddl
 delivery:
   domain: pddl_files/delivery/domain.pddl
   strips_yaml: pddl_files/delivery/strips+.yaml
@@ -58,14 +58,14 @@ miconic:
     - pddl_files/miconic/test-1.pddl
     - pddl_files/miconic/test-2.pddl
     - pddl_files/miconic/test-3.pddl
-cell_npuzzle:
-  domain: pddl_files/npuzzle/domain.pddl
-  strips_yaml: pddl_files/npuzzle/strips+.yaml
+n-puzzle:
+  domain: pddl_files/n-puzzle/domain.pddl
+  strips_yaml: pddl_files/n-puzzle/strips+.yaml
   problems:
-    - pddl_files/npuzzle/train.pddl
-    - pddl_files/npuzzle/test-1.pddl
-    - pddl_files/npuzzle/test-2.pddl
-    - pddl_files/npuzzle/test-3.pddl
+    - pddl_files/n-puzzle/train.pddl
+    - pddl_files/n-puzzle/test-1.pddl
+    - pddl_files/n-puzzle/test-2.pddl
+    - pddl_files/n-puzzle/test-3.pddl
 satellite:
   domain: pddl_files/satellite/domain.pddl
   strips_yaml: pddl_files/satellite/strips+.yaml

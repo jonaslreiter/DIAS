@@ -16,15 +16,15 @@ defaults:
   cpus: 8
   gres: "gpu:1"
 
-blocks_3: {}
+blocks-3: {}
 delivery: {}
 driverlog: {}
 gripper: {}
 hanoi: {}
 logistics: {}
 miconic: {}
-cell_npuzzle: {}
-satellite: {}
+n-puzzle: {}
+satellite: { time: "04:00:00" }
 sokoban: {}
 sokoban-pull: {}
 spanner: {}
