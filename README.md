@@ -36,17 +36,26 @@ domain. Training logs and checkpoints land under `logs/`.
 
 ### Noise ablation
 
-Edge add/remove noise is exposed as two parameters in the data section
-of the config:
+Input adjacency noise has two models, selected by `data.init_args.noise_model`:
 
 ```yaml
+# ratio (default): Bernoulli edge flips
 data:
   init_args:
-    edge_remove_ratio: 0.1 #  paper sweeps 0.0–0.5
+    noise_model: ratio
+    edge_remove_ratio: 0.1  # paper sweeps 0.0–0.5
     edge_add_ratio: 0.1
+
+# expected_count: Poisson flip budget per adjacency tensor (statics untouched)
+data:
+  init_args:
+    noise_model: expected_count
+    expected_removed_atoms: 2.0
+    expected_added_atoms: 2.0
 ```
 
-Set both to `0.0` for the clean setup.
+Set the active model's knobs to `0.0` for the clean setup. The `noise` experiment
+(below) uses `expected_count` via `configs/experiments/noise.yaml`.
 
 ## Baseline validation
 
@@ -71,38 +80,46 @@ python scripts/validation/run_l1.py \
     --problem         pddl_files/satellite/train.pddl
 ```
 
-## Full paper sweep: all domains × all seeds
+## Reproducing paper results (all/partial)
 
-`scripts/run_all_domains.py` runs train + validate for every
-`(domain, seed)` pair in `pddl_files/domain-settings.yaml`. Per-domain
-training uses `problems[0]`; validation runs on the next three problems
-(configurable via `configs/validation.yaml`). Each pair becomes one W&B
-run; all pairs share a W&B group for easy aggregation. Validation
-results are also written to
-`logs/validation/<group>/<domain>/seed<seed>.json` for offline use.
+`scripts/launch.py` is the single entry point for sweeps. For each domain it
+submits a **training array** (one task per seed) and a **dependent validation
+array** (`--dependency=aftercorr`, so validation task *i* runs after training
+task *i*). Every run in a launch shares an `--experiment` name (= W&B group =
+results directory). Per-domain sampling comes from `pddl_files/<domain>/config.yaml`,
+per-domain Slurm resources from `configs/slurm-resources.yaml` (fill these in for
+your cluster), and validation knobs from `configs/validation.yaml`. The Slurm
+scripts `source ~/.zshrc` then `conda activate ddl`.
 
 ```bash
-# Locally — full 130-run grid (13 domains × 10 seeds), sequential
-python scripts/run_all_domains.py --group paper-main-2026
+# Full grid on Slurm (all domains × 10 seeds), DIAS model
+python scripts/launch.py --experiment paper-main
 
-# Just two domains and three seeds
-python scripts/run_all_domains.py \
-    --domains satellite hanoi \
-    --seeds 0 1 2 \
-    --group debug
+# Two domains only
+python scripts/launch.py --experiment paper-main --domains satellite hanoi
 
-# Slurm array — 130 parallel tasks, one per (domain, seed)
-DIAS_GROUP=paper-main-2026 sbatch slurm/run_all_domains.sh
+# MLP baseline (trains with state_dependent_effects, validates via the MLP validator)
+python scripts/launch.py --experiment-type mlp --experiment mlp-main
+
+# One noise level (expected 2 added / 2 removed atoms)
+python scripts/launch.py --experiment-type noise --experiment noise-a2r2 \
+    --set data.init_args.expected_added_atoms=2 \
+    --set data.init_args.expected_removed_atoms=2
+
+# Preview the sbatch commands without submitting
+python scripts/launch.py --domains gripper --num-runs 3 --dry-run
+
+# Run locally (no Slurm), sequential — for debugging
+python scripts/launch.py --backend local --domains gripper --num-runs 2 \
+    --experiment smoke --no-wandb
 ```
 
-## Slurm (single-domain)
-
-`slurm/train.sh` is a minimal cluster-agnostic template for one training
-run — set `--partition` / `--account` / module loads for your site and
-submit:
+Then collect a finished experiment into a `P / R / N_S / N_C / N_SC` table
+(N_S = #seeds sound, i.e. precision 1; N_C = #seeds complete, i.e. recall 1):
 
 ```bash
-sbatch slurm/train.sh
+python scripts/collect_results.py --experiment paper-main              # from local JSON
+python scripts/collect_results.py --experiment paper-main --source wandb
 ```
 
 ## Repo layout
@@ -110,29 +127,28 @@ sbatch slurm/train.sh
 ```
 src/dias/
 ├── main.py              # LightningCLI entry (also `dias-train`)
-├── models/              # DIAS model + components
-├── data/                # PDDL datamodule + sample generation
+├── models/              # DIAS model + components (state_dependent_effects = MLP baseline)
+├── data/                # PDDL datamodule + sample generation (ratio / expected_count noise)
 ├── utils/               # schedules, noise, adjacency↔PyG helpers
 └── validation/          # ModelValidation classes (DIAS / MLP / L1)
 
 configs/
-└── main.yaml   # single-domain training config
+├── main.yaml            # single-domain training base
+├── validation.yaml      # validation knobs + seed list
+├── slurm-resources.yaml # per-domain Slurm resources (fill in)
+└── experiments/         # mlp.yaml, noise.yaml overlays
 
 scripts/
-├── run_all_domains.py   # full sweep: train + validate for every (domain, seed)
-└── validation/
-    ├── run_dias.py
-    ├── run_mlp_baseline.py
-    └── run_l1.py
-
-configs/
-├── main.yaml   # single-domain training base
-└── validation.yaml           # validation knobs + seed list
+├── launch.py            # sweep launcher (train array + dependent validation array)
+├── validate_runs.py     # compute-side per-run validation
+├── collect_results.py   # aggregate results → paper table
+└── validation/          # run_dias.py, run_mlp_baseline.py, run_l1.py (single checkpoint)
 
 pddl_files/              # 13 paper domains + domain-settings.yaml
+│                        #   each domain folder also holds config.yaml (overrides)
 slurm/
-├── train.sh             # single-domain sbatch template
-└── run_all_domains.sh   # slurm array (13×10) over the full grid
+├── train.sh             # training array task (source ~/.zshrc; conda activate ddl)
+└── validate.sh          # validation array task
 ```
 
 ## Citation

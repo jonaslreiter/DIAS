@@ -1,16 +1,26 @@
-#!/bin/bash
-#SBATCH --job-name=dias
-#SBATCH --time=02:00:00
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=32G
-#SBATCH --gres=gpu:1
-#SBATCH --output=slurm/%x-%j.out
+#!/usr/bin/env zsh
+#SBATCH --job-name=dias-train
+#SBATCH --output=slurm/logs/%x-%A_%a.out
+#
+# DIAS training array task. Do NOT run directly — submit via
+#   python scripts/launch.py ...
+# which sets resources (--time/--mem/--gres/--array, overriding any #SBATCH
+# fallbacks above), exports EXPERIMENT/DOMAIN, and passes the composed Lightning
+# config chain as positional args ("$@").
 
-# Example slurm submission template for a single DIAS training run.
-# Adjust --partition / --account / module loads for your cluster, and point
-# PY at the python interpreter of the environment where `pip install -e .`
-# was run.
+source ~/.zshrc
+conda activate ddl
+set -euo pipefail
 
-PY=${PY:-python}
+SEED=${SLURM_ARRAY_TASK_ID:-0}
+# Deterministic run id — MUST match validate_runs.run_id_for(experiment, domain, seed)
+# so the dependent validation task finds this run's checkpoint.
+RUN_ID=$(echo "${EXPERIMENT}-${DOMAIN}-s${SEED}" | sed 's/[^0-9A-Za-z_-]/-/g')
 
-$PY -m dias.main fit --config configs/main.yaml
+echo "train  domain=$DOMAIN  seed=$SEED  run_id=$RUN_ID"
+
+dias-train fit "$@" \
+  --seed_everything "$SEED" \
+  --data.init_args.seed "$SEED" \
+  --trainer.logger.init_args.id "$RUN_ID" \
+  --trainer.logger.init_args.name "$RUN_ID"

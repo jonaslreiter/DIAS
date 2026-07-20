@@ -1,8 +1,8 @@
-# Config consumed by `scripts/run_all_domains.py`.
+# Config consumed by `scripts/launch.py` / `scripts/validate_runs.py`.
 #
 # Each domain trains on its `problems[0]` from the manifest, then validates
 # on `problems[problem_offset : problem_offset + num_problems]`. The pipeline
-# runs once per (domain, seed) pair.
+# runs once per (domain, seed) pair. `seeds` also sets the default `--num-runs`.
 
 # Validation knobs (forwarded to ModelValidation.setup / validate).
 num_samples: 250

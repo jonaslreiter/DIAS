@@ -9,7 +9,11 @@ import torch
 from torch.utils.data import Dataset, IterableDataset
 from torch_geometric.loader import DataLoader as PyGDataLoader
 
-from dias.utils import add_adj_noise, adj_to_pyg_data
+from dias.utils import (
+    add_adj_noise,
+    add_adj_noise_expected_count,
+    adj_to_pyg_data,
+)
 
 from .generate_samples import generate_random_walk, get_metadata, samples_to_tensors
 
@@ -229,8 +233,12 @@ class PddlGraphDataModule(L.LightningDataModule):
         batch_sampling_strategy: str = "random",
         shuffle_train: bool = True,
         num_workers: int = 0,
+        noise_model: str = "ratio",
         edge_remove_ratio: float = 0.0,
         edge_add_ratio: float = 0.0,
+        expected_removed_atoms: float = 0.0,
+        expected_added_atoms: float = 0.0,
+        noise_on_fluents_only: bool = True,
         metadata_only: bool = False,
     ):
         super().__init__()
@@ -255,14 +263,22 @@ class PddlGraphDataModule(L.LightningDataModule):
         self.batch_sampling_strategy = batch_sampling_strategy
         self.shuffle_train = shuffle_train
         self.num_workers = num_workers
+        self.noise_model = noise_model
         self.edge_remove_ratio = edge_remove_ratio
         self.edge_add_ratio = edge_add_ratio
+        self.expected_removed_atoms = expected_removed_atoms
+        self.expected_added_atoms = expected_added_atoms
+        self.noise_on_fluents_only = noise_on_fluents_only
         self.metadata_only = metadata_only
 
         if batch_sampling_strategy not in ("random", "stratified"):
             raise ValueError(
                 f"batch_sampling_strategy must be 'random' or 'stratified', "
                 f"got {batch_sampling_strategy!r}."
+            )
+        if noise_model not in ("ratio", "expected_count"):
+            raise ValueError(
+                f"noise_model must be 'ratio' or 'expected_count', got {noise_model!r}."
             )
         self._validate_sampling_config()
 
@@ -360,6 +376,26 @@ class PddlGraphDataModule(L.LightningDataModule):
                 f"{self.min_per_label_train}:{self.min_per_label_valid} "
                 f"vs num_train:num_valid={self.num_train}:{self.num_valid}."
             )
+
+        # Each noise model owns its own knobs; the other pair must stay at 0.
+        if self.noise_model == "ratio":
+            if self.expected_removed_atoms != 0.0 or self.expected_added_atoms != 0.0:
+                raise ValueError(
+                    "expected_removed_atoms / expected_added_atoms must be 0.0 "
+                    "when noise_model='ratio'."
+                )
+            if self.edge_remove_ratio < 0.0 or self.edge_add_ratio < 0.0:
+                raise ValueError("edge_remove_ratio and edge_add_ratio must be >= 0.")
+        else:
+            if self.edge_remove_ratio != 0.0 or self.edge_add_ratio != 0.0:
+                raise ValueError(
+                    "edge_remove_ratio / edge_add_ratio must be 0.0 "
+                    "when noise_model='expected_count'."
+                )
+            if self.expected_removed_atoms < 0.0 or self.expected_added_atoms < 0.0:
+                raise ValueError(
+                    "expected_removed_atoms and expected_added_atoms must be >= 0."
+                )
 
     @property
     def base(self) -> PddlTransitionDataset:
@@ -571,15 +607,33 @@ class PddlGraphDataModule(L.LightningDataModule):
     def _build_train_noise(
         self, train_idx: list[int]
     ) -> tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
-        if (
-            self.edge_remove_ratio == 0.0 and self.edge_add_ratio == 0.0
-        ) or not train_idx:
+        if not self._noise_is_enabled() or not train_idx:
             return None, None
-
         gen = torch.Generator().manual_seed(self.seed + 1)
+        if self.noise_model == "expected_count":
+            return self._build_expected_count_train_noise(train_idx, gen)
+        return self._build_ratio_train_noise(train_idx, gen)
+
+    def _noise_is_enabled(self) -> bool:
+        if self.noise_model == "expected_count":
+            return self.expected_removed_atoms > 0.0 or self.expected_added_atoms > 0.0
+        return self.edge_remove_ratio > 0.0 or self.edge_add_ratio > 0.0
+
+    def _enabled_relation_mask(self) -> list[bool]:
+        """Per-relation True/False; statics are disabled when noise_on_fluents_only."""
+        static_relations = set()
+        if self.noise_on_fluents_only:
+            static_relations = {
+                p["name"] for p in self.metadata["predicates"] if p["static"]
+            }
+        return [name not in static_relations for name in self.base.relation_names]
+
+    def _build_ratio_train_noise(
+        self, train_idx: list[int], gen: torch.Generator
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         add_ratio_per_rel = [self.edge_add_ratio * r for r in self.relation_true_ratio]
         print(
-            f"Applying edge noise to train split "
+            f"Applying ratio edge noise to train split "
             f"(remove={self.edge_remove_ratio}, add={self.edge_add_ratio}, "
             f"scaled add per rel={[f'{x:.4g}' for x in add_ratio_per_rel]})",
             file=sys.stderr,
@@ -594,6 +648,34 @@ class PddlGraphDataModule(L.LightningDataModule):
                         self.edge_remove_ratio,
                         add_ratio_per_rel,
                         gen,
+                    )
+                    for i in train_idx
+                ]
+            )
+
+        return noisy(self._base.states), noisy(self._base.next_states)
+
+    def _build_expected_count_train_noise(
+        self, train_idx: list[int], gen: torch.Generator
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        relation_mask = self._enabled_relation_mask()
+        print(
+            f"Applying expected-count edge noise to train split "
+            f"(remove={self.expected_removed_atoms}, add={self.expected_added_atoms}, "
+            f"per adjacency tensor)",
+            file=sys.stderr,
+        )
+
+        def noisy(src: torch.Tensor) -> torch.Tensor:
+            return torch.stack(
+                [
+                    add_adj_noise_expected_count(
+                        src[i],
+                        self.arity_relations,
+                        expected_remove_count=self.expected_removed_atoms,
+                        expected_add_count=self.expected_added_atoms,
+                        generator=gen,
+                        relation_mask=relation_mask,
                     )
                     for i in train_idx
                 ]

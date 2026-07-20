@@ -38,6 +38,7 @@ class DIAS(L.LightningModule):
         loss_weight_schedule: dict | None = None,
         pcgrad_dyn_clip: bool = True,
         gmean_offset: float = 0.0,
+        state_dependent_effects: bool = False,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -56,6 +57,7 @@ class DIAS(L.LightningModule):
         self.random_node_embeddings = random_node_embeddings
         self.pcgrad_dyn_clip = pcgrad_dyn_clip
         self.gmean_offset = gmean_offset
+        self.state_dependent_effects = state_dependent_effects
 
         if self.per_action_slots:
             assert (
@@ -99,6 +101,7 @@ class DIAS(L.LightningModule):
             learn_preconditions=self.learn_preconditions,
             action_arities=self.action_arities,
             gmean_offset=self.gmean_offset,
+            state_dependent_effects=self.state_dependent_effects,
         )
 
         # Action self-loop relation types: one per (action, active-position) pair.

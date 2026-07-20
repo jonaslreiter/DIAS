@@ -1,0 +1,31 @@
+# Per-domain Slurm resources consumed by scripts/launch.py.
+#
+# Each domain inherits `defaults` for any field it does not set. Fields:
+#   time  -> --time   (HH:MM:SS)
+#   mem   -> --mem
+#   cpus  -> --cpus-per-task
+#   gres  -> --gres=<value>   (e.g. "gpu:1", or a GPU shard like "shard:8")
+#   sbatch_extra -> list of raw directives passed verbatim, e.g.
+#                   ["--partition=gpu", "--account=dias", "--gres=shard:8"]
+#
+# Fill in real per-domain values as needed; an empty {} means "use defaults".
+
+defaults:
+  time: "02:00:00"
+  mem: "32G"
+  cpus: 8
+  gres: "gpu:1"
+
+blocks_3: {}
+delivery: {}
+driverlog: {}
+gripper: {}
+hanoi: {}
+logistics: {}
+miconic: {}
+cell_npuzzle: {}
+satellite: {}
+sokoban: {}
+sokoban-pull: {}
+spanner: {}
+visitall: {}

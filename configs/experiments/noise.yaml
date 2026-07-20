@@ -1,0 +1,16 @@
+# Noise experiment overlay: expected-count (Poisson flip-budget) input noise.
+# Composed last. Override the atom budgets per launch to sweep noise levels, e.g.:
+#   scripts/launch.py --experiment-type noise \
+#       --set data.init_args.expected_added_atoms=2 \
+#       --set data.init_args.expected_removed_atoms=2
+#
+# `noise_model: expected_count` requires edge_add_ratio / edge_remove_ratio to stay
+# at 0.0 (enforced by the datamodule). Static predicates are left untouched.
+data:
+  init_args:
+    noise_model: expected_count
+    edge_remove_ratio: 0.0
+    edge_add_ratio: 0.0
+    expected_removed_atoms: 1.0
+    expected_added_atoms: 1.0
+    noise_on_fluents_only: true

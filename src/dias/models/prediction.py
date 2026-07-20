@@ -27,15 +27,18 @@ class PredictionModule(nn.Module):
         learn_preconditions: bool = True,
         action_arities: list[int] | None = None,
         gmean_offset: float = 0.0,
+        state_dependent_effects: bool = False,
     ):
         super().__init__()
         self.num_objects = num_objects
+        self.num_actions = num_actions
         self.num_slots = num_slots
         self.object_dim = object_dim
         self.force_action_args = force_action_args
         self.per_action_slots = per_action_slots
         self.learn_preconditions = learn_preconditions
         self.gmean_offset = gmean_offset
+        self.state_dependent_effects = state_dependent_effects
         self.num_relations = len(arity_relations)
 
         action_arities_t = (
@@ -52,9 +55,25 @@ class PredictionModule(nn.Module):
         self.preconditions = nn.Parameter(
             0.1 * torch.randn(num_actions, self.num_relations, num_slots, num_slots, 3)
         )
-        self.effects = nn.Parameter(
-            0.1 * torch.randn(num_actions, self.num_relations, num_slots, num_slots, 3)
-        )
+        # Effects are either a learnable per-action tensor (default) or, for the
+        # MLP baseline, predicted from the current state by an MLP.
+        if state_dependent_effects:
+            self.effects_mlp = nn.Sequential(
+                nn.Flatten(),
+                nn.Linear(self.num_relations * num_slots * num_slots, 64),
+                nn.Linear(64, 64),
+                nn.Linear(
+                    64, num_actions * self.num_relations * num_slots * num_slots * 3
+                ),
+                nn.Unflatten(
+                    1, (num_actions, self.num_relations, num_slots, num_slots, 3)
+                ),
+            )
+        else:
+            self.effects = nn.Parameter(
+                0.1
+                * torch.randn(num_actions, self.num_relations, num_slots, num_slots, 3)
+            )
 
         if per_action_slots:
             with torch.no_grad():
@@ -71,8 +90,11 @@ class PredictionModule(nn.Module):
             1, 1, num_slots, num_slots, 1
         )
         unary_offdiag = relation_is_unary.view(1, self.num_relations, 1, 1, 1) & ~diag
+        masked_tensors = [self.preconditions]
+        if not state_dependent_effects:
+            masked_tensors.append(self.effects)
         with torch.no_grad():
-            for p in (self.preconditions, self.effects):
+            for p in masked_tensors:
                 p.masked_fill_(unary_offdiag, -torch.inf)
                 p[..., 0].masked_fill_(unary_offdiag.squeeze(-1), 0)
 
@@ -182,7 +204,16 @@ class PredictionModule(nn.Module):
             self._last_y_action = y_action.detach().cpu()
 
         preconditions = F.softmax(self.preconditions[y_action], dim=-1)
-        effects = F.softmax(self.effects[y_action], dim=-1)
+        if self.state_dependent_effects:
+            # Predict per-action effects from the current state, then pick this
+            # batch's actions: (B, A, R, k, k, 3) -> (B, R, k, k, 3).
+            adj_selection = torch.einsum(
+                "bai,brij,bcj->brac", selection, adj_batch, selection
+            )
+            effects = F.softmax(self.effects_mlp(adj_selection), dim=-1)
+            effects = effects[torch.arange(B, device=y_action.device), y_action]
+        else:
+            effects = F.softmax(self.effects[y_action], dim=-1)
 
         ignore_effects, add_effects, del_effects = (
             effects[..., 0],

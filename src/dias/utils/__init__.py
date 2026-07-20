@@ -177,3 +177,98 @@ def add_adj_noise(
             flat[zeros_pos[mask]] = 1
 
     return noisy
+
+
+def add_adj_noise_expected_count(
+    adj: torch.Tensor,
+    arities: list[int],
+    expected_remove_count: float,
+    expected_add_count: float,
+    generator: torch.Generator = None,
+    relation_mask: list[bool] | torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Return a noisy copy using per-tensor Poisson flip budgets.
+
+    For each relation, compute the eligible true and false atoms in the valid
+    region. The balancing weight is ``min(num_true, num_false)``, so relations
+    closest to a 50/50 true-false split receive the largest share of the noise
+    budget. Removal and addition counts are sampled independently per relation
+    from Poisson distributions whose rates are proportional to those weights,
+    then clipped to the available eligible atoms and applied without replacement.
+    ``relation_mask`` (length ``R``) disables noise on specific relations
+    (e.g. statics) when an entry is ``False``.
+    """
+    R, O, O2 = adj.shape
+    assert O == O2, f"adj must be [R, O, O], got {adj.shape}"
+    assert len(arities) == R, f"arities length {len(arities)} != R={R}"
+
+    if relation_mask is None:
+        enabled_relations = [True] * R
+    else:
+        enabled_relations = [bool(x) for x in relation_mask]
+        assert len(enabled_relations) == R, (
+            f"relation_mask length {len(enabled_relations)} != R={R}"
+        )
+
+    noisy = adj.clone()
+    ones_positions_per_rel: list[torch.Tensor] = []
+    zeros_positions_per_rel: list[torch.Tensor] = []
+    weights: list[float] = []
+
+    for r, ar in enumerate(arities):
+        if not enabled_relations[r] or ar not in (1, 2):
+            ones_positions_per_rel.append(torch.empty(0, dtype=torch.long))
+            zeros_positions_per_rel.append(torch.empty(0, dtype=torch.long))
+            weights.append(0.0)
+            continue
+
+        valid_idx = torch.arange(O * O) if ar == 2 else torch.arange(O) * (O + 1)
+        flat = noisy[r].reshape(-1)
+        vals = flat[valid_idx]
+        ones_pos = valid_idx[vals == 1]
+        zeros_pos = valid_idx[vals == 0]
+        ones_positions_per_rel.append(ones_pos)
+        zeros_positions_per_rel.append(zeros_pos)
+        weights.append(float(min(ones_pos.numel(), zeros_pos.numel())))
+
+    total_weight = sum(weights)
+    if total_weight <= 0.0:
+        return noisy
+
+    def _sample_poisson_count(rate: float) -> int:
+        if rate <= 0.0:
+            return 0
+        return int(torch.poisson(torch.tensor([rate]), generator=generator).item())
+
+    def _pick_positions(candidates: torch.Tensor, count: int) -> torch.Tensor:
+        if count <= 0 or candidates.numel() == 0:
+            return torch.empty(0, dtype=torch.long)
+        if count >= candidates.numel():
+            return candidates
+        perm = torch.randperm(candidates.numel(), generator=generator)
+        return candidates[perm[:count]]
+
+    for r in range(R):
+        weight = weights[r]
+        if weight <= 0.0:
+            continue
+        flat = noisy[r].reshape(-1)
+        ones_pos = ones_positions_per_rel[r]
+        zeros_pos = zeros_positions_per_rel[r]
+
+        remove_count = min(
+            _sample_poisson_count(expected_remove_count * weight / total_weight),
+            ones_pos.numel(),
+        )
+        add_count = min(
+            _sample_poisson_count(expected_add_count * weight / total_weight),
+            zeros_pos.numel(),
+        )
+        remove_positions = _pick_positions(ones_pos, remove_count)
+        add_positions = _pick_positions(zeros_pos, add_count)
+        if remove_positions.numel() > 0:
+            flat[remove_positions] = 0
+        if add_positions.numel() > 0:
+            flat[add_positions] = 1
+
+    return noisy

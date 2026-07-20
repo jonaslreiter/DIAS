@@ -74,6 +74,10 @@ def main():
             },
         },
         save_config_callback=SaveAndLogConfigCallback,
+        # Let a re-launched (experiment, domain, seed) overwrite its own saved
+        # config instead of aborting — deterministic run ids mean re-runs reuse
+        # the same run directory.
+        save_config_kwargs={"overwrite": True},
         seed_everything_default=np.random.randint(2**32),
     )
 
