@@ -11,20 +11,28 @@
 # Fill in real per-domain values as needed; an empty {} means "use defaults".
 
 defaults:
-  time: "02:00:00"
-  mem: "24G"
-  cpus: 8
+  time: "10:00:00"
+  mem: "32G"
+  cpus: "8"
   gres: "shard:8"
 
-blocks-3: {}
+blocks-3:
+  time: "02:00:00"
+  mem: "4G"
+  cpus: "4"
+  gres: "shard:4"
 delivery: {}
 driverlog: {}
-gripper: {}
+gripper:
+  time: "02:00:00"
+  mem: "4G"
+  cpus: "4"
+  gres: "shard:4"
 hanoi: {}
 logistics: {}
 miconic: {}
 n-puzzle: {}
-satellite: { time: "04:00:00" }
+satellite: {}
 sokoban: {}
 sokoban-pull: {}
 spanner: {}
