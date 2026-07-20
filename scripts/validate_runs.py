@@ -15,7 +15,7 @@ The training run is located by a *deterministic* run id
 (``<experiment>-<domain>-s<seed>``) so no job-to-job id handoff is needed:
 its checkpoint lives at ``<logs>/dias/<run_id>/checkpoints/best-*.ckpt``.
 
-Validation problems come from ``pddl_files/domain-settings.yaml``
+Validation problems come from ``pddl/domain-settings.yaml``
 (``problems[problem_offset : problem_offset + num_problems]``); the sampling
 knobs come from ``configs/validation.yaml``. Results are written to
 ``<logs>/validation/<experiment>/<domain>/seed<seed>.json`` and, when W&B is
@@ -184,7 +184,7 @@ def main() -> int:
     p.add_argument(
         "--domain-settings",
         type=Path,
-        default=PROJECT_ROOT / "pddl_files" / "domain-settings.yaml",
+        default=PROJECT_ROOT / "pddl" / "domain-settings.yaml",
     )
     p.add_argument(
         "--validation-config",

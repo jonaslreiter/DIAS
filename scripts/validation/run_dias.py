@@ -4,7 +4,7 @@ Usage:
     python scripts/validation/run_dias.py \
         --model-id <wandb-run-id> \
         --logs-dir logs \
-        --problem pddl_files/satellite/train.pddl
+        --problem pddl/satellite/train.pddl
 
 Outputs precision/recall/accuracy on the action-grounding task.
 """

@@ -17,7 +17,7 @@ pip install -e .
 This installs the `dias` package (training/model/data code) and the
 `dias-train` console entry point.
 
-The 13 PDDL domains used in the paper are bundled under `pddl_files/`.
+The 13 PDDL domains used in the paper are bundled under `pddl/`.
 Additional instances can be regenerated with the upstream generators:
 <https://github.com/...> <!-- TODO: link upstream pddl-generators -->
 
@@ -30,7 +30,7 @@ dias-train fit --config configs/main.yaml
 ```
 
 The base config points at one `(domain_path, problem_path)` pair under
-`pddl_files/`. Edit those two fields in
+`pddl/`. Edit those two fields in
 `configs/main.yaml` (or override on the CLI) to switch
 domain. Training logs and checkpoints land under `logs/`.
 
@@ -66,27 +66,27 @@ on a single PDDL problem.
 # DIAS model on a problem
 python scripts/validation/run_dias.py \
     --model-id <wandb-run-id> \
-    --problem  pddl_files/satellite/train.pddl
+    --problem  pddl/satellite/train.pddl
 
 # MLP baseline
 python scripts/validation/run_mlp_baseline.py \
     --model-id <wandb-run-id> \
-    --problem  pddl_files/satellite/train.pddl
+    --problem  pddl/satellite/train.pddl
 
 # L1 baseline (compares a *learned* PDDL domain against the ground truth)
 python scripts/validation/run_l1.py \
-    --original-domain pddl_files/satellite/domain.pddl \
+    --original-domain pddl/satellite/domain.pddl \
     --learned-domain  path/to/l1_learned/satellite.pddl \
-    --problem         pddl_files/satellite/train.pddl
+    --problem         pddl/satellite/train.pddl
 ```
 
 ## Reproducing paper results (all/partial)
 
 `scripts/launch.py` is the single entry point for sweeps. For each domain it
 submits a **training array** (one task per seed) and a **dependent validation
-array** (`--dependency=aftercorr`, so validation task *i* runs after training
-task *i*). Every run in a launch shares an `--experiment` name (= W&B group =
-results directory). Per-domain sampling comes from `pddl_files/<domain>/config.yaml`,
+array** (`--dependency=aftercorr`, so validation task _i_ runs after training
+task _i_). Every run in a launch shares an `--experiment` name (= W&B group =
+results directory). Per-domain sampling comes from `pddl/<domain>/config.yaml`,
 per-domain Slurm resources from `configs/slurm-resources.yaml` (fill these in for
 your cluster), and validation knobs from `configs/validation.yaml`. The Slurm
 scripts `source ~/.zshrc` then `conda activate ddl`.
@@ -144,7 +144,7 @@ scripts/
 ├── collect_results.py   # aggregate results → paper table
 └── validation/          # run_dias.py, run_mlp_baseline.py, run_l1.py (single checkpoint)
 
-pddl_files/              # 13 paper domains + domain-settings.yaml
+pddl/              # 13 paper domains + domain-settings.yaml
 │                        #   each domain folder also holds config.yaml (overrides)
 slurm/
 ├── train.sh             # training array task (source ~/.zshrc; conda activate ddl)

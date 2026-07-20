@@ -6,9 +6,9 @@ compare it to the ground-truth (original) domain on a given problem.
 
 Usage:
     python scripts/validation/run_l1.py \
-        --original-domain pddl_files/satellite/domain.pddl \
+        --original-domain pddl/satellite/domain.pddl \
         --learned-domain  path/to/l1_learned/satellite.pddl \
-        --problem         pddl_files/satellite/train.pddl
+        --problem         pddl/satellite/train.pddl
 """
 
 from __future__ import annotations

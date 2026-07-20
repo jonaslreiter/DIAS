@@ -34,8 +34,8 @@ data:
   class_path: dias.data.datamodule.PddlGraphDataModule
   init_args:
     # ── Domain / problem ────────────────────────────────────────────────
-    domain_path: pddl_files/satellite/domain.pddl
-    problem_path: pddl_files/satellite/train.pddl
+    domain_path: pddl/satellite/domain.pddl
+    problem_path: pddl/satellite/train.pddl
 
     # ── Noise ablation ──────────────────────────────────────────────────
     # Fraction of edges to randomly remove / add to the input adjacency

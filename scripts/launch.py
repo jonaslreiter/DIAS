@@ -134,7 +134,6 @@ def _submit_domain_slurm(
 ) -> None:
     array = f"0-{num_runs - 1}"
     res_opts = _sbatch_resource_opts(res)
-    out_pat = "slurm/logs/%x-%A_%a.out"
 
     # EXPERIMENT/DOMAIN go through --export (single tokens, needed to build the
     # run id); the Lightning config chain is passed as positional args so sbatch
@@ -146,9 +145,8 @@ def _submit_domain_slurm(
         f"--job-name=dias-train-{domain}",
         f"--array={array}",
         *res_opts,
-        f"--output={out_pat}",
         f"--export={train_export}",
-        "slurm/train.sh",
+        "scripts/slurm/train.sh",
         *base_args,
     ]
     print(f"[{domain}] submit training array ({num_runs} runs)")
@@ -173,9 +171,8 @@ def _submit_domain_slurm(
         f"--array={array}",
         f"--dependency=aftercorr:{dep}",
         *res_opts,
-        f"--output={out_pat}",
         f"--export={val_export}",
-        "slurm/validate.sh",
+        "scripts/slurm/validate.sh",
     ]
     print(f"[{domain}] submit validation array (aftercorr:{dep})")
     _run(val_cmd, args.dry_run)
@@ -278,7 +275,7 @@ def main() -> int:
     p.add_argument(
         "--domain-settings",
         type=Path,
-        default=PROJECT_ROOT / "pddl_files" / "domain-settings.yaml",
+        default=PROJECT_ROOT / "pddl" / "domain-settings.yaml",
     )
     p.add_argument(
         "--train-config", type=Path, default=PROJECT_ROOT / "configs" / "main.yaml"
@@ -321,7 +318,7 @@ def main() -> int:
         print(f"overlay    : {overlay}")
 
     if args.backend == "slurm" and not args.dry_run:
-        (PROJECT_ROOT / "slurm" / "logs").mkdir(parents=True, exist_ok=True)
+        (PROJECT_ROOT / "logs" / "slurm").mkdir(parents=True, exist_ok=True)
 
     slurm_cfg = _load_yaml(args.slurm_resources) if args.backend == "slurm" else {}
 

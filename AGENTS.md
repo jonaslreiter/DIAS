@@ -17,9 +17,9 @@ The core problem setting is:
 
 - The installable package is `dias`, defined via `pyproject.toml` with console entry point `dias-train = dias.main:main`.
 - Main source code lives under `src/dias/`.
-- PDDL assets live under `pddl_files/`.
-- The per-domain manifest is `pddl_files/domain-settings.yaml` (paths + problem list only; it no longer holds `data_overrides`).
-- Per-domain training overrides live in `pddl_files/<domain>/config.yaml` (a Lightning partial config composed after `configs/main.yaml`).
+- PDDL assets live under `pddl/`.
+- The per-domain manifest is `pddl/domain-settings.yaml` (paths + problem list only; it no longer holds `data_overrides`).
+- Per-domain training overrides live in `pddl/<domain>/config.yaml` (a Lightning partial config composed after `configs/main.yaml`).
 - Per-experiment overlays live in `configs/experiments/{mlp,noise}.yaml`.
 - Validation sweep settings live in `configs/validation.yaml`.
 - Per-domain Slurm resources live in `configs/slurm-resources.yaml` (consumed by `scripts/launch.py`).
@@ -47,7 +47,7 @@ When working on data generation or dataset code, preserve these assumptions unle
 - Pure STRIPS-style action schemas are the default target.
 - Domain predicates are assumed known.
 - Training samples come from a single problem instance per domain.
-- For full sweep experiments, training uses `problems[0]` from `pddl_files/domain-settings.yaml`.
+- For full sweep experiments, training uses `problems[0]` from `pddl/domain-settings.yaml`.
 - Validation uses later problems according to `configs/validation.yaml`, currently offset from the manifest by `problem_offset` and limited by `num_problems`.
 
 ## Core Code Map
@@ -63,14 +63,14 @@ When working on data generation or dataset code, preserve these assumptions unle
 - `src/dias/validation/mlp_baseline.py`: MLP-effects baseline validation.
 - `src/dias/validation/transpiler.py`: transpilation from learned tensors to PDDL-like action schema output.
 - `scripts/launch.py`: the single experiment launcher. Per domain it submits a Slurm training array (one task per seed) plus a `--dependency=aftercorr` validation array, or runs the same steps sequentially with `--backend local`. Selects the experiment via `--experiment-type {dias,mlp,noise}`.
-- `scripts/validate_runs.py`: compute-side per-`(experiment, domain, seed)` validation; picks the validator by experiment type and writes the per-run JSON. Invoked by `slurm/validate.sh` and by `launch.py --backend local`.
+- `scripts/validate_runs.py`: compute-side per-`(experiment, domain, seed)` validation; picks the validator by experiment type and writes the per-run JSON. Invoked by `scripts/slurm/validate.sh` and by `launch.py --backend local`.
 - `scripts/collect_results.py`: aggregates per-run results (local JSON or the W&B API) into a `P / R / N_S / N_C / N_SC` table per domain.
 - `scripts/validation/run_dias.py`, `run_l1.py`, `run_mlp_baseline.py`: single-checkpoint validation entry points.
 
 ## Training Conventions
 
 - Prefer the installed CLI entry point `dias-train fit --config configs/main.yaml` for single-domain training unless a script explicitly uses `python -m dias.main`.
-- Per-domain runs compose configs: `--config configs/main.yaml --config pddl_files/<domain>/config.yaml` (plus `--config configs/experiments/<type>.yaml` for MLP/noise). `scripts/launch.py` builds this chain and injects `domain_path` / `problem_path` / seed.
+- Per-domain runs compose configs: `--config configs/main.yaml --config pddl/<domain>/config.yaml` (plus `--config configs/experiments/<type>.yaml` for MLP/noise). `scripts/launch.py` builds this chain and injects `domain_path` / `problem_path` / seed.
 - The default logger is W&B with entity `team-jonas-reiter`, project name `dias`, and save directory `logs`.
 - Sweep runs use a deterministic W&B run id `<experiment>-<domain>-s<seed>` (see `validate_runs.run_id_for`) so the validation array can locate each checkpoint without an id handoff.
 - Training checkpoints are expected under `logs/dias/<run_id>/checkpoints/`.
@@ -90,13 +90,13 @@ When working on data generation or dataset code, preserve these assumptions unle
 
 ## Sweep Conventions
 
-- `scripts/launch.py` is the authoritative sweep launcher. Per domain it submits a training array (`slurm/train.sh`, one task per seed) and a dependent validation array (`slurm/validate.sh`, `--dependency=aftercorr`). `--backend local` runs the same steps sequentially.
+- `scripts/launch.py` is the authoritative sweep launcher. Per domain it submits a training array (`scripts/slurm/train.sh`, one task per seed) and a dependent validation array (`scripts/slurm/validate.sh`, `--dependency=aftercorr`). `--backend local` runs the same steps sequentially.
 - One run corresponds to one `(domain, seed)` pair; seeds default to `0 .. num_runs-1` (`--num-runs`, default = `len(configs/validation.yaml seeds)`).
 - All runs of one launch share an `--experiment` name (= W&B group = results directory). `--experiment-type {dias,mlp,noise}` picks the overlay and validator.
-- Domain-specific sample bounds come from `pddl_files/<domain>/config.yaml`; paths/problem lists from `pddl_files/domain-settings.yaml`; per-domain Slurm resources from `configs/slurm-resources.yaml`.
+- Domain-specific sample bounds come from `pddl/<domain>/config.yaml`; paths/problem lists from `pddl/domain-settings.yaml`; per-domain Slurm resources from `configs/slurm-resources.yaml`.
 - Global validation settings such as number of validation problems and sampling counts come from `configs/validation.yaml`.
 - `scripts/collect_results.py` aggregates a finished experiment (local JSON or W&B) into the paper table.
-- The Slurm scripts under `slurm/` first `source ~/.zshrc` then `conda activate ddl`; they stay thin and defer experiment semantics to Python scripts and YAML configs.
+- The Slurm scripts under `scripts/slurm/` first `source ~/.zshrc` then `conda activate ddl`; they stay thin and defer experiment semantics to Python scripts and YAML configs.
 
 ## Paper-Level Modeling Notes
 
@@ -115,8 +115,8 @@ Use these as conceptual ground truth when reasoning about intended behavior:
 - Prefer minimal, behavior-preserving changes.
 - Preserve the distinction between single-domain training, per-checkpoint validation, and full sweep orchestration.
 - Do not silently change experiment semantics stored in YAML manifests or config defaults without updating the relevant documentation and runners.
-- Treat `pddl_files/domain-settings.yaml` as the source of truth for per-domain paths and problem lists, and `pddl_files/<domain>/config.yaml` as the source of truth for per-domain sampling/model overrides.
-- Keep standardized filenames in `pddl_files/` intact unless there is an explicit migration.
+- Treat `pddl/domain-settings.yaml` as the source of truth for per-domain paths and problem lists, and `pddl/<domain>/config.yaml` as the source of truth for per-domain sampling/model overrides.
+- Keep standardized filenames in `pddl/` intact unless there is an explicit migration.
 - When changing path conventions, update code, configs, docs, and validation scripts in the same task.
 - When changing checkpoint naming, W&B directory layout, or logger config, verify all validation entry points still resolve checkpoints correctly.
 - When changing datamodule arguments, check both CLI config compatibility and checkpoint reload compatibility.
