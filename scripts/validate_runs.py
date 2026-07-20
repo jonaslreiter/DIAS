@@ -36,6 +36,7 @@ import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 WANDB_PROJECT = "dias"
+WANDB_ENTITY = "team-jonas-reiter"
 
 
 def run_id_for(experiment: str, domain: str, seed: int) -> str:
@@ -149,6 +150,7 @@ def _log_to_wandb(
             id=run_id,
             resume="allow",
             project=WANDB_PROJECT,
+            entity=WANDB_ENTITY,
             group=experiment,
             dir=str(logs_dir),
         )

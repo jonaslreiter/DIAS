@@ -70,6 +70,7 @@ def main():
                 "init_args": {
                     "save_dir": "logs",
                     "project": "dias",
+                    "entity": "team-jonas-reiter",
                 },
             },
         },

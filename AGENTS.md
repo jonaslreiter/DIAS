@@ -71,7 +71,7 @@ When working on data generation or dataset code, preserve these assumptions unle
 
 - Prefer the installed CLI entry point `dias-train fit --config configs/main.yaml` for single-domain training unless a script explicitly uses `python -m dias.main`.
 - Per-domain runs compose configs: `--config configs/main.yaml --config pddl_files/<domain>/config.yaml` (plus `--config configs/experiments/<type>.yaml` for MLP/noise). `scripts/launch.py` builds this chain and injects `domain_path` / `problem_path` / seed.
-- The default logger is W&B with project name `dias` and save directory `logs`.
+- The default logger is W&B with entity `team-jonas-reiter`, project name `dias`, and save directory `logs`.
 - Sweep runs use a deterministic W&B run id `<experiment>-<domain>-s<seed>` (see `validate_runs.run_id_for`) so the validation array can locate each checkpoint without an id handoff.
 - Training checkpoints are expected under `logs/dias/<run_id>/checkpoints/`.
 - Validation code looks for a checkpoint matching `best-epoch*.ckpt`; preserve this naming unless the validation loader is updated in the same change.

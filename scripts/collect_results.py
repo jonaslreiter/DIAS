@@ -32,6 +32,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 WANDB_PROJECT = "dias"
+WANDB_ENTITY = "team-jonas-reiter"
 ONE = 1.0 - 1e-9
 
 
@@ -160,7 +161,7 @@ def main() -> int:
     )
     p.add_argument("--logs-dir", type=Path, default=PROJECT_ROOT / "logs")
     p.add_argument("--wandb-project", default=WANDB_PROJECT)
-    p.add_argument("--wandb-entity", default=None)
+    p.add_argument("--wandb-entity", default=WANDB_ENTITY)
     args = p.parse_args()
 
     if args.source == "local":
