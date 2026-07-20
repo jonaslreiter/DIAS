@@ -23,7 +23,8 @@ class DIAS(L.LightningModule):
         object_dim: int,
         num_slots: int | None = None,
         batch_size: int = 100,
-        learning_rate: float = 1e-4,
+        learning_rate: float = 0.01,
+        aux_loss_weight: float = 1.0,
         force_action_args: bool = False,
         per_action_slots: bool = False,
         learn_preconditions: bool = True,
@@ -48,6 +49,7 @@ class DIAS(L.LightningModule):
         self.num_actions = num_actions
         self.object_dim = object_dim
         self.learning_rate = learning_rate
+        self.aux_loss_weight = aux_loss_weight
         self.parameter_plotting = parameter_plotting
         self.force_action_args = force_action_args
         self.per_action_slots = per_action_slots
@@ -136,8 +138,6 @@ class DIAS(L.LightningModule):
 
         defaults = {
             "gmean_temperature": {"type": "linear", "keypoints": {0: 1.0}},
-            "learning_rate": {"type": "linear", "keypoints": {0: 0.01}},
-            "aux_loss_weight": {"type": "exponential", "v0": 1.0, "vT": 1.0, "T": 1.0},
         }
         if loss_weight_schedule:
             defaults.update(loss_weight_schedule)
@@ -324,11 +324,6 @@ class DIAS(L.LightningModule):
     def on_train_batch_start(self, batch, batch_idx):
         # x-axis is global_step (not epoch) so schedules advance per optimizer step.
         self.loss_weight_schedule_collection.update_loss_weights(self.global_step)
-        new_lr = self.loss_weight_schedule_collection["learning_rate"]
-        opt = self.optimizers()
-        for optimizer in (opt if isinstance(opt, list) else [opt]):
-            for pg in optimizer.param_groups:
-                pg["lr"] = new_lr
         self.log_dict(
             {
                 f"scheduled_w/{name}": self.loss_weight_schedule_collection[name]
@@ -382,7 +377,7 @@ class DIAS(L.LightningModule):
         results = self.step(batch)
         loss_adj = results["loss_adjacency"]
         loss_aux = results["loss_aux"]
-        aux_w = self.loss_weight_schedule_collection["aux_loss_weight"]
+        aux_w = self.aux_loss_weight
 
         # PCGrad-style projection: remove the component of loss_aux's gradient
         # that conflicts with loss_adj's gradient.
@@ -446,9 +441,7 @@ class DIAS(L.LightningModule):
     def _eval_step(self, prefix: str, batch) -> torch.Tensor:
         results = self.step(batch)
         combined = (
-            results["loss_adjacency"]
-            + self.loss_weight_schedule_collection["aux_loss_weight"]
-            * results["loss_aux"]
+            results["loss_adjacency"] + self.aux_loss_weight * results["loss_aux"]
         )
         self.log_results(
             prefix,

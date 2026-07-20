@@ -10,7 +10,4 @@ data:
     max_per_label_valid: 500
 model:
   init_args:
-    loss_weight_schedule:
-      aux_loss_weight:
-        type: linear
-        keypoints: { 0: 0.1 }
+    aux_loss_weight: 0.1

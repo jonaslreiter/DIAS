@@ -21,18 +21,14 @@ model:
       effect_and_precondition: true
       selection: true
     pcgrad_dyn_clip: true
+    learning_rate: 0.005
+    aux_loss_weight: 0.2
     loss_weight_schedule:
       gmean_temperature:
         type: exponential
         v0: 1.0
         vT: 0.1
         T: 500
-      learning_rate:
-        type: linear
-        keypoints: { 0: 0.005 }
-      aux_loss_weight:
-        type: linear
-        keypoints: { 0: 0.2 }
 
 data:
   class_path: dias.data.datamodule.PddlGraphDataModule
