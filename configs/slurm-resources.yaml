@@ -9,11 +9,14 @@
 #                   ["--partition=gpu", "--account=dias", "--gres=shard:8"]
 #
 # Fill in real per-domain values as needed; an empty {} means "use defaults".
+#
+# These configure the TRAINING array. Validation-array resources are configured
+# separately in configs/slurm-resources-validation.yaml.
 
 defaults:
   time: "02:00:00"
   mem: "8G"
-  cpus: "4"
+  cpus: "8"
   gres: "shard:4"
 
 blocks-3: {}

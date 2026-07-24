@@ -128,12 +128,14 @@ def _submit_domain_slurm(
     base_args: list[str],
     val_type: str,
     num_runs: int,
-    res: dict,
+    train_res: dict,
+    val_res: dict,
     logs_dir: Path,
     args: argparse.Namespace,
 ) -> None:
     array = f"0-{num_runs - 1}"
-    res_opts = _sbatch_resource_opts(res)
+    train_res_opts = _sbatch_resource_opts(train_res)
+    val_res_opts = _sbatch_resource_opts(val_res)
 
     # EXPERIMENT/DOMAIN go through --export (single tokens, needed to build the
     # run id); the Lightning config chain is passed as positional args so sbatch
@@ -144,7 +146,7 @@ def _submit_domain_slurm(
         "--parsable",
         f"--job-name=dias-train-{domain}",
         f"--array={array}",
-        *res_opts,
+        *train_res_opts,
         f"--export={train_export}",
         "scripts/slurm/train.sh",
         *base_args,
@@ -170,7 +172,7 @@ def _submit_domain_slurm(
         f"--job-name=dias-val-{domain}",
         f"--array={array}",
         f"--dependency=aftercorr:{dep}",
-        *res_opts,
+        *val_res_opts,
         f"--export={val_export}",
         "scripts/slurm/validate.sh",
     ]
@@ -290,6 +292,11 @@ def main() -> int:
         type=Path,
         default=PROJECT_ROOT / "configs" / "slurm-resources.yaml",
     )
+    p.add_argument(
+        "--slurm-resources-validation",
+        type=Path,
+        default=PROJECT_ROOT / "configs" / "slurm-resources-validation.yaml",
+    )
     p.add_argument("--log-dir", type=Path, default=PROJECT_ROOT / "logs")
     args = p.parse_args()
 
@@ -321,6 +328,9 @@ def main() -> int:
         (PROJECT_ROOT / "logs" / "slurm").mkdir(parents=True, exist_ok=True)
 
     slurm_cfg = _load_yaml(args.slurm_resources) if args.backend == "slurm" else {}
+    val_slurm_cfg = (
+        _load_yaml(args.slurm_resources_validation) if args.backend == "slurm" else {}
+    )
 
     for domain in domains:
         spec = domain_settings[domain]
@@ -344,6 +354,7 @@ def main() -> int:
                 val_type,
                 num_runs,
                 _resolve_resources(slurm_cfg, domain),
+                _resolve_resources(val_slurm_cfg, domain),
                 args.log_dir,
                 args,
             )

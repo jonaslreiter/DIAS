@@ -1,0 +1,33 @@
+# Per-domain Slurm resources for the VALIDATION array, consumed by
+# scripts/launch.py. Same schema as configs/slurm-resources.yaml, resolved
+# independently (validation does NOT inherit anything from the training file).
+#
+# Each domain inherits `defaults` for any field it does not set. Fields:
+#   time  -> --time   (HH:MM:SS)
+#   mem   -> --mem
+#   cpus  -> --cpus-per-task
+#   gres  -> --gres=<value>   (e.g. "gpu:1", or a GPU shard like "shard:8")
+#   sbatch_extra -> list of raw directives passed verbatim.
+#
+# Validation is CPU/RAM-heavy but GPU-light: usually one shard with more
+# cpus/mem. Fill in real per-domain values as needed; {} means "use defaults".
+
+defaults:
+  time: "01:00:00"
+  mem: "32G"
+  cpus: "16"
+  gres: "shard:1"
+
+blocks-3: {}
+delivery: {}
+driverlog: {}
+gripper: {}
+hanoi: {}
+logistics: {}
+miconic: {}
+n-puzzle: {}
+satellite: {}
+sokoban: {}
+sokoban-pull: {}
+spanner: {}
+visitall: {}
