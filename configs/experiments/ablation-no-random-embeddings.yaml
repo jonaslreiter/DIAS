@@ -1,0 +1,8 @@
+# Ablation overlay: no random node embeddings (all embeddings zero).
+# Composed last on top of main.yaml, e.g.:
+#   dias-train fit --config configs/main.yaml \
+#       --config pddl/<domain>/config.yaml \
+#       --config configs/experiments/ablation-no-random-embeddings.yaml
+model:
+  init_args:
+    random_node_embeddings: false

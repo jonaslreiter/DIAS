@@ -72,6 +72,7 @@ ABLATION_OVERLAYS = {
     "no-effect-loss": EXPERIMENTS_DIR / "ablation-no-effect-loss.yaml",
     "no-aux-loss": EXPERIMENTS_DIR / "ablation-no-aux-loss.yaml",
     "no-pcgrad": EXPERIMENTS_DIR / "ablation-no-pcgrad.yaml",
+    "no-random-embeddings": EXPERIMENTS_DIR / "ablation-no-random-embeddings.yaml",
 }
 
 
