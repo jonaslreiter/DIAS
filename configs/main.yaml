@@ -23,6 +23,10 @@ model:
     pcgrad_dyn_clip: true
     learning_rate: 0.005
     aux_loss_weight: 0.2
+    use_slot_weights: true
+    use_precondition_loss: true
+    use_effect_loss: true
+    use_pcgrad: true
     loss_weight_schedule:
       gmean_temperature:
         type: exponential

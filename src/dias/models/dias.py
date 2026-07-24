@@ -40,6 +40,10 @@ class DIAS(L.LightningModule):
         pcgrad_dyn_clip: bool = True,
         gmean_offset: float = 0.0,
         state_dependent_effects: bool = False,
+        use_slot_weights: bool = True,
+        use_precondition_loss: bool = True,
+        use_effect_loss: bool = True,
+        use_pcgrad: bool = True,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -60,6 +64,10 @@ class DIAS(L.LightningModule):
         self.pcgrad_dyn_clip = pcgrad_dyn_clip
         self.gmean_offset = gmean_offset
         self.state_dependent_effects = state_dependent_effects
+        self.use_slot_weights = use_slot_weights
+        self.use_precondition_loss = use_precondition_loss
+        self.use_effect_loss = use_effect_loss
+        self.use_pcgrad = use_pcgrad
 
         if self.per_action_slots:
             assert (
@@ -104,6 +112,7 @@ class DIAS(L.LightningModule):
             action_arities=self.action_arities,
             gmean_offset=self.gmean_offset,
             state_dependent_effects=self.state_dependent_effects,
+            use_slot_weights=self.use_slot_weights,
         )
 
         # Action self-loop relation types: one per (action, active-position) pair.
@@ -295,21 +304,33 @@ class DIAS(L.LightningModule):
             )
 
             # Weight preconditions by slot weights so maximising preconditions
-            # also requires slot activation.
-            slot_w = torch.sigmoid(
-                self.graph_edit.slot_weight_logits[batch_s1.y_action]
-            )
+            # also requires slot activation. With use_slot_weights=False the
+            # weights are forced to 1 (all slots active).
+            if self.use_slot_weights:
+                slot_w = torch.sigmoid(
+                    self.graph_edit.slot_weight_logits[batch_s1.y_action]
+                )
+            else:
+                slot_w = torch.ones_like(
+                    self.graph_edit.slot_weight_logits[batch_s1.y_action]
+                )
             sw_matrix = slot_w[:, None, :, None] * slot_w[:, None, None, :]
             one_minus_ip_w = ((1 - ignore_precond) * sw_matrix).clamp(eps, 1 - eps)
 
-            loss_aux = (
-                F.binary_cross_entropy(
-                    ignore_effects, torch.ones_like(ignore_effects), reduction="sum"
-                )
-                + F.binary_cross_entropy(
-                    one_minus_ip_w, torch.ones_like(one_minus_ip_w), reduction="sum"
-                )
-            ) / total_numel
+            # L_eff encourages minimal effects; L_pre encourages restrictive
+            # preconditions. Each term can be ablated independently.
+            loss_eff = F.binary_cross_entropy(
+                ignore_effects, torch.ones_like(ignore_effects), reduction="sum"
+            )
+            loss_pre = F.binary_cross_entropy(
+                one_minus_ip_w, torch.ones_like(one_minus_ip_w), reduction="sum"
+            )
+            aux_terms = torch.zeros((), device=p_adj.device, dtype=p_adj.dtype)
+            if self.use_effect_loss:
+                aux_terms = aux_terms + loss_eff
+            if self.use_precondition_loss:
+                aux_terms = aux_terms + loss_pre
+            loss_aux = aux_terms / total_numel
 
         loss_mse = ((adj_out_probs > 0.5) ^ (target_adj > 0.5)).sum()
 
@@ -369,6 +390,12 @@ class DIAS(L.LightningModule):
                 on_epoch=False,
             )
 
+    def _aux_active(self) -> bool:
+        """Whether the auxiliary objective contributes any gradient this run."""
+        return (self.aux_loss_weight != 0.0) and (
+            self.use_effect_loss or self.use_precondition_loss
+        )
+
     def training_step(self, batch, batch_idx):
         opt = self.optimizers()
         opt.zero_grad()
@@ -379,46 +406,53 @@ class DIAS(L.LightningModule):
         loss_aux = results["loss_aux"]
         aux_w = self.aux_loss_weight
 
-        # PCGrad-style projection: remove the component of loss_aux's gradient
-        # that conflicts with loss_adj's gradient.
-        trainable_params = [p for p in self.parameters() if p.requires_grad]
-        grads_adj = torch.autograd.grad(
-            loss_adj, trainable_params, retain_graph=True, allow_unused=True
-        )
-        grads_aux = torch.autograd.grad(
-            aux_w * loss_aux, trainable_params, retain_graph=True, allow_unused=True
-        )
+        if not self._aux_active():
+            # Ablation: no auxiliary objective (alpha = 0 / L_pre and L_eff off).
+            loss_adj.backward()
+        elif not self.use_pcgrad:
+            # Ablation: plain weighted sum instead of PCGrad projection.
+            (loss_adj + aux_w * loss_aux).backward()
+        else:
+            # PCGrad-style projection: remove the component of loss_aux's gradient
+            # that conflicts with loss_adj's gradient.
+            trainable_params = [p for p in self.parameters() if p.requires_grad]
+            grads_adj = torch.autograd.grad(
+                loss_adj, trainable_params, retain_graph=True, allow_unused=True
+            )
+            grads_aux = torch.autograd.grad(
+                aux_w * loss_aux, trainable_params, retain_graph=True, allow_unused=True
+            )
 
-        for p, g_adj, g_aux in zip(trainable_params, grads_adj, grads_aux):
-            if g_adj is None and g_aux is None:
-                continue
-            if g_adj is None:
-                p.grad = g_aux.clone()
-                continue
-            if g_aux is None:
-                p.grad = g_adj.clone()
-                continue
+            for p, g_adj, g_aux in zip(trainable_params, grads_adj, grads_aux):
+                if g_adj is None and g_aux is None:
+                    continue
+                if g_adj is None:
+                    p.grad = g_aux.clone()
+                    continue
+                if g_aux is None:
+                    p.grad = g_adj.clone()
+                    continue
 
-            g_adj_flat = g_adj.reshape(-1)
-            g_aux_flat = g_aux.reshape(-1)
-            dot = torch.dot(g_adj_flat, g_aux_flat)
-            if dot < 0:
-                g_adj_norm_sq = torch.dot(g_adj_flat, g_adj_flat)
-                g_aux_final = (
-                    g_aux - (dot / g_adj_norm_sq) * g_adj
-                    if g_adj_norm_sq > 1e-12
-                    else g_aux
-                )
-            else:
-                g_aux_final = g_aux
+                g_adj_flat = g_adj.reshape(-1)
+                g_aux_flat = g_aux.reshape(-1)
+                dot = torch.dot(g_adj_flat, g_aux_flat)
+                if dot < 0:
+                    g_adj_norm_sq = torch.dot(g_adj_flat, g_adj_flat)
+                    g_aux_final = (
+                        g_aux - (dot / g_adj_norm_sq) * g_adj
+                        if g_adj_norm_sq > 1e-12
+                        else g_aux
+                    )
+                else:
+                    g_aux_final = g_aux
 
-            if self.pcgrad_dyn_clip:
-                norm_adj = torch.norm(g_adj)
-                norm_aux = torch.norm(g_aux_final)
-                if norm_aux > norm_adj and norm_aux > 1e-12:
-                    g_aux_final = g_aux_final * (norm_adj / norm_aux)
+                if self.pcgrad_dyn_clip:
+                    norm_adj = torch.norm(g_adj)
+                    norm_aux = torch.norm(g_aux_final)
+                    if norm_aux > norm_adj and norm_aux > 1e-12:
+                        g_aux_final = g_aux_final * (norm_adj / norm_aux)
 
-            p.grad = (g_adj + g_aux_final).clone()
+                p.grad = (g_adj + g_aux_final).clone()
 
         opt.step()
 

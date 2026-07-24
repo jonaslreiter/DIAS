@@ -28,6 +28,7 @@ class PredictionModule(nn.Module):
         action_arities: list[int] | None = None,
         gmean_offset: float = 0.0,
         state_dependent_effects: bool = False,
+        use_slot_weights: bool = True,
     ):
         super().__init__()
         self.num_objects = num_objects
@@ -39,6 +40,7 @@ class PredictionModule(nn.Module):
         self.learn_preconditions = learn_preconditions
         self.gmean_offset = gmean_offset
         self.state_dependent_effects = state_dependent_effects
+        self.use_slot_weights = use_slot_weights
         self.num_relations = len(arity_relations)
 
         action_arities_t = (
@@ -185,19 +187,22 @@ class PredictionModule(nn.Module):
             selection[unused_mask] = 0.0
         else:
             selection = selection_all[:, :-1, :]
-            slot_weights = torch.sigmoid(self.slot_weight_logits[y_action])  # (B, k)
-            # Don't downweight forced selections.
-            if self.force_action_args and y_action_args is not None:
-                forced = y_action_args >= 0
-                if forced.any():
-                    if forced.shape[1] < slot_weights.shape[1]:
-                        forced = F.pad(
-                            forced, (0, slot_weights.shape[1] - forced.shape[1])
+            if self.use_slot_weights:
+                slot_weights = torch.sigmoid(
+                    self.slot_weight_logits[y_action]
+                )  # (B, k)
+                # Don't downweight forced selections.
+                if self.force_action_args and y_action_args is not None:
+                    forced = y_action_args >= 0
+                    if forced.any():
+                        if forced.shape[1] < slot_weights.shape[1]:
+                            forced = F.pad(
+                                forced, (0, slot_weights.shape[1] - forced.shape[1])
+                            )
+                        slot_weights = torch.where(
+                            forced, torch.ones_like(slot_weights), slot_weights
                         )
-                    slot_weights = torch.where(
-                        forced, torch.ones_like(slot_weights), slot_weights
-                    )
-            selection = selection * slot_weights.unsqueeze(-1)
+                selection = selection * slot_weights.unsqueeze(-1)
 
         if self.training:
             self._last_selection = selection.detach().cpu()

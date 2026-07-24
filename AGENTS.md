@@ -79,6 +79,11 @@ When working on data generation or dataset code, preserve these assumptions unle
 - The default batching strategy in `configs/main.yaml` is `stratified`, which yields an effectively unbounded iterable dataset; training length is therefore controlled by `trainer.max_steps` and related trainer limits, not dataset exhaustion.
 - Noise ablations: `noise_model: ratio` uses `edge_remove_ratio` / `edge_add_ratio`; `noise_model: expected_count` uses `expected_removed_atoms` / `expected_added_atoms` (Poisson flip budget, `noise_on_fluents_only`). The `noise` experiment overlay selects `expected_count`.
 - The MLP baseline is trained by adding `model.init_args.state_dependent_effects: true` (the `configs/experiments/mlp.yaml` overlay).
+- Model ablation switches live on `model.init_args` in `configs/main.yaml`; all default to the full model. Each toggles one component:
+  - `use_slot_weights: false` — forces all M slots active (no learned slot activation); also fixes the slot weights to 1 in the precondition aux term.
+  - `use_precondition_loss: false` — drops L_pre (the restrictive-precondition aux term).
+  - `use_effect_loss: false` — drops L_eff (the minimal-effects aux term).
+  - `use_pcgrad: false` — replaces PCGrad projection with a plain weighted sum `L_adj + α·L_aux` (same α).
 
 ## Validation Conventions
 
