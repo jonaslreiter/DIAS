@@ -2,6 +2,7 @@
 #SBATCH --job-name=dias-train
 #SBATCH --partition=rleap_gpu_24gb,rleap_gpu_48gb
 #SBATCH --output=logs/slurm/%x-%A_%a.out
+#SBATCH --qos=rleap_deadline
 #
 # DIAS training array task. Do NOT run directly — submit via
 #   python scripts/launch.py ...
