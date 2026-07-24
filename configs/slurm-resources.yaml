@@ -14,35 +14,31 @@
 # separately in configs/slurm-resources-validation.yaml.
 
 defaults:
-  time: "02:00:00"
+  time: "04:00:00"
   mem: "8G"
   cpus: "8"
   gres: "shard:4"
 
 blocks-3: {}
 delivery:
-  time: "03:00:00"
-  gres: "shard:8"
+  gres: "shard:6"
 driverlog:
-  time: "04:00:00"
-  gres: "shard:8"
+  gres: "shard:6"
 gripper: {}
 hanoi: {}
-logistics:
-  time: "03:00:00"
+logistics: {}
 miconic: {}
 n-puzzle: {}
 satellite:
-  time: "06:00:00"
-  gres: "shard:12"
+  time: "12:00:00"
+  gres: "shard:10"
 sokoban:
-  time: "03:00:00"
-  mem: "12G"
-  gres: "shard:8"
+  time: "06:00:00"
+  mem: "32G"
+  gres: "shard:6"
 sokoban-pull:
-  gres: "shard:8"
+  gres: "shard:6"
 spanner:
-  time: "03:00:00"
-  gres: "shard:8"
+  gres: "shard:6"
 visitall:
   gres: "shard:8"

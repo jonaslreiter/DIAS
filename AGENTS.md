@@ -23,6 +23,7 @@ The core problem setting is:
 - Per-experiment overlays live in `configs/experiments/{mlp,noise}.yaml`.
 - Validation sweep settings live in `configs/validation.yaml`.
 - Per-domain Slurm resources live in `configs/slurm-resources.yaml` (training array) and `configs/slurm-resources-validation.yaml` (validation array), both consumed by `scripts/launch.py`. Same schema (`defaults` + per-domain overrides), resolved independently; validation runs on CPU (DIAS/noise validators are CPU-only, the MLP baseline falls back to CPU), so it requests no GPU and targets all partitions.
+- Training GPU requests are per domain and live entirely in `configs/slurm-resources.yaml`; treat that file as the source of truth rather than hardcoding a partition or GPU size here. It currently requests GPU shards (`gres: shard:N`) sized per domain from a shared `defaults` block, with no partition pinning. A domain that needs a whole GPU or a specific partition gets it via its own entry (`gres: "gpu:1"` and/or `sbatch_extra: ["--partition=<name>"]`).
 - The current single-domain base training config in this workspace is `configs/main.yaml`.
 - Standardized filenames per domain folder are `domain.pddl`, `train.pddl`, `test-1.pddl`, `test-2.pddl`, `test-3.pddl`, `strips+.yaml`, and `config.yaml`.
 
