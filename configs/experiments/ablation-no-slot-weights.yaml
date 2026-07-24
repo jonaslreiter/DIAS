@@ -1,0 +1,10 @@
+# Ablation overlay: no learned slot weights (all M slots forced active).
+# Composed last on top of main.yaml, e.g.:
+#   dias-train fit --config configs/main.yaml \
+#       --config pddl/<domain>/config.yaml \
+#       --config configs/experiments/ablation-no-slot-weights.yaml
+#
+# Also fixes the slot weights to 1 in the precondition auxiliary term.
+model:
+  init_args:
+    use_slot_weights: false

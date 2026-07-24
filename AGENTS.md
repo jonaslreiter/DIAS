@@ -84,6 +84,7 @@ When working on data generation or dataset code, preserve these assumptions unle
   - `use_precondition_loss: false` — drops L_pre (the restrictive-precondition aux term).
   - `use_effect_loss: false` — drops L_eff (the minimal-effects aux term).
   - `use_pcgrad: false` — replaces PCGrad projection with a plain weighted sum `L_adj + α·L_aux` (same α).
+  - Ready-made overlays live in `configs/experiments/ablation-*.yaml` (composed last on top of `main.yaml`): `ablation-no-slot-weights`, `ablation-no-precondition-loss`, `ablation-no-effect-loss`, `ablation-no-aux-loss` (drops both aux terms, i.e. α = 0), and `ablation-no-pcgrad`.
 
 ## Validation Conventions
 
@@ -98,6 +99,7 @@ When working on data generation or dataset code, preserve these assumptions unle
 - `scripts/launch.py` is the authoritative sweep launcher. Per domain it submits a training array (`scripts/slurm/train.sh`, one task per seed) and a dependent validation array (`scripts/slurm/validate.sh`, `--dependency=aftercorr`). `--backend local` runs the same steps sequentially.
 - One run corresponds to one `(domain, seed)` pair; seeds default to `0 .. num_runs-1` (`--num-runs`, default = `len(configs/validation.yaml seeds)`).
 - All runs of one launch share an `--experiment` name (= W&B group = results directory). `--experiment-type {dias,mlp,noise}` picks the overlay and validator.
+- `--ablation {no-slot-weights,no-precondition-loss,no-effect-loss,no-aux-loss,no-pcgrad}` composes one `configs/experiments/ablation-*.yaml` overlay on top of the experiment type (orthogonal axis; always uses the DIAS validator). Default: none (full model).
 - Domain-specific sample bounds come from `pddl/<domain>/config.yaml`; paths/problem lists from `pddl/domain-settings.yaml`; per-domain Slurm resources from `configs/slurm-resources.yaml`.
 - Global validation settings such as number of validation problems and sampling counts come from `configs/validation.yaml`.
 - `scripts/collect_results.py` aggregates a finished experiment (local JSON or W&B) into the paper table.

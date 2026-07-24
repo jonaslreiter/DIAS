@@ -14,8 +14,10 @@ validation recomputes the same id.
 
 Config composition (in order): ``configs/main.yaml`` -> ``<domain>/config.yaml``
 -> optional experiment overlay (``configs/experiments/{mlp,noise}.yaml``) ->
-launcher ``--set`` overrides. The experiment type also selects the validator
-(``mlp`` uses the MLP baseline; ``dias``/``noise`` use the DIAS validator).
+optional ablation overlay (``configs/experiments/ablation-*.yaml``, selected by
+``--ablation``) -> launcher ``--set`` overrides. The experiment type also selects
+the validator (``mlp`` uses the MLP baseline; ``dias``/``noise`` use the DIAS
+validator); ablations always use the DIAS validator.
 
 Per-domain Slurm resources come from ``configs/slurm-resources.yaml``.
 
@@ -32,6 +34,9 @@ Examples
     python scripts/launch.py --experiment-type noise --experiment noise-a2r2 \
         --set data.init_args.expected_added_atoms=2 \
         --set data.init_args.expected_removed_atoms=2
+
+    # Ablation (no PCGrad) on the default DIAS model:
+    python scripts/launch.py --ablation no-pcgrad --experiment abl-no-pcgrad
 
     # See exactly what would be submitted, without submitting:
     python scripts/launch.py --domains gripper --num-runs 3 --dry-run
@@ -52,12 +57,22 @@ from pathlib import Path
 import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+EXPERIMENTS_DIR = PROJECT_ROOT / "configs" / "experiments"
 EXPERIMENT_OVERLAYS = {
-    "mlp": PROJECT_ROOT / "configs" / "experiments" / "mlp.yaml",
-    "noise": PROJECT_ROOT / "configs" / "experiments" / "noise.yaml",
+    "mlp": EXPERIMENTS_DIR / "mlp.yaml",
+    "noise": EXPERIMENTS_DIR / "noise.yaml",
 }
 # Which validator each experiment type uses (noise still uses the DIAS validator).
 VALIDATOR_TYPE = {"dias": "dias", "noise": "dias", "mlp": "mlp"}
+# Model ablation overlays, orthogonal to --experiment-type (all use the DIAS
+# validator). Composed after the experiment overlay.
+ABLATION_OVERLAYS = {
+    "no-slot-weights": EXPERIMENTS_DIR / "ablation-no-slot-weights.yaml",
+    "no-precondition-loss": EXPERIMENTS_DIR / "ablation-no-precondition-loss.yaml",
+    "no-effect-loss": EXPERIMENTS_DIR / "ablation-no-effect-loss.yaml",
+    "no-aux-loss": EXPERIMENTS_DIR / "ablation-no-aux-loss.yaml",
+    "no-pcgrad": EXPERIMENTS_DIR / "ablation-no-pcgrad.yaml",
+}
 
 
 def _load_yaml(path: Path) -> dict:
@@ -90,13 +105,13 @@ def _base_train_args(
     spec: dict,
     train_config: Path,
     domain_config: Path,
-    overlay: Path | None,
+    overlays: list[Path],
     logs_dir: Path,
     extra: list[str],
 ) -> list[str]:
     """Seed-independent Lightning args shared by all runs of a domain."""
     args = ["--config", str(train_config), "--config", str(domain_config)]
-    if overlay is not None:
+    for overlay in overlays:
         args += ["--config", str(overlay)]
     args += [
         "--experiment",
@@ -246,6 +261,13 @@ def main() -> int:
         "--experiment-type", default="dias", choices=["dias", "mlp", "noise"]
     )
     p.add_argument(
+        "--ablation",
+        default=None,
+        choices=sorted(ABLATION_OVERLAYS),
+        help="Model ablation overlay, composed on top of the experiment type "
+        "(uses the DIAS validator). Default: none (full model).",
+    )
+    p.add_argument(
         "--domains",
         nargs="+",
         default=None,
@@ -307,7 +329,12 @@ def main() -> int:
             raise SystemExit(f"domain '{d}' not in {args.domain_settings}")
 
     num_runs = args.num_runs or len(_load_yaml(args.validation_config)["seeds"])
-    overlay = EXPERIMENT_OVERLAYS.get(args.experiment_type)
+    overlays = []
+    exp_overlay = EXPERIMENT_OVERLAYS.get(args.experiment_type)
+    if exp_overlay is not None:
+        overlays.append(exp_overlay)
+    if args.ablation is not None:
+        overlays.append(ABLATION_OVERLAYS[args.ablation])
     val_type = VALIDATOR_TYPE[args.experiment_type]
     extra = []
     for o in args.overrides:
@@ -318,10 +345,11 @@ def main() -> int:
         extra.append(f"--{o}")
 
     print(
-        f"experiment : {args.experiment}  (type={args.experiment_type}, validator={val_type})"
+        f"experiment : {args.experiment}  (type={args.experiment_type}, "
+        f"ablation={args.ablation or 'none'}, validator={val_type})"
     )
     print(f"domains    : {len(domains)} x {num_runs} runs  (backend={args.backend})")
-    if overlay is not None:
+    for overlay in overlays:
         print(f"overlay    : {overlay}")
 
     if args.backend == "slurm" and not args.dry_run:
@@ -341,7 +369,7 @@ def main() -> int:
             spec,
             args.train_config,
             domain_config,
-            overlay,
+            overlays,
             args.log_dir,
             extra,
         )
