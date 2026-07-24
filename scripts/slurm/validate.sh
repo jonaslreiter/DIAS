@@ -1,6 +1,6 @@
 #!/usr/bin/env zsh
 #SBATCH --job-name=dias-val
-#SBATCH --partition=rleap_gpu_24gb,rleap_gpu_48gb
+#SBATCH --partition=rleap_gpu_24gb,rleap_gpu_48gb,rleap_cpu,rleap_cpu_modern
 #SBATCH --output=logs/slurm/%x-%A_%a.out
 #SBATCH --qos=rleap_deadline
 #

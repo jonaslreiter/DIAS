@@ -22,7 +22,7 @@ The core problem setting is:
 - Per-domain training overrides live in `pddl/<domain>/config.yaml` (a Lightning partial config composed after `configs/main.yaml`).
 - Per-experiment overlays live in `configs/experiments/{mlp,noise}.yaml`.
 - Validation sweep settings live in `configs/validation.yaml`.
-- Per-domain Slurm resources live in `configs/slurm-resources.yaml` (training array) and `configs/slurm-resources-validation.yaml` (validation array), both consumed by `scripts/launch.py`. Same schema (`defaults` + per-domain overrides), resolved independently; validation is CPU/RAM-heavy but GPU-light, so its defaults use a single shard with more cpus/mem.
+- Per-domain Slurm resources live in `configs/slurm-resources.yaml` (training array) and `configs/slurm-resources-validation.yaml` (validation array), both consumed by `scripts/launch.py`. Same schema (`defaults` + per-domain overrides), resolved independently; validation runs on CPU (DIAS/noise validators are CPU-only, the MLP baseline falls back to CPU), so it requests no GPU and targets all partitions.
 - The current single-domain base training config in this workspace is `configs/main.yaml`.
 - Standardized filenames per domain folder are `domain.pddl`, `train.pddl`, `test-1.pddl`, `test-2.pddl`, `test-3.pddl`, `strips+.yaml`, and `config.yaml`.
 
