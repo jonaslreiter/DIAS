@@ -2,10 +2,14 @@
 
 For each selected domain this submits (Slurm backend):
 
-  1. a training array job of ``--num-runs`` tasks (task i = seed i), and
-  2. a validation array job of the same size with
+  1. a training array job with one task per seed (array task id = seed), and
+  2. a validation array job over the same task ids with
      ``--dependency=aftercorr:<train_jobid>`` so validation task i runs only
      after training task i succeeds.
+
+Seeds default to ``0 .. --num-runs-1``; ``--seeds`` selects an explicit subset
+(e.g. to re-run only the seeds that failed), which becomes a sparse sbatch
+array spec such as ``--array=3,7-8``.
 
 Runs are identified by a deterministic id ``<experiment>-<domain>-s<seed>`` (see
 ``validate_runs.run_id_for``), so the two array jobs need no id handoff: the
@@ -37,6 +41,9 @@ Examples
 
     # Ablation (no PCGrad) on the default DIAS model:
     python scripts/launch.py --ablation no-pcgrad --experiment abl-no-pcgrad
+
+    # Re-run just the seeds that failed, into the same experiment/group:
+    python scripts/launch.py --experiment paper-main --domains gripper --seeds 3 7-8
 
     # See exactly what would be submitted, without submitting:
     python scripts/launch.py --domains gripper --num-runs 3 --dry-run
@@ -78,6 +85,46 @@ ABLATION_OVERLAYS = {
 
 def _load_yaml(path: Path) -> dict:
     return yaml.safe_load(path.read_text())
+
+
+def _parse_seeds(specs: list[str]) -> list[int]:
+    """Parse ``--seeds`` tokens into a sorted, deduplicated seed list.
+
+    Accepts single seeds and inclusive ranges, space- or comma-separated:
+    ``--seeds 3 7-9`` and ``--seeds 3,7-9`` both give ``[3, 7, 8, 9]``.
+    """
+    seeds: set[int] = set()
+    for spec in specs:
+        for part in spec.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            lo_s, sep, hi_s = part.partition("-")
+            try:
+                lo = int(lo_s)
+                hi = int(hi_s) if sep else lo
+            except ValueError:
+                raise SystemExit(f"--seeds: expected N or N-M, got {part!r}")
+            if lo < 0 or hi < lo:
+                raise SystemExit(f"--seeds: invalid range {part!r}")
+            seeds.update(range(lo, hi + 1))
+    if not seeds:
+        raise SystemExit("--seeds: no seeds given")
+    return sorted(seeds)
+
+
+def _format_array(seeds: list[int]) -> str:
+    """Compress a sorted seed list into an sbatch ``--array`` spec (``3,7-9``)."""
+    parts: list[str] = []
+    start = prev = seeds[0]
+    for seed in seeds[1:]:
+        if seed == prev + 1:
+            prev = seed
+            continue
+        parts.append(f"{start}-{prev}" if prev > start else str(start))
+        start = prev = seed
+    parts.append(f"{start}-{prev}" if prev > start else str(start))
+    return ",".join(parts)
 
 
 def _resolve_resources(slurm_cfg: dict, domain: str) -> dict:
@@ -143,13 +190,15 @@ def _submit_domain_slurm(
     spec: dict,
     base_args: list[str],
     val_type: str,
-    num_runs: int,
+    seeds: list[int],
     train_res: dict,
     val_res: dict,
     logs_dir: Path,
     args: argparse.Namespace,
 ) -> None:
-    array = f"0-{num_runs - 1}"
+    # Array task id == seed, so a seed subset becomes a sparse array spec and
+    # aftercorr still pairs train/validate tasks of the same seed.
+    array = _format_array(seeds)
     train_res_opts = _sbatch_resource_opts(train_res)
     val_res_opts = _sbatch_resource_opts(val_res)
 
@@ -167,7 +216,7 @@ def _submit_domain_slurm(
         "scripts/slurm/train.sh",
         *base_args,
     ]
-    print(f"[{domain}] submit training array ({num_runs} runs)")
+    print(f"[{domain}] submit training array ({len(seeds)} runs, seeds {array})")
     train_jobid = _run(train_cmd, args.dry_run)
 
     val_export = ",".join(
@@ -202,7 +251,7 @@ def _run_domain_local(
     spec: dict,
     base_args: list[str],
     val_type: str,
-    num_runs: int,
+    seeds: list[int],
     logs_dir: Path,
     args: argparse.Namespace,
 ) -> None:
@@ -212,7 +261,7 @@ def _run_domain_local(
     domain_settings = _load_yaml(args.domain_settings)
     val_cfg = _load_yaml(args.validation_config)
 
-    for seed in range(num_runs):
+    for seed in seeds:
         run_id = run_id_for(experiment, domain, seed)
         train_cmd = [
             "dias-train",
@@ -280,6 +329,15 @@ def main() -> int:
         default=None,
         help="Runs (seeds 0..N-1) per domain. Default: len(validation.yaml seeds).",
     )
+    p.add_argument(
+        "--seeds",
+        nargs="+",
+        default=None,
+        metavar="SEED",
+        help="Explicit seeds instead of 0..num-runs-1, as single values and/or "
+        "inclusive ranges (e.g. '--seeds 3 7-9'). Use to re-run individual "
+        "failed seeds. Mutually exclusive with --num-runs.",
+    )
     p.add_argument("--backend", default="slurm", choices=["slurm", "local"])
     p.add_argument(
         "--set",
@@ -329,7 +387,13 @@ def main() -> int:
         if d not in domain_settings:
             raise SystemExit(f"domain '{d}' not in {args.domain_settings}")
 
-    num_runs = args.num_runs or len(_load_yaml(args.validation_config)["seeds"])
+    if args.seeds is not None:
+        if args.num_runs is not None:
+            raise SystemExit("--seeds and --num-runs are mutually exclusive")
+        seeds = _parse_seeds(args.seeds)
+    else:
+        num_runs = args.num_runs or len(_load_yaml(args.validation_config)["seeds"])
+        seeds = list(range(num_runs))
     overlays = []
     exp_overlay = EXPERIMENT_OVERLAYS.get(args.experiment_type)
     if exp_overlay is not None:
@@ -349,7 +413,10 @@ def main() -> int:
         f"experiment : {args.experiment}  (type={args.experiment_type}, "
         f"ablation={args.ablation or 'none'}, validator={val_type})"
     )
-    print(f"domains    : {len(domains)} x {num_runs} runs  (backend={args.backend})")
+    print(
+        f"domains    : {len(domains)} x {len(seeds)} runs  "
+        f"(seeds={_format_array(seeds)}, backend={args.backend})"
+    )
     for overlay in overlays:
         print(f"overlay    : {overlay}")
 
@@ -381,7 +448,7 @@ def main() -> int:
                 spec,
                 base_args,
                 val_type,
-                num_runs,
+                seeds,
                 _resolve_resources(slurm_cfg, domain),
                 _resolve_resources(val_slurm_cfg, domain),
                 args.log_dir,
@@ -394,7 +461,7 @@ def main() -> int:
                 spec,
                 base_args,
                 val_type,
-                num_runs,
+                seeds,
                 args.log_dir,
                 args,
             )

@@ -19,6 +19,23 @@ class CheckpointCLI(CLI):
         )
 
 
+def resolve_best_checkpoint(ckpt_dir: Path) -> Path:
+    """Return the ``best-epoch*.ckpt`` most recently written in ``ckpt_dir``.
+
+    Re-running a seed (``launch.py --seeds``) reuses the run id and therefore the
+    checkpoint directory, and Lightning does not delete the previous attempt's
+    file: it side-steps the name clash with a ``-v1`` suffix. Selecting by mtime
+    picks the current attempt's checkpoint; plain glob order is arbitrary and
+    could silently validate the stale one.
+    """
+    matches = list(ckpt_dir.glob("best-epoch*.ckpt"))
+    if not matches:
+        raise FileNotFoundError(
+            f"No best-epoch*.ckpt found in {ckpt_dir} (run did not finish?)"
+        )
+    return max(matches, key=lambda p: p.stat().st_mtime)
+
+
 def process_model_logits(
     preconditions_logits: torch.tensor,
     effect_logits: torch.tensor,

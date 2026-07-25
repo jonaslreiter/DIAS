@@ -20,7 +20,12 @@ from dias.data.generate_samples import generate_bfs
 from dias.models.dias import DIAS
 
 from .transpiler import PDDLTranspiler
-from .utils import extract_domain_header, process_model_logits, strip_problem_types
+from .utils import (
+    extract_domain_header,
+    process_model_logits,
+    resolve_best_checkpoint,
+    strip_problem_types,
+)
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -169,12 +174,7 @@ class ModelValidation:
         }
 
         ckpt_dir = Path(f"{logs_path_abs}/dias/{model_id}/checkpoints")
-        ckpt_match = next(ckpt_dir.glob("best-epoch*.ckpt"), None)
-        if ckpt_match is None:
-            raise FileNotFoundError(
-                f"No best-epoch*.ckpt found in {ckpt_dir} (run did not finish?)"
-            )
-        self.ckpt_file = str(ckpt_match)
+        self.ckpt_file = str(resolve_best_checkpoint(ckpt_dir))
 
         ckpt = torch.load(self.ckpt_file, map_location="cpu")
         _legacy_keys = {
