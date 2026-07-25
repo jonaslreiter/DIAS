@@ -32,4 +32,5 @@ satellite: {}
 sokoban: {}
 sokoban-pull: {}
 spanner: {}
-visitall: {}
+visitall:
+  time: "03:00:00"
