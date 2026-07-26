@@ -25,6 +25,7 @@ blocks-3:
 delivery:
   gres: "shard:6"
 driverlog:
+  time: "08:00:00"
   gres: "shard:6"
 gripper:
   time: "08:00:00"
