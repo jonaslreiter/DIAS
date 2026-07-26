@@ -1,0 +1,3 @@
+[submodule "submodules/pddl-generators"]
+	path = submodules/pddl-generators
+	url = git@github.com:AI-Planning/pddl-generators.git
