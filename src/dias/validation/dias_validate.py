@@ -28,9 +28,10 @@ class ModelValidation:
     LEARNED_ACTION_PREFIX = "learned_"
     EQUALITY_PREDICATE_NAME = "eq"
 
-    def __init__(self, model_id, logs_path_abs, problem_path=None):
+    def __init__(self, model_id, logs_path_abs, problem_path=None, threshold=0.5):
         self.model_id = model_id
         self.logs_path_abs = logs_path_abs
+        self.threshold = threshold
 
         ckpt_dir = Path(f"{logs_path_abs}/dias/{model_id}/checkpoints")
         self.ckpt_file = str(resolve_best_checkpoint(ckpt_dir))
@@ -90,6 +91,7 @@ class ModelValidation:
             action_arities=self.datamodule.action_arities,
             num_slots=self.model.num_slots,
             random_flip=False,
+            threshold=threshold,
         )
 
         original_domain_path = datamodule_hparams["domain_path"]

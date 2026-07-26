@@ -106,6 +106,20 @@ python scripts/launch.py --experiment-type noise --experiment noise-a2r2 \
     --set data.init_args.expected_added_atoms=2 \
     --set data.init_args.expected_removed_atoms=2
 
+# Hyperparameter sweep: all domains × the axis grid × 3 seeds. Each value
+# becomes its own sub-experiment `<experiment>-<tag><value>`; the override is
+# applied last, so it beats the tuned value in pddl/<domain>/config.yaml.
+# Axes: aux-loss-weight {0.01, 0.03, 0.1, 0.3, 1.0}  → `<exp>-aux<α>`
+#       num-slots         {5, 7, 9}                  → `<exp>-slots<M>`
+#       gmean-temperature {100, 500, 1000, 5000}     → `<exp>-gmeanT<T>`
+python scripts/launch.py --experiment aux-sweep --sweep aux-loss-weight --num-runs 3
+
+# --reuse-default takes the axis default (num-slots 5, gmean-temperature 500)
+# from an existing experiment instead of re-running it, so this only submits
+# `dias-slots7` and `dias-slots9`:
+python scripts/launch.py --experiment dias --sweep num-slots \
+    --reuse-default dias-full --num-runs 3
+
 # Preview the sbatch commands without submitting
 python scripts/launch.py --domains gripper --num-runs 3 --dry-run
 
@@ -120,6 +134,35 @@ Then collect a finished experiment into a `P / R / N_S / N_C / N_SC` table
 ```bash
 python scripts/collect_results.py --experiment paper-main              # from local JSON
 python scripts/collect_results.py --experiment paper-main --source wandb
+```
+
+For a sweep, collect all sub-experiments into a domain × value matrix per metric
+(`--markdown` also writes them as markdown tables). Pass the same `--sweep` /
+`--reuse-default` as the launch, so the columns resolve to the same experiments:
+
+```bash
+python scripts/collect_results.py --experiment aux-sweep --sweep aux-loss-weight \
+    --markdown logs/aux-sweep.md
+
+python scripts/collect_results.py --experiment dias --sweep num-slots \
+    --reuse-default dias-full --markdown logs/num-slots-sweep.md
+```
+
+### Threshold sensitivity
+
+Reading a schema off a checkpoint binarizes the slot activations and the
+add/delete/positive/negative tensors at a single threshold (0.5 for the numbers
+in the paper). `scripts/launch_threshold_validation.py` re-runs *only* the
+validation step of a finished experiment at other thresholds, on the very same
+checkpoints — no retraining. Each threshold writes to its own
+`logs/validation/<experiment>-thr<T>/`, so the original results are untouched:
+
+```bash
+# 0.1 / 0.25 / 0.5 / 0.75 / 0.9 over all domains × 3 seeds (CPU-only arrays)
+python scripts/launch_threshold_validation.py --experiment dias-full --num-runs 3
+
+python scripts/collect_results.py --experiment dias-full --threshold-sweep \
+    --markdown logs/threshold-sweep.md
 ```
 
 ## Repo layout
@@ -140,8 +183,9 @@ configs/
 
 scripts/
 ├── launch.py            # sweep launcher (train array + dependent validation array)
+├── launch_threshold_validation.py  # re-validate finished runs at other thresholds
 ├── validate_runs.py     # compute-side per-run validation
-├── collect_results.py   # aggregate results → paper table
+├── collect_results.py   # aggregate results → paper table / sweep matrix (+ markdown)
 └── validation/          # run_dias.py, run_mlp_baseline.py, run_l1.py (single checkpoint)
 
 pddl/              # 13 paper domains + domain-settings.yaml

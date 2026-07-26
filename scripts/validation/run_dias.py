@@ -37,6 +37,13 @@ def main() -> None:
     p.add_argument("--num-samples", type=int, default=250)
     p.add_argument("--sample-population", type=int, default=500)
     p.add_argument(
+        "--threshold",
+        type=float,
+        default=0.5,
+        help="Binarization threshold for slot activations and the learned "
+        "precondition/effect tensors. Default 0.5 (what the paper reports).",
+    )
+    p.add_argument(
         "--out", type=Path, default=None, help="Optional path to write the result JSON."
     )
     args = p.parse_args()
@@ -45,6 +52,7 @@ def main() -> None:
         model_id=args.model_id,
         logs_path_abs=str(args.logs_dir.resolve()),
         problem_path=str(args.problem.resolve()),
+        threshold=args.threshold,
     )
     v.setup(num_samples=args.num_samples, sample_population=args.sample_population)
     result = v.validate()

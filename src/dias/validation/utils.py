@@ -48,7 +48,16 @@ def process_model_logits(
     action_arities,
     num_slots,
     random_flip: bool = False,
+    threshold: float = 0.5,
 ):
+    """Binarize the learned schema tensors at *threshold*.
+
+    ``threshold`` is applied uniformly to every probability the schema is read
+    off from: slot activation and the four add/delete/positive/negative
+    tensors. Lowering it yields more active slots (higher learned arity) and
+    both more effects and more preconditions; raising it yields fewer of each.
+    0.5 is the default the paper's numbers use.
+    """
     effect_probs = F.softmax(preconditions_logits, dim=-1)
     add_effects_probs = effect_probs[..., 1]
     del_effects_probs = effect_probs[..., -1]
@@ -79,7 +88,7 @@ def process_model_logits(
             forced_slot_mask = slot_indices < arity_t  # (num_actions, num_slots)
         slot_probs[forced_slot_mask] = 1.0
 
-    active_slots = np.array(slot_probs) > 0.5  # shape: (num_actions, num_slots)
+    active_slots = np.array(slot_probs) > threshold  # shape: (num_actions, num_slots)
 
     # Zero out rows and columns for inactive slots in effects/preconditions
     # Shapes: (num_actions, num_relations, num_slots, num_slots)
@@ -95,10 +104,10 @@ def process_model_logits(
         neg_precond_probs[a, :, :, inactive] = 0
 
     # Threshold after masking
-    add_eff = np.where(add_effects_probs > 0.5, 1, 0)
-    del_eff = np.where(del_effects_probs > 0.5, 1, 0)
-    pos_prec = np.where(pos_precond_probs > 0.5, 1, 0)
-    neg_prec = np.where(neg_precond_probs > 0.5, 1, 0)
+    add_eff = np.where(add_effects_probs > threshold, 1, 0)
+    del_eff = np.where(del_effects_probs > threshold, 1, 0)
+    pos_prec = np.where(pos_precond_probs > threshold, 1, 0)
+    neg_prec = np.where(neg_precond_probs > threshold, 1, 0)
 
     if random_flip:
         for arr in (add_eff, del_eff, pos_prec, neg_prec):

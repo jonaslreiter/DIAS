@@ -20,8 +20,8 @@ defaults:
   gres: "shard:4"
 
 blocks-3:
-  gres: "shard:6"
-  time: "12:00:00"
+  gres: "shard:12"
+  time: "24:00:00"
 delivery:
   gres: "shard:6"
 driverlog:
@@ -29,13 +29,13 @@ driverlog:
 gripper:
   time: "08:00:00"
 hanoi:
-  gres: "shard:6"
-  time: "12:00:00"
+  gres: "shard:12"
+  time: "24:00:00"
 logistics:
   time: "08:00:00"
 miconic:
-  gres: "shard:6"
-  time: "12:00:00"
+  gres: "shard:12"
+  time: "24:00:00"
 n-puzzle: {}
 satellite:
   time: "12:00:00"

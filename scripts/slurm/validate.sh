@@ -9,6 +9,9 @@
 # which submits this array with --dependency=aftercorr on the training array
 # (task i validates the checkpoint from training task i) and exports the
 # EXPERIMENT/DOMAIN/EXP_TYPE/paths below.
+#
+# scripts/launch_threshold_validation.py reuses this same script to re-validate
+# already-trained checkpoints, exporting the three optional variables below.
 
 source ~/.zshrc
 conda activate ddl
@@ -17,6 +20,18 @@ set -euo pipefail
 SEED=${SLURM_ARRAY_TASK_ID:-0}
 echo "validate  domain=$DOMAIN  seed=$SEED  type=$EXP_TYPE"
 
+# Optional: re-validation knobs (unset => plain validation of a fresh run).
+EXTRA=()
+if [[ -n "${THRESHOLD:-}" ]]; then
+  EXTRA+=(--threshold "$THRESHOLD")
+fi
+if [[ -n "${RESULTS_EXPERIMENT:-}" ]]; then
+  EXTRA+=(--results-experiment "$RESULTS_EXPERIMENT")
+fi
+if [[ "${NO_WANDB:-0}" == "1" ]]; then
+  EXTRA+=(--no-wandb)
+fi
+
 python scripts/validate_runs.py \
   --experiment "$EXPERIMENT" \
   --domain "$DOMAIN" \
@@ -24,4 +39,5 @@ python scripts/validate_runs.py \
   --experiment-type "$EXP_TYPE" \
   --logs-dir "$LOGS_DIR" \
   --domain-settings "$DOMAIN_SETTINGS" \
-  --validation-config "$VALIDATION_CONFIG"
+  --validation-config "$VALIDATION_CONFIG" \
+  "${EXTRA[@]}"

@@ -20,6 +20,13 @@ Validation problems come from ``pddl/domain-settings.yaml``
 knobs come from ``configs/validation.yaml``. Results are written to
 ``<logs>/validation/<experiment>/<domain>/seed<seed>.json`` and, when W&B is
 reachable, also logged to the resumed run under ``validation/<stem>/<metric>``.
+
+``--threshold`` re-reads the same checkpoint at a different binarization
+threshold (DIAS validator only; 0.5 is what the paper reports), and
+``--results-experiment`` redirects only the *output* directory (and W&B group)
+while the checkpoint is still located via ``--experiment``. Together they let a
+finished experiment be re-validated into a sibling results directory without
+touching its original JSONs — see ``scripts/launch_threshold_validation.py``.
 """
 
 from __future__ import annotations
@@ -67,17 +74,31 @@ def validate_run(
     logs_dir: Path,
     run_id: str | None = None,
     log_wandb: bool = True,
+    threshold: float = 0.5,
+    results_experiment: str | None = None,
 ) -> dict:
-    """Validate a single run over its held-out problems; write + return results."""
+    """Validate a single run over its held-out problems; write + return results.
+
+    The checkpoint is always found via *experiment*; *results_experiment*
+    (default: *experiment*) only picks the directory the JSON is written to, so
+    a re-validation at another *threshold* can be kept apart from the original.
+    """
     run_id = run_id or run_id_for(experiment, domain, seed)
+    results_experiment = results_experiment or experiment
     spec = domain_settings[domain]
     offset = int(val_cfg["problem_offset"])
     n = int(val_cfg["num_problems"])
     val_problems = spec["problems"][offset : offset + n]
 
     ModelValidation = _validator_class(experiment_type)
+    if experiment_type == "mlp" and threshold != 0.5:
+        raise SystemExit(
+            "--threshold applies to the DIAS validator only; the MLP baseline "
+            "predicts successor adjacencies directly and has no schema to binarize"
+        )
     num_samples = int(val_cfg["num_samples"])
     sample_population = int(val_cfg["sample_population"])
+    extra_kwargs = {} if experiment_type == "mlp" else {"threshold": threshold}
 
     per_problem: dict[str, dict[str, Any]] = {}
     for problem in val_problems:
@@ -88,6 +109,7 @@ def validate_run(
                 model_id=run_id,
                 logs_path_abs=str(logs_dir.resolve()),
                 problem_path=str((PROJECT_ROOT / problem).resolve()),
+                **extra_kwargs,
             )
             v.setup(num_samples=num_samples, sample_population=sample_population)
             result = v.validate()
@@ -100,9 +122,11 @@ def validate_run(
             for k, val in result.items()
         }
 
-    _write_json(logs_dir, experiment, domain, seed, run_id, per_problem)
+    _write_json(
+        logs_dir, results_experiment, domain, seed, run_id, per_problem, threshold
+    )
     if log_wandb:
-        _log_to_wandb(experiment, domain, seed, run_id, logs_dir, per_problem)
+        _log_to_wandb(results_experiment, domain, seed, run_id, logs_dir, per_problem)
     return per_problem
 
 
@@ -113,6 +137,7 @@ def _write_json(
     seed: int,
     run_id: str,
     per_problem: dict,
+    threshold: float = 0.5,
 ) -> None:
     out = logs_dir / "validation" / experiment / domain / f"seed{seed}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -124,6 +149,7 @@ def _write_json(
                 "domain": domain,
                 "seed": seed,
                 "run_id": run_id,
+                "threshold": threshold,
                 "status": "ok" if ok else "validation_failed",
                 "per_problem": per_problem,
             },
@@ -180,6 +206,20 @@ def main() -> int:
     p.add_argument(
         "--run-id", default=None, help="Defaults to <experiment>-<domain>-s<seed>."
     )
+    p.add_argument(
+        "--threshold",
+        type=float,
+        default=0.5,
+        help="Binarization threshold for slot activations and the learned "
+        "precondition/effect tensors (DIAS validator only). Default 0.5.",
+    )
+    p.add_argument(
+        "--results-experiment",
+        default=None,
+        help="Write results under logs/validation/<this>/ instead of "
+        "<experiment>/. The checkpoint is still located via --experiment, so a "
+        "re-validation at another --threshold leaves the original JSONs alone.",
+    )
     p.add_argument("--logs-dir", type=Path, default=PROJECT_ROOT / "logs")
     p.add_argument(
         "--domain-settings",
@@ -208,6 +248,8 @@ def main() -> int:
         logs_dir=args.logs_dir,
         run_id=args.run_id,
         log_wandb=not args.no_wandb,
+        threshold=args.threshold,
+        results_experiment=args.results_experiment,
     )
     failed = all("error" in v for v in per_problem.values()) if per_problem else True
     return 1 if failed else 0

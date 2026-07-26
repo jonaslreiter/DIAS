@@ -16,10 +16,27 @@ recall by micro-averaging the per-action tp/fp/fn in ``action_stats`` (so a seed
 is sound iff every problem has zero false positives); when tp/fp/fn are absent
 (e.g. W&B summaries) it falls back to the mean of per-problem precision/recall.
 
+With ``--sweep AXIS`` it instead reads the sub-experiments written by
+``scripts/launch.py --sweep AXIS`` (``<experiment>-<tag><value>``) and prints one
+domain x value matrix per metric; ``--markdown`` writes the same matrices as
+markdown tables. ``--reuse-default EXPERIMENT`` mirrors the launcher flag: the
+axis-default column is read from that existing experiment.
+
+``--threshold-sweep`` does the same for the *validation* binarization threshold
+(sub-experiments ``<experiment>-thr<T>`` written by
+``scripts/launch_threshold_validation.py``). Those columns share one set of
+trained checkpoints, so they isolate the effect of the threshold alone.
+
 Usage:
     python scripts/collect_results.py --experiment paper-main
     python scripts/collect_results.py --experiment paper-main --source wandb
     python scripts/collect_results.py --experiment noise-a2r2 --domains gripper hanoi
+    python scripts/collect_results.py --experiment dias-full --threshold-sweep \
+        --markdown logs/threshold-sweep.md
+    python scripts/collect_results.py --experiment aux-sweep --sweep aux-loss-weight \
+        --markdown logs/aux-sweep.md
+    python scripts/collect_results.py --experiment dias --sweep num-slots \
+        --reuse-default dias-full --markdown logs/num-slots-sweep.md
 """
 
 from __future__ import annotations
@@ -29,6 +46,14 @@ import json
 import re
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # for `import launch`
+from launch import SWEEP_AXES, sweep_experiment_name  # noqa: E402
+from launch_threshold_validation import (  # noqa: E402
+    THRESHOLD_TAG,
+    THRESHOLD_VALUES,
+    threshold_experiment_name,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 WANDB_PROJECT = "dias"
@@ -121,6 +146,180 @@ def _aggregate(prs: list[tuple[float, float]]) -> dict:
     }
 
 
+METRICS = ("P", "R", "N_S", "N_C", "N_SC")
+METRIC_LABELS = {
+    "P": "mean precision over seeds",
+    "R": "mean recall over seeds",
+    "N_S": "#seeds sound (precision == 1)",
+    "N_C": "#seeds complete (recall == 1)",
+    "N_SC": "#seeds sound and complete",
+    "n": "#seeds aggregated (< requested means runs are missing)",
+}
+
+
+def _collect(
+    experiment: str, args: argparse.Namespace
+) -> dict[str, list[tuple[float, float]]]:
+    """Per-domain (precision, recall) pairs of an experiment, from the chosen source."""
+    if args.source == "local":
+        by_domain = collect_local(experiment, args.logs_dir)
+    else:
+        by_domain = collect_wandb(experiment, args.wandb_project, args.wandb_entity)
+    if args.domains:
+        by_domain = {d: v for d, v in by_domain.items() if d in args.domains}
+    return by_domain
+
+
+def _cell_value(
+    metric: str, prs: list[tuple[float, float]] | None, missing: str = "-"
+) -> str:
+    """One matrix cell: 3-decimal rate, integer count, or `missing` if no runs."""
+    if not prs:
+        return missing
+    value = _aggregate(prs)[metric]
+    return f"{value:.3f}" if metric in ("P", "R") else f"{value:d}"
+
+
+def print_sweep_matrix(
+    metric: str,
+    values: list[float],
+    domains: list[str],
+    cells: dict[tuple[float, str], list[tuple[float, float]]],
+) -> None:
+    """Print one domain x value matrix for a single metric."""
+
+    def cell(prs: list[tuple[float, float]] | None) -> str:
+        return f"{_cell_value(metric, prs):>8}"
+
+    header = f"{'domain':<16}" + "".join(f"{f'{v:g}':>8}" for v in values)
+    print(f"\n{metric}  ({METRIC_LABELS[metric]})")
+    print(header)
+    print("-" * len(header))
+    for domain in domains:
+        row = "".join(cell(cells.get((v, domain))) for v in values)
+        print(f"{domain:<16}{row}")
+    print("-" * len(header))
+    pooled = "".join(
+        cell([pr for d in domains for pr in cells.get((v, d), [])]) for v in values
+    )
+    print(f"{'ALL':<16}{pooled}")
+
+
+def write_sweep_markdown(
+    path: Path,
+    axis_name: str,
+    param: str,
+    values: list[float],
+    names: dict[float, str],
+    domains: list[str],
+    cells: dict[tuple[float, str], list[tuple[float, float]]],
+    source: str,
+) -> None:
+    """Write one markdown table per metric (domains x value, raw values)."""
+    cols = [f"{v:g}" for v in values]
+    lines = [
+        f"# {axis_name} sweep",
+        "",
+        f"Rows are domains, columns are `{param}` (source: {source}); each cell "
+        "aggregates over the seeds of that (domain, value) pair. `ALL` pools "
+        "every seed of every domain at that value. Columns come from the "
+        "sub-experiments "
+        + ", ".join(f"`{v:g}` → `{names[v]}`" for v in values)
+        + ".",
+        "",
+    ]
+    for metric in (*METRICS, "n"):
+        lines += [
+            f"## {metric} — {METRIC_LABELS[metric]}",
+            "",
+            "| domain | " + " | ".join(cols) + " |",
+            "|" + "---|" * (len(cols) + 1),
+        ]
+        for domain in domains:
+            row = [_cell_value(metric, cells.get((v, domain))) for v in values]
+            lines.append(f"| {domain} | " + " | ".join(row) + " |")
+        pooled = [
+            _cell_value(metric, [pr for d in domains for pr in cells.get((v, d), [])])
+            for v in values
+        ]
+        lines += ["| **ALL** | " + " | ".join(pooled) + " |", ""]
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines))
+    print(f"\nwrote {path}")
+
+
+def run_sweep(args: argparse.Namespace, axis_name: str, values: list[float]) -> None:
+    """Collect one sub-experiment per value and print/write the domain x value grid."""
+    axis = SWEEP_AXES[axis_name]
+    if args.reuse_default and axis.default is None:
+        raise SystemExit(
+            f"--reuse-default: the {axis_name} axis has no reusable default "
+            "(the value is tuned per domain)"
+        )
+    # Same name derivation as the launcher, so the reused default column points
+    # at whatever experiment was passed to `launch.py --reuse-default`.
+    names = {
+        v: sweep_experiment_name(args.experiment, axis, v, args.reuse_default)
+        for v in values
+    }
+    _report_matrix(args, axis_name, axis.param, values, names)
+
+
+def run_threshold_sweep(args: argparse.Namespace, values: list[float]) -> None:
+    """Collect the re-validations written by launch_threshold_validation.py.
+
+    Unlike --sweep this varies a *validation* parameter, so every column reads
+    the same trained checkpoints — differences between columns are purely the
+    effect of how the learned schema is binarized.
+    """
+    names = {v: threshold_experiment_name(args.experiment, v) for v in values}
+    _report_matrix(args, "threshold", "binarization threshold", values, names)
+
+
+def _report_matrix(
+    args: argparse.Namespace,
+    axis_name: str,
+    param: str,
+    values: list[float],
+    names: dict[float, str],
+) -> None:
+    """Print (and optionally write) the domain x value grid for named experiments."""
+    cells: dict[tuple[float, str], list[tuple[float, float]]] = {}
+    domains: set[str] = set()
+    missing: list[str] = []
+    for value in values:
+        by_domain = _collect(names[value], args)
+        if not by_domain:
+            missing.append(names[value])
+        for domain, prs in by_domain.items():
+            cells[(value, domain)] = prs
+            domains.add(domain)
+
+    print(f"\nexperiment: {args.experiment}  ({axis_name} sweep, {param})")
+    print(f"values    : {', '.join(f'{v:g} -> {names[v]}' for v in values)}")
+    if missing:
+        print(f"no results: {', '.join(missing)}")
+    if not domains:
+        print("(no results found)")
+        return
+
+    ordered = sorted(domains)
+    for metric in (*METRICS, "n"):
+        print_sweep_matrix(metric, values, ordered, cells)
+    if args.markdown:
+        write_sweep_markdown(
+            args.markdown,
+            axis_name,
+            param,
+            values,
+            names,
+            ordered,
+            cells,
+            args.source,
+        )
+
+
 def print_table(
     by_domain: dict[str, list[tuple[float, float]]], experiment: str
 ) -> None:
@@ -162,19 +361,101 @@ def main() -> int:
     p.add_argument("--logs-dir", type=Path, default=PROJECT_ROOT / "logs")
     p.add_argument("--wandb-project", default=WANDB_PROJECT)
     p.add_argument("--wandb-entity", default=WANDB_ENTITY)
+    p.add_argument(
+        "--sweep",
+        default=None,
+        choices=sorted(SWEEP_AXES),
+        help="Aggregate the sweep launched under --experiment (sub-experiments "
+        "<experiment>-<tag><value>) into a domain x value matrix per metric. "
+        "Default grids — "
+        + "; ".join(
+            f"{name}: {', '.join(f'{v:g}' for v in axis.values)}"
+            for name, axis in SWEEP_AXES.items()
+        )
+        + ".",
+    )
+    p.add_argument(
+        "--sweep-values",
+        nargs="+",
+        type=float,
+        default=None,
+        metavar="V",
+        help="Values for --sweep instead of that axis' default grid.",
+    )
+    p.add_argument(
+        "--aux-sweep",
+        nargs="*",
+        type=float,
+        default=None,
+        metavar="ALPHA",
+        help="Alias for '--sweep aux-loss-weight [--sweep-values ALPHA ...]'.",
+    )
+    p.add_argument(
+        "--reuse-default",
+        default=None,
+        metavar="EXPERIMENT",
+        help="Read the axis-default column from this existing experiment "
+        "(mirrors 'launch.py --reuse-default').",
+    )
+    p.add_argument(
+        "--threshold-sweep",
+        nargs="*",
+        type=float,
+        default=None,
+        metavar="T",
+        help="Aggregate the re-validations written by "
+        "scripts/launch_threshold_validation.py (sub-experiments "
+        f"<experiment>-{THRESHOLD_TAG}<T>) into a domain x threshold matrix per "
+        "metric. "
+        "The bare flag uses the default grid "
+        + ", ".join(f"{t:g}" for t in THRESHOLD_VALUES)
+        + ".",
+    )
+    p.add_argument(
+        "--markdown",
+        type=Path,
+        default=None,
+        help="With --sweep / --threshold-sweep: also write the matrices to this "
+        "markdown file (one table per metric).",
+    )
     args = p.parse_args()
 
-    if args.source == "local":
-        by_domain = collect_local(args.experiment, args.logs_dir)
-    else:
-        by_domain = collect_wandb(
-            args.experiment, args.wandb_project, args.wandb_entity
-        )
+    if args.threshold_sweep is not None:
+        if args.sweep is not None or args.aux_sweep is not None:
+            raise SystemExit(
+                "--threshold-sweep varies a validation parameter and cannot be "
+                "combined with the training-parameter sweeps"
+            )
+        if args.reuse_default:
+            raise SystemExit(
+                "--reuse-default does not apply to --threshold-sweep: the 0.5 "
+                "column is re-validated into its own sub-experiment"
+            )
+        run_threshold_sweep(args, list(args.threshold_sweep) or list(THRESHOLD_VALUES))
+        return 0
 
-    if args.domains:
-        by_domain = {d: v for d, v in by_domain.items() if d in args.domains}
+    axis_name = args.sweep
+    values = list(args.sweep_values) if args.sweep_values else None
+    if args.aux_sweep is not None:
+        if axis_name is not None:
+            raise SystemExit(
+                "--aux-sweep is an alias for --sweep aux-loss-weight; "
+                "pass only one of them"
+            )
+        axis_name = "aux-loss-weight"
+        values = list(args.aux_sweep) or None
 
-    print_table(by_domain, args.experiment)
+    if axis_name is not None:
+        run_sweep(args, axis_name, values or list(SWEEP_AXES[axis_name].values))
+        return 0
+    if args.markdown:
+        raise SystemExit("--markdown is only supported together with --sweep")
+    if args.sweep_values:
+        raise SystemExit("--sweep-values requires --sweep")
+    if args.reuse_default:
+        raise SystemExit("--reuse-default requires --sweep")
+
+    print_table(_collect(args.experiment, args), args.experiment)
     return 0
 
 
