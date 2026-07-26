@@ -78,6 +78,45 @@ class DataModuleTest(unittest.TestCase):
                 num_valid=1,
             )._validate_sampling_config()
 
+    def test_min_per_label_floors_only_raise_the_per_domain_values(self):
+        def module(**values):
+            data_module = PddlGraphDataModule.__new__(PddlGraphDataModule)
+            for name, value in values.items():
+                setattr(data_module, name, value)
+            return data_module
+
+        raised = module(
+            min_per_label_train=20,
+            min_per_label_valid=10,
+            min_per_label_train_floor=200,
+            min_per_label_valid_floor=100,
+        )
+        raised._apply_min_per_label_floors()
+        self.assertEqual(
+            (raised.min_per_label_train, raised.min_per_label_valid), (200, 100)
+        )
+
+        kept = module(
+            min_per_label_train=1000,
+            min_per_label_valid=500,
+            min_per_label_train_floor=200,
+            min_per_label_valid_floor=100,
+        )
+        kept._apply_min_per_label_floors()
+        self.assertEqual(
+            (kept.min_per_label_train, kept.min_per_label_valid), (1000, 500)
+        )
+
+        # No floors / sampling by num_* instead: nothing to do.
+        untouched = module(
+            min_per_label_train=None,
+            min_per_label_valid=None,
+            min_per_label_train_floor=200,
+            min_per_label_valid_floor=None,
+        )
+        untouched._apply_min_per_label_floors()
+        self.assertIsNone(untouched.min_per_label_train)
+
     def test_cap_per_label_limits_each_action(self):
         data_module = PddlGraphDataModule.__new__(PddlGraphDataModule)
         data_module.max_per_label_train = 1

@@ -111,7 +111,9 @@ python scripts/launch.py --experiment-type noise --experiment noise-a2r2 \
 # applied last, so it beats the tuned value in pddl/<domain>/config.yaml.
 # Axes: aux-loss-weight {0.01, 0.03, 0.1, 0.3, 1.0}  → `<exp>-aux<α>`
 #       num-slots         {5, 7, 9}                  → `<exp>-slots<M>`
-#       gmean-temperature {100, 500, 1000, 5000}     → `<exp>-gmeanT<T>`
+#       gmean-temperature {0, 100, 500, 1000, 5000}  → `<exp>-gmeanT<T>`
+# (gmean-temperature T=0 means no annealing: constant τ=0 from step 0, i.e. the
+#  exact precondition product instead of the geometric-mean relaxation.)
 python scripts/launch.py --experiment aux-sweep --sweep aux-loss-weight --num-runs 3
 
 # --reuse-default takes the axis default (num-slots 5, gmean-temperature 500)

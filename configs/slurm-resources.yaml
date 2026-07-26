@@ -25,10 +25,10 @@ blocks-3:
 delivery:
   gres: "shard:6"
 driverlog:
-  time: "08:00:00"
+  time: "12:00:00"
   gres: "shard:6"
 gripper:
-  time: "08:00:00"
+  time: "12:00:00"
 hanoi:
   gres: "shard:12"
   time: "24:00:00"

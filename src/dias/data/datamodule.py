@@ -207,9 +207,10 @@ class PddlGraphDataModule(L.LightningDataModule):
 
     Stopping is driven by ``(min_per_label_train, min_per_label_valid)`` and/or
     ``(num_train, num_valid)``. If both are set, their train:valid ratios must
-    match. Optional ``max_per_label_*`` cap each label after sampling.
-    ``batch_sampling_strategy`` is ``"random"`` (shuffled DataLoader) or
-    ``"stratified"`` (unbounded action-balanced sampler).
+    match. Optional ``max_per_label_*`` cap each label after sampling, and
+    optional ``min_per_label_*_floor`` raise (never lower) the corresponding
+    minimum. ``batch_sampling_strategy`` is ``"random"`` (shuffled DataLoader)
+    or ``"stratified"`` (unbounded action-balanced sampler).
     """
 
     def __init__(
@@ -224,6 +225,8 @@ class PddlGraphDataModule(L.LightningDataModule):
         pt_file: Optional[str] = None,
         min_per_label_train: Optional[int] = None,
         min_per_label_valid: Optional[int] = None,
+        min_per_label_train_floor: Optional[int] = None,
+        min_per_label_valid_floor: Optional[int] = None,
         max_per_label_train: Optional[int] = None,
         max_per_label_valid: Optional[int] = None,
         num_train: Optional[int] = None,
@@ -254,6 +257,8 @@ class PddlGraphDataModule(L.LightningDataModule):
         self.pt_file = pt_file
         self.min_per_label_train = min_per_label_train
         self.min_per_label_valid = min_per_label_valid
+        self.min_per_label_train_floor = min_per_label_train_floor
+        self.min_per_label_valid_floor = min_per_label_valid_floor
         self.max_per_label_train = max_per_label_train
         self.max_per_label_valid = max_per_label_valid
         self.num_train = num_train
@@ -280,6 +285,7 @@ class PddlGraphDataModule(L.LightningDataModule):
             raise ValueError(
                 f"noise_model must be 'ratio' or 'expected_count', got {noise_model!r}."
             )
+        self._apply_min_per_label_floors()
         self._validate_sampling_config()
 
         print(f"Loading domain:  {domain_path}", file=sys.stderr)
@@ -306,6 +312,27 @@ class PddlGraphDataModule(L.LightningDataModule):
         if self.include_statics and p["static"] and p["name"] in self.default_statics:
             return False
         return True
+
+    def _apply_min_per_label_floors(self) -> None:
+        """Raise ``min_per_label_*`` to a shared lower bound, never lower it.
+
+        Experiment overlays are composed *after* the per-domain config, so a
+        plain ``min_per_label_train`` there would also shrink the domains that
+        sample more. The floors only ever increase the per-domain value — that
+        is what the paper's noise setup asks for: the *smallest* per-action
+        minimum sample count is raised to Nmin = 200, the larger ones stay.
+        """
+        for name, floor in (
+            ("min_per_label_train", self.min_per_label_train_floor),
+            ("min_per_label_valid", self.min_per_label_valid_floor),
+        ):
+            current = getattr(self, name)
+            if floor is None or current is None or current >= floor:
+                continue
+            print(
+                f"[info] Raising {name} {current} → {floor} (floor).", file=sys.stderr
+            )
+            setattr(self, name, floor)
 
     @property
     def _has_min(self) -> bool:

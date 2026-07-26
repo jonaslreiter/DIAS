@@ -21,7 +21,9 @@ Config composition (in order): ``configs/main.yaml`` -> ``<domain>/config.yaml``
 optional ablation overlay (``configs/experiments/ablation-*.yaml``, selected by
 ``--ablation``) -> launcher ``--set`` overrides. The experiment type also selects
 the validator (``mlp`` uses the MLP baseline; ``dias``/``noise`` use the DIAS
-validator); ablations always use the DIAS validator.
+validator) and its schema-derivation threshold (0.5, but 0.75 for ``noise``, as
+in the paper; override with ``--validation-threshold``); ablations always use
+the DIAS validator.
 
 ``--sweep AXIS`` turns one launch into a hyperparameter sweep: the whole domain
 x seed grid is submitted once per value of that axis (see ``SWEEP_AXES``), each
@@ -75,7 +77,6 @@ from __future__ import annotations
 
 import argparse
 import copy
-import json
 import shlex
 import subprocess
 import sys
@@ -94,6 +95,10 @@ EXPERIMENT_OVERLAYS = {
 }
 # Which validator each experiment type uses (noise still uses the DIAS validator).
 VALIDATOR_TYPE = {"dias": "dias", "noise": "dias", "mlp": "mlp"}
+# Schema-derivation threshold (Eq. 14) per experiment type; the paper raises it
+# to 0.75 under noise. Override per launch with --validation-threshold.
+DEFAULT_VALIDATION_THRESHOLD = 0.5
+VALIDATION_THRESHOLD = {"noise": 0.75}
 # Model ablation overlays, orthogonal to --experiment-type (all use the DIAS
 # validator). Composed after the experiment overlay.
 ABLATION_OVERLAYS = {
@@ -144,10 +149,12 @@ SWEEP_AXES: dict[str, SweepAxis] = {
         default=5,
         cast=int,
     ),
+    # T = 0 is a special point: constant tau = 0 from step 0, i.e. the exact
+    # precondition product instead of a relaxation (see _sweep_override_args).
     "gmean-temperature": SweepAxis(
         param=f"{SCHEDULE_KEY}.gmean_temperature.T",
         tag="gmeanT",
-        values=(100, 500, 1000, 5000),
+        values=(0, 100, 500, 1000, 5000),
         default=500,
         cast=int,
     ),
@@ -205,8 +212,20 @@ def _sweep_override_args(axis: SweepAxis, value: float, train_cfg: dict) -> list
         node = schedule
         for part in path:
             node = node[part]
-        node[leaf] = axis.cast(value)
-        return [f"--{SCHEDULE_KEY}={json.dumps(schedule, separators=(',', ':'))}"]
+        if leaf == "T" and axis.cast(value) == 0:
+            # T = 0 is the limit of the exponential decay: the scheduled value
+            # is 0 from step 0 on (v0 * (vT/v0)**(step/T) -> 0 as T -> 0+), and
+            # gmean's divisor becomes 1, i.e. the exact precondition product
+            # instead of a relaxation. Expressed as a constant schedule because
+            # the exponential form would divide by T.
+            node.clear()
+            node.update({"type": "linear", "keypoints": {0: 0.0}})
+        else:
+            node[leaf] = axis.cast(value)
+        # YAML flow style, not JSON: `keypoints` is keyed by int step, and JSON
+        # would stringify those keys (LossWeightSchedule then compares int to str).
+        dumped = yaml.safe_dump(schedule, default_flow_style=True, width=10**9)
+        return [f"--{SCHEDULE_KEY}={dumped.strip()}"]
     return [f"--{axis.param}={value:g}"]
 
 
@@ -217,6 +236,7 @@ def _check_sweep_config(
     domain_settings: dict,
     train_cfg: dict,
     train_config: Path,
+    overlays: list[Path],
     reuse_default: str | None,
 ) -> None:
     """Fail early when the swept parameter is not where the sweep assumes it is."""
@@ -231,8 +251,13 @@ def _check_sweep_config(
             f"{axis_name} axis default is {axis.default:g}; '{reuse_default}' "
             "therefore did not run that point"
         )
-    for domain in domains:
-        path = (PROJECT_ROOT / domain_settings[domain]["domain"]).parent / "config.yaml"
+    paths = [
+        (PROJECT_ROOT / domain_settings[domain]["domain"]).parent / "config.yaml"
+        for domain in domains
+    ]
+    # Overlays are composed after the domain config and can carry the same
+    # parameters (the noise overlay replaces the whole schedule, for instance).
+    for path in paths + overlays:
         cfg = _load_yaml(path) or {}
         in_schedule = axis.param.startswith(f"{SCHEDULE_KEY}.")
         if in_schedule and _config_value(cfg, SCHEDULE_KEY):
@@ -353,6 +378,7 @@ def _submit_domain_slurm(
     spec: dict,
     base_args: list[str],
     val_type: str,
+    threshold: float,
     seeds: list[int],
     train_res: dict,
     val_res: dict,
@@ -382,17 +408,20 @@ def _submit_domain_slurm(
     print(f"[{domain}] submit training array ({len(seeds)} runs, seeds {array})")
     train_jobid = _run(train_cmd, args.dry_run)
 
-    val_export = ",".join(
-        [
-            "ALL",
-            f"EXPERIMENT={experiment}",
-            f"DOMAIN={domain}",
-            f"EXP_TYPE={val_type}",
-            f"LOGS_DIR={logs_dir}",
-            f"DOMAIN_SETTINGS={args.domain_settings}",
-            f"VALIDATION_CONFIG={args.validation_config}",
-        ]
-    )
+    val_vars = [
+        "ALL",
+        f"EXPERIMENT={experiment}",
+        f"DOMAIN={domain}",
+        f"EXP_TYPE={val_type}",
+        f"LOGS_DIR={logs_dir}",
+        f"DOMAIN_SETTINGS={args.domain_settings}",
+        f"VALIDATION_CONFIG={args.validation_config}",
+    ]
+    # validate.sh only forwards --threshold when THRESHOLD is set, so leave it
+    # unset at the default and keep the plain pipeline unchanged.
+    if threshold != DEFAULT_VALIDATION_THRESHOLD:
+        val_vars.append(f"THRESHOLD={threshold:g}")
+    val_export = ",".join(val_vars)
     dep = train_jobid or "<train_jobid>"
     val_cmd = [
         "sbatch",
@@ -414,6 +443,7 @@ def _run_domain_local(
     spec: dict,
     base_args: list[str],
     val_type: str,
+    threshold: float,
     seeds: list[int],
     logs_dir: Path,
     args: argparse.Namespace,
@@ -458,6 +488,7 @@ def _run_domain_local(
             logs_dir=logs_dir,
             run_id=run_id,
             log_wandb=not args.no_wandb,
+            threshold=threshold,
         )
 
 
@@ -533,6 +564,18 @@ def main() -> int:
         "results from this existing experiment (e.g. dias-full). Read back by "
         "'collect_results.py --reuse-default'.",
     )
+    p.add_argument(
+        "--validation-threshold",
+        type=float,
+        default=None,
+        metavar="T",
+        help="Schema-derivation threshold used by the validation step. Default: "
+        f"{DEFAULT_VALIDATION_THRESHOLD:g}, except "
+        + ", ".join(
+            f"{t:g} for --experiment-type {n}" for n, t in VALIDATION_THRESHOLD.items()
+        )
+        + ".",
+    )
     p.add_argument("--backend", default="slurm", choices=["slurm", "local"])
     p.add_argument(
         "--set",
@@ -596,6 +639,18 @@ def main() -> int:
     if args.ablation is not None:
         overlays.append(ABLATION_OVERLAYS[args.ablation])
     val_type = VALIDATOR_TYPE[args.experiment_type]
+    threshold = (
+        args.validation_threshold
+        if args.validation_threshold is not None
+        else VALIDATION_THRESHOLD.get(
+            args.experiment_type, DEFAULT_VALIDATION_THRESHOLD
+        )
+    )
+    if not 0.0 < threshold < 1.0:
+        raise SystemExit(
+            f"--validation-threshold: expected a probability in (0,1), got "
+            f"{threshold:g}"
+        )
     extra = []
     for o in args.overrides:
         if "=" not in o:
@@ -649,6 +704,7 @@ def main() -> int:
             domain_settings,
             train_cfg,
             args.train_config,
+            overlays,
             args.reuse_default,
         )
         # The override is appended last so it beats the per-domain config.
@@ -666,7 +722,8 @@ def main() -> int:
     submitted = [p for p in points if not p[2]]
     print(
         f"experiment : {args.experiment}  (type={args.experiment_type}, "
-        f"ablation={args.ablation or 'none'}, validator={val_type})"
+        f"ablation={args.ablation or 'none'}, validator={val_type}, "
+        f"threshold={threshold:g})"
     )
     print(
         f"domains    : {len(domains)} x {len(seeds)} runs  "
@@ -720,6 +777,7 @@ def main() -> int:
                     spec,
                     base_args,
                     val_type,
+                    threshold,
                     seeds,
                     _resolve_resources(slurm_cfg, domain),
                     _resolve_resources(val_slurm_cfg, domain),
@@ -733,6 +791,7 @@ def main() -> int:
                     spec,
                     base_args,
                     val_type,
+                    threshold,
                     seeds,
                     args.log_dir,
                     args,

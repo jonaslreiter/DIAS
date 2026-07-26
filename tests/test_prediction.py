@@ -78,6 +78,25 @@ class PredictionModuleTest(unittest.TestCase):
         self.assertFalse(torch.equal(gated_output[0], ungated_output[0]))
         self.assertTrue(torch.equal(gated_output[-1], ungated_output[-1]))
 
+    def test_gmean_offset_shifts_the_scheduled_temperature(self):
+        """``gmean_offset`` floors tau: it is added to the scheduled value."""
+        torch.manual_seed(11)
+        offset = PredictionModule(2, [2], 1, 1, 2, action_arities=[1], gmean_offset=0.1)
+        plain = PredictionModule(2, [2], 1, 1, 2, action_arities=[1])
+        plain.load_state_dict(offset.state_dict())
+        kwargs = {
+            "y_action": torch.tensor([0]),
+            "y_action_args": torch.tensor([[-1]]),
+            "adj_dense": torch.zeros(1, 1, 2, 2),
+        }
+        node_embeddings = torch.randn(2, 2)
+        offset_output = offset(node_embeddings, gmean_temperature=0.4, **kwargs)
+        same_tau = plain(node_embeddings, gmean_temperature=0.5, **kwargs)
+        shifted_tau = plain(node_embeddings, gmean_temperature=0.4, **kwargs)
+        # Same effective tau => same precondition gating => same prediction.
+        self.assertTrue(torch.allclose(offset_output[0], same_tau[0]))
+        self.assertFalse(torch.allclose(offset_output[0], shifted_tau[0]))
+
 
 if __name__ == "__main__":
     unittest.main()
