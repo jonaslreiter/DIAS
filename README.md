@@ -112,6 +112,7 @@ python scripts/launch.py --experiment-type noise --experiment noise-a2r2 \
 # Axes: aux-loss-weight {0.01, 0.03, 0.1, 0.3, 1.0}  → `<exp>-aux<α>`
 #       num-slots         {5, 7, 9}                  → `<exp>-slots<M>`
 #       gmean-temperature {0, 100, 500, 1000, 5000}  → `<exp>-gmeanT<T>`
+#       dataset-size      {20…2000 per action}       → `<exp>-n<N>`
 # (gmean-temperature T=0 means no annealing: constant τ=0 from step 0, i.e. the
 #  exact precondition product instead of the geometric-mean relaxation.)
 python scripts/launch.py --experiment aux-sweep --sweep aux-loss-weight --num-runs 3
@@ -149,6 +150,43 @@ python scripts/collect_results.py --experiment aux-sweep --sweep aux-loss-weight
 python scripts/collect_results.py --experiment dias --sweep num-slots \
     --reuse-default dias-full --markdown logs/num-slots-sweep.md
 ```
+
+### Dataset-size sensitivity
+
+How `P / R / N_S / N_C / N_SC` behave as the training set is scaled up and down,
+clean and under noise. `--sweep dataset-size` pins the sampled pool to exactly
+`num_actions × 1.5N` transitions per value N — `min_per_label_train =
+max_per_label_train = N`, both `*_valid` = N/2 — so each column is a fixed
+dataset size rather than a lower bound with a loose cap. The grid brackets every
+tuned per-domain minimum, so each domain is scaled both below and above its own
+default.
+
+Six domains × 7 sizes × 3 seeds per setting (126 runs each, 252 in total):
+
+```bash
+# Noiseless
+python scripts/launch.py --experiment datasize-clean --sweep dataset-size \
+    --domains blocks-3 delivery gripper hanoi logistics miconic --num-runs 3
+
+# Noisy: 2 atom flips per transition (0.5 removed + 0.5 added per state, so
+# 1 flip in s and 1 in s'). --experiment-type noise also brings the paper's
+# noise training setup (batch 50, τ floor 0.1) and validation threshold 0.75.
+python scripts/launch.py --experiment datasize-noise --sweep dataset-size \
+    --experiment-type noise --num-runs 3 \
+    --domains blocks-3 delivery gripper hanoi logistics miconic \
+    --set data.init_args.expected_removed_atoms=0.5 \
+    --set data.init_args.expected_added_atoms=0.5
+
+# Collect (one domain × size matrix per metric)
+python scripts/collect_results.py --experiment datasize-clean \
+    --sweep dataset-size --markdown logs/datasize-clean.md
+python scripts/collect_results.py --experiment datasize-noise \
+    --sweep dataset-size --markdown logs/datasize-noise.md
+```
+
+The `noise` overlay floors the per-action minima at 200/100; the sweep overrides
+those floors so the 20/50/100 points are not silently clamped back up — the two
+launches therefore see identical dataset sizes and differ only in the noise.
 
 ### Threshold sensitivity
 

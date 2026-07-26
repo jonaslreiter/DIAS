@@ -62,6 +62,16 @@ Examples
     python scripts/launch.py --experiment dias --sweep num-slots \
         --reuse-default dias-full --num-runs 3
 
+    # Dataset-size sweep, clean and noisy (2 atom flips per transition), on the
+    # six-domain subset; sub-experiments <experiment>-n20 ... <experiment>-n2000:
+    python scripts/launch.py --experiment datasize-clean --sweep dataset-size \
+        --domains blocks-3 delivery gripper hanoi logistics miconic --num-runs 3
+    python scripts/launch.py --experiment datasize-noise --sweep dataset-size \
+        --experiment-type noise --num-runs 3 \
+        --domains blocks-3 delivery gripper hanoi logistics miconic \
+        --set data.init_args.expected_removed_atoms=0.5 \
+        --set data.init_args.expected_added_atoms=0.5
+
     # Re-run just the seeds that failed, into the same experiment/group:
     python scripts/launch.py --experiment paper-main --domains gripper --seeds 3 7-8
 
@@ -123,6 +133,12 @@ class SweepAxis:
     the point ``--reuse-default`` takes from an existing experiment instead of
     re-running it. ``default = None`` means there is no reusable default (the
     value is tuned per domain), so ``--reuse-default`` is rejected.
+
+    ``linked`` maps one axis value to *further* Lightning overrides that have to
+    move with it (see ``_dataset_size_overrides``); ``param`` alone is what the
+    axis is named and reported by. All of them are appended last on the command
+    line, so they beat both ``pddl/<domain>/config.yaml`` and the overlays, and
+    all of them are rejected as ``--set`` targets.
     """
 
     param: str
@@ -130,6 +146,36 @@ class SweepAxis:
     values: tuple[float, ...]
     default: float | None
     cast: Callable[[float], float]
+    linked: Callable[[float], dict[str, float]] | None = None
+
+
+def _dataset_size_overrides(value: float) -> dict[str, int]:
+    """Sampling knobs that move with ``min_per_label_train`` on the size axis.
+
+    Pinning ``max_per_label_train`` to the same N (and both ``*_valid`` to N/2)
+    makes the dataset size *exact* rather than a lower bound: sampling stops
+    once every action has 1.5N transitions and the cap trims every action back
+    to 1.5N, so the pool is exactly ``num_actions * 1.5N``. The 2:1
+    train:valid weight then splits it into ~N train / ~N/2 valid per action
+    (the ratio is enforced on the pool as a whole, so individual actions drift a
+    few percent). The per-domain configs instead pair a tuned minimum with a
+    loose cap, so no point of this sweep reproduces a domain's default run
+    exactly — hence the axis has no reusable ``default``.
+
+    The ``*_floor`` overrides exist for ``--experiment-type noise``: that
+    overlay floors the minima at 200/100, which is composed after the domain
+    config and would otherwise silently clamp the 20/50/100 points back up.
+    Setting each floor to the value it floors makes it a no-op.
+    """
+    n = int(value)
+    half = max(1, n // 2)
+    return {
+        "data.init_args.max_per_label_train": n,
+        "data.init_args.min_per_label_valid": half,
+        "data.init_args.max_per_label_valid": half,
+        "data.init_args.min_per_label_train_floor": n,
+        "data.init_args.min_per_label_valid_floor": half,
+    }
 
 
 SWEEP_AXES: dict[str, SweepAxis] = {
@@ -158,7 +204,24 @@ SWEEP_AXES: dict[str, SweepAxis] = {
         default=500,
         cast=int,
     ),
+    # Training-set size, in transitions per action schema (N train + N/2 valid).
+    # The grid brackets every tuned per-domain minimum, so each domain is
+    # scaled both down and up relative to its own default.
+    "dataset-size": SweepAxis(
+        param="data.init_args.min_per_label_train",
+        tag="n",
+        values=(20, 50, 100, 200, 500, 1000, 2000),
+        default=None,
+        cast=int,
+        linked=_dataset_size_overrides,
+    ),
 }
+
+
+def _axis_params(axis: SweepAxis) -> list[str]:
+    """Every Lightning key an axis pins (the axis parameter plus its linked ones)."""
+    linked = axis.linked(axis.values[0]) if axis.linked else {}
+    return [axis.param, *linked]
 
 
 def sweep_experiment_name(
@@ -202,6 +265,8 @@ def _config_value(cfg: dict, dotted_key: str):
 
 def _sweep_override_args(axis: SweepAxis, value: float, train_cfg: dict) -> list[str]:
     """Lightning args pinning ``axis`` to ``value`` (appended last, so they win)."""
+    extra = axis.linked(value) if axis.linked else {}
+    linked = [f"--{k}={v:g}" for k, v in extra.items()]
     if axis.param.startswith(f"{SCHEDULE_KEY}."):
         # jsonargparse rebuilds a dict-typed argument from scratch when a
         # sub-key is set on the command line, so passing
@@ -225,8 +290,8 @@ def _sweep_override_args(axis: SweepAxis, value: float, train_cfg: dict) -> list
         # YAML flow style, not JSON: `keypoints` is keyed by int step, and JSON
         # would stringify those keys (LossWeightSchedule then compares int to str).
         dumped = yaml.safe_dump(schedule, default_flow_style=True, width=10**9)
-        return [f"--{SCHEDULE_KEY}={dumped.strip()}"]
-    return [f"--{axis.param}={value:g}"]
+        return [f"--{SCHEDULE_KEY}={dumped.strip()}", *linked]
+    return [f"--{axis.param}={value:g}", *linked]
 
 
 def _check_sweep_config(
@@ -682,10 +747,9 @@ def main() -> int:
     else:
         axis = SWEEP_AXES[axis_name]
         values = values or list(axis.values)
-        if any(o.startswith(f"{axis.param}=") for o in args.overrides):
-            raise SystemExit(
-                f"--set {axis.param}=... conflicts with --sweep {axis_name}"
-            )
+        for param in _axis_params(axis):
+            if any(o.startswith(f"{param}=") for o in args.overrides):
+                raise SystemExit(f"--set {param}=... conflicts with --sweep {axis_name}")
         if axis_name == "aux-loss-weight" and args.ablation == "no-aux-loss":
             raise SystemExit(
                 "--ablation no-aux-loss disables the auxiliary losses, so "
