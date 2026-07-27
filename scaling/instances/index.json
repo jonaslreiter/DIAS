@@ -1,0 +1,302 @@
+{
+  "blocks-3": [
+    {
+      "id": "n0012",
+      "domain": "blocks-3",
+      "generator": "blocksworld",
+      "generator_seed": 1,
+      "params": {
+        "target": 12,
+        "blocks": 12
+      },
+      "num_objects": 12,
+      "path": "scaling/instances/blocks-3/n0012.pddl",
+      "num_actions": 3,
+      "num_predicates": 6,
+      "num_initial_atoms": 39
+    },
+    {
+      "id": "n0020",
+      "domain": "blocks-3",
+      "generator": "blocksworld",
+      "generator_seed": 1,
+      "params": {
+        "target": 20,
+        "blocks": 20
+      },
+      "num_objects": 20,
+      "path": "scaling/instances/blocks-3/n0020.pddl",
+      "num_actions": 3,
+      "num_predicates": 6,
+      "num_initial_atoms": 66
+    },
+    {
+      "id": "n0040",
+      "domain": "blocks-3",
+      "generator": "blocksworld",
+      "generator_seed": 1,
+      "params": {
+        "target": 40,
+        "blocks": 40
+      },
+      "num_objects": 40,
+      "path": "scaling/instances/blocks-3/n0040.pddl",
+      "num_actions": 3,
+      "num_predicates": 6,
+      "num_initial_atoms": 128
+    },
+    {
+      "id": "n0068",
+      "domain": "blocks-3",
+      "generator": "blocksworld",
+      "generator_seed": 1,
+      "params": {
+        "target": 68,
+        "blocks": 68
+      },
+      "num_objects": 68,
+      "path": "scaling/instances/blocks-3/n0068.pddl",
+      "num_actions": 3,
+      "num_predicates": 6,
+      "num_initial_atoms": 210
+    },
+    {
+      "id": "n0100",
+      "domain": "blocks-3",
+      "generator": "blocksworld",
+      "generator_seed": 1,
+      "params": {
+        "target": 100,
+        "blocks": 100
+      },
+      "num_objects": 100,
+      "path": "scaling/instances/blocks-3/n0100.pddl",
+      "num_actions": 3,
+      "num_predicates": 6,
+      "num_initial_atoms": 307
+    },
+    {
+      "id": "n0150",
+      "domain": "blocks-3",
+      "generator": "blocksworld",
+      "generator_seed": 1,
+      "params": {
+        "target": 150,
+        "blocks": 150
+      },
+      "num_objects": 150,
+      "path": "scaling/instances/blocks-3/n0150.pddl",
+      "num_actions": 3,
+      "num_predicates": 6,
+      "num_initial_atoms": 459
+    }
+  ],
+  "logistics": [
+    {
+      "id": "n0012",
+      "domain": "logistics",
+      "generator": "logistics",
+      "generator_seed": 1,
+      "params": {
+        "target": 12,
+        "cities": 2,
+        "city_size": 2,
+        "packages": 2,
+        "airplanes": 2
+      },
+      "num_objects": 12,
+      "path": "scaling/instances/logistics/n0012.pddl",
+      "num_actions": 4,
+      "num_predicates": 12,
+      "num_initial_atoms": 40
+    },
+    {
+      "id": "n0021",
+      "domain": "logistics",
+      "generator": "logistics",
+      "generator_seed": 1,
+      "params": {
+        "target": 20,
+        "cities": 3,
+        "city_size": 3,
+        "packages": 4,
+        "airplanes": 2
+      },
+      "num_objects": 21,
+      "path": "scaling/instances/logistics/n0021.pddl",
+      "num_actions": 4,
+      "num_predicates": 12,
+      "num_initial_atoms": 68
+    },
+    {
+      "id": "n0038",
+      "domain": "logistics",
+      "generator": "logistics",
+      "generator_seed": 1,
+      "params": {
+        "target": 40,
+        "cities": 5,
+        "city_size": 4,
+        "packages": 6,
+        "airplanes": 2
+      },
+      "num_objects": 38,
+      "path": "scaling/instances/logistics/n0038.pddl",
+      "num_actions": 4,
+      "num_predicates": 12,
+      "num_initial_atoms": 121
+    },
+    {
+      "id": "n0067",
+      "domain": "logistics",
+      "generator": "logistics",
+      "generator_seed": 1,
+      "params": {
+        "target": 68,
+        "cities": 7,
+        "city_size": 6,
+        "packages": 8,
+        "airplanes": 3
+      },
+      "num_objects": 67,
+      "path": "scaling/instances/logistics/n0067.pddl",
+      "num_actions": 4,
+      "num_predicates": 12,
+      "num_initial_atoms": 211
+    },
+    {
+      "id": "n0103",
+      "domain": "logistics",
+      "generator": "logistics",
+      "generator_seed": 1,
+      "params": {
+        "target": 100,
+        "cities": 9,
+        "city_size": 8,
+        "packages": 10,
+        "airplanes": 3
+      },
+      "num_objects": 103,
+      "path": "scaling/instances/logistics/n0103.pddl",
+      "num_actions": 4,
+      "num_predicates": 12,
+      "num_initial_atoms": 321
+    },
+    {
+      "id": "n0147",
+      "domain": "logistics",
+      "generator": "logistics",
+      "generator_seed": 1,
+      "params": {
+        "target": 150,
+        "cities": 11,
+        "city_size": 10,
+        "packages": 12,
+        "airplanes": 3
+      },
+      "num_objects": 147,
+      "path": "scaling/instances/logistics/n0147.pddl",
+      "num_actions": 4,
+      "num_predicates": 12,
+      "num_initial_atoms": 455
+    }
+  ],
+  "delivery": [
+    {
+      "id": "n0012",
+      "domain": "delivery",
+      "generator": "delivery",
+      "generator_seed": 1,
+      "params": {
+        "target": 12,
+        "grid": 3,
+        "packages": 2
+      },
+      "num_objects": 12,
+      "path": "scaling/instances/delivery/n0012.pddl",
+      "num_actions": 3,
+      "num_predicates": 11,
+      "num_initial_atoms": 67
+    },
+    {
+      "id": "n0020",
+      "domain": "delivery",
+      "generator": "delivery",
+      "generator_seed": 1,
+      "params": {
+        "target": 20,
+        "grid": 4,
+        "packages": 3
+      },
+      "num_objects": 20,
+      "path": "scaling/instances/delivery/n0020.pddl",
+      "num_actions": 3,
+      "num_predicates": 11,
+      "num_initial_atoms": 117
+    },
+    {
+      "id": "n0040",
+      "domain": "delivery",
+      "generator": "delivery",
+      "generator_seed": 1,
+      "params": {
+        "target": 40,
+        "grid": 6,
+        "packages": 3
+      },
+      "num_objects": 40,
+      "path": "scaling/instances/delivery/n0040.pddl",
+      "num_actions": 3,
+      "num_predicates": 11,
+      "num_initial_atoms": 249
+    },
+    {
+      "id": "n0068",
+      "domain": "delivery",
+      "generator": "delivery",
+      "generator_seed": 1,
+      "params": {
+        "target": 68,
+        "grid": 8,
+        "packages": 3
+      },
+      "num_objects": 68,
+      "path": "scaling/instances/delivery/n0068.pddl",
+      "num_actions": 3,
+      "num_predicates": 11,
+      "num_initial_atoms": 437
+    },
+    {
+      "id": "n0105",
+      "domain": "delivery",
+      "generator": "delivery",
+      "generator_seed": 1,
+      "params": {
+        "target": 100,
+        "grid": 10,
+        "packages": 4
+      },
+      "num_objects": 105,
+      "path": "scaling/instances/delivery/n0105.pddl",
+      "num_actions": 3,
+      "num_predicates": 11,
+      "num_initial_atoms": 686
+    },
+    {
+      "id": "n0150",
+      "domain": "delivery",
+      "generator": "delivery",
+      "generator_seed": 1,
+      "params": {
+        "target": 150,
+        "grid": 12,
+        "packages": 5
+      },
+      "num_objects": 150,
+      "path": "scaling/instances/delivery/n0150.pddl",
+      "num_actions": 3,
+      "num_predicates": 11,
+      "num_initial_atoms": 991
+    }
+  ]
+}

@@ -1,0 +1,50 @@
+# Lightning overlay for the instance-size scaling benchmark.
+#
+# Composed last, after `configs/main.yaml` and `pddl/<domain>/config.yaml`:
+#
+#   dias-train fit --config configs/main.yaml \
+#                  --config pddl/blocks-3/config.yaml \
+#                  --config scaling/configs/scaling.yaml \
+#                  --data.init_args.problem_path scaling/instances/blocks-3/n0068.pddl
+#
+# scaling/benchmark.py builds exactly that chain and adds the timing callback,
+# so what is measured is the ordinary DIAS training step, not a stand-in.
+#
+# The point of the overlay is to hold everything except the *instance* fixed, so
+# the only thing that varies along a curve is the number of objects.
+
+data:
+  init_args:
+    # Pin the sample pool instead of leaving a min/max window: every domain and
+    # every instance size trains on exactly 100 train + 50 valid transitions per
+    # action. Otherwise delivery (min 1000/500) would sample 10x more than
+    # blocks-3 and the domains would not be comparable — and the per-instance
+    # sampling time would leak into a benchmark that is about the training step.
+    min_per_label_train: 100
+    min_per_label_valid: 50
+    max_per_label_train: 100
+    max_per_label_valid: 50
+    # Held constant across the ladder: batch size is the other multiplier on the
+    # B x R x N x N adjacency tensors whose growth this study is measuring.
+    batch_size: 200
+    num_workers: 0
+
+model:
+  init_args:
+    # Heatmap plotting only fires on validation epochs (disabled below); off
+    # here so no plotting work can land inside a timed window.
+    parameter_plotting:
+      effect_and_precondition: false
+      selection: false
+
+trainer:
+  # No validation, no logging, no checkpointing inside the measured window: this
+  # run produces timings, not a model.
+  limit_val_batches: 0
+  num_sanity_val_steps: 0
+  logger: false
+  enable_checkpointing: false
+  enable_progress_bar: false
+  enable_model_summary: false
+  # Backstop only — scaling/benchmark.py sets this to warmup + measure steps.
+  max_steps: 120

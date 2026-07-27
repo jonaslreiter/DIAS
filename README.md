@@ -18,8 +18,13 @@ This installs the `dias` package (training/model/data code) and the
 `dias-train` console entry point.
 
 The 13 PDDL domains used in the paper are bundled under `pddl/`.
-Additional instances can be regenerated with the upstream generators:
-<https://github.com/...> <!-- TODO: link upstream pddl-generators -->
+Additional instances can be regenerated with the upstream generators
+(<https://github.com/AI-Planning/pddl-generators>), vendored as a submodule and
+needed only for the scaling study below:
+
+```bash
+git submodule update --init submodules/pddl-generators
+```
 
 ## Quick start
 
@@ -205,6 +210,27 @@ python scripts/collect_results.py --experiment dias-full --threshold-sweep \
     --markdown logs/threshold-sweep.md
 ```
 
+### Instance-size scaling (runtime & GPU memory)
+
+A separate one-off study under [`scaling/`](scaling/): how **iterations per
+second** and **peak GPU memory** behave as the instance grows, on `blocks-3`,
+`logistics` and `delivery` × 6 sizes (≈12 → 150 objects) × 3 seeds. It trains no
+model — each point runs 20 warm-up + 100 timed steps of the ordinary training
+loop — and keeps everything but the instance fixed (100/50 transitions per
+action, batch 200). Instances are generated from the `pddl-generators` submodule
+and committed under `scaling/instances/`.
+
+```bash
+python scaling/generate_instances.py                       # only to change the ladder
+python scaling/launch_scaling.py --experiment scaling-a10  # 3 domains × 6 sizes × 3 seeds
+python scaling/collect_scaling.py --experiment scaling-a10 --markdown local/scaling.md
+```
+
+Unlike the training arrays these tasks take an **exclusive** GPU on a pinned
+partition (a shared shard would put co-tenant load into the throughput numbers).
+Out-of-memory at the top of a ladder is recorded as a result, not a crash. See
+[`scaling/README.md`](scaling/README.md).
+
 ## Repo layout
 
 ```
@@ -233,6 +259,16 @@ pddl/              # 13 paper domains + domain-settings.yaml
 slurm/
 ├── train.sh             # training array task (source ~/.zshrc; conda activate ddl)
 └── validate.sh          # validation array task
+
+scaling/            # one-off runtime / GPU-memory vs. instance-size study
+├── configs/             # sizes.yaml (ladder + Slurm), scaling.yaml (overlay)
+├── instances/           # generated instances (committed) + index.json
+├── generate_instances.py, benchmark.py, run_scaling.py
+├── launch_scaling.py, collect_scaling.py
+└── slurm/benchmark.sh
+
+submodules/
+└── pddl-generators/     # upstream instance generators (submodule)
 ```
 
 ## Citation

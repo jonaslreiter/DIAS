@@ -26,6 +26,8 @@ The core problem setting is:
 - Training GPU requests are per domain and live entirely in `configs/slurm-resources.yaml`; treat that file as the source of truth rather than hardcoding a partition or GPU size here. It currently requests GPU shards (`gres: shard:N`) sized per domain from a shared `defaults` block, with no partition pinning. A domain that needs a whole GPU or a specific partition gets it via its own entry (`gres: "gpu:1"` and/or `sbatch_extra: ["--partition=<name>"]`).
 - The current single-domain base training config in this workspace is `configs/main.yaml`.
 - Standardized filenames per domain folder are `domain.pddl`, `train.pddl`, `test-1.pddl`, `test-2.pddl`, `test-3.pddl`, `strips+.yaml`, and `config.yaml`.
+- `submodules/pddl-generators` is the upstream instance generator collection (<https://github.com/AI-Planning/pddl-generators>), added as a git submodule. Nothing in the main pipeline needs it; it exists for the scaling study (see below), which commits the instances it generates.
+- `scaling/` is a self-contained one-off study of runtime and GPU memory versus instance size. It is intentionally *not* wired into `scripts/launch.py`; see "Instance-Size Scaling Study".
 
 ## High-Level Pipeline
 
@@ -68,6 +70,7 @@ When working on data generation or dataset code, preserve these assumptions unle
 - `scripts/launch_threshold_validation.py`: re-validates the checkpoints of a finished experiment at several binarization thresholds, into sibling `logs/validation/<experiment>-thr<T>/` directories. Validation only — no training.
 - `scripts/collect_results.py`: aggregates per-run results (local JSON or the W&B API) into a `P / R / N_S / N_C / N_SC` table per domain; with `--sweep AXIS` into a domain × swept-value matrix per metric, with `--threshold-sweep` into a domain × threshold matrix, optionally written out as markdown tables (`--markdown`).
 - `scripts/validation/run_dias.py`, `run_l1.py`, `run_mlp_baseline.py`: single-checkpoint validation entry points.
+- `scaling/`: the one-off instance-size scaling study (`generate_instances.py`, `benchmark.py`, `run_scaling.py`, `launch_scaling.py`, `collect_scaling.py`, `configs/{sizes,scaling}.yaml`, `slurm/benchmark.sh`). Separate from the main pipeline on purpose — see "Instance-Size Scaling Study".
 
 ## Training Conventions
 
@@ -134,6 +137,20 @@ When working on data generation or dataset code, preserve these assumptions unle
 - Global validation settings such as number of validation problems and sampling counts come from `configs/validation.yaml`.
 - `scripts/collect_results.py` aggregates a finished experiment (local JSON or W&B) into the paper table. `--sweep AXIS [--sweep-values V ...] [--reuse-default EXPERIMENT]` rebuilds the sub-experiment names with the same `launch.sweep_experiment_name` and `launch.SWEEP_AXES` (imported, not re-derived — keep it that way) and prints a domain × value matrix per metric plus an `n` matrix; `--markdown <path>` writes the same matrices as markdown tables (one table per metric, raw values). `--aux-sweep [ALPHA ...]` is the back-compat alias for `--sweep aux-loss-weight`.
 - The Slurm scripts under `scripts/slurm/` first `source ~/.zshrc` then `conda activate ddl`; they stay thin and defer experiment semantics to Python scripts and YAML configs.
+
+## Instance-Size Scaling Study
+
+`scaling/` is a self-contained one-off analysis: iterations per second and peak GPU memory as the *instance* grows, on `blocks-3`, `logistics`, `delivery` × 6 sizes × 3 seeds. It produces timings, not schemas — no checkpoints, no validation, no W&B. Documented for users in `scaling/README.md`.
+
+- It measures the ordinary training path: `scaling/benchmark.py` instantiates `dias.main.CLI(run=False)` on the real config chain (`configs/main.yaml` → `pddl/<domain>/config.yaml` → `scaling/configs/scaling.yaml`) and attaches a timing callback. Nothing is stubbed or reimplemented; if the training step changes, this measures the new one.
+- Runs are cut to `warmup_steps + measure_steps` (20 + 100, from `scaling/configs/sizes.yaml`), not the 10 000 steps of a real run. The warm-up steps are discarded, `torch.cuda.reset_peak_memory_stats()` is called right after them, and every step is bracketed by `torch.cuda.synchronize()`. `iterations_per_second` is `1 / median(step time)`.
+- `scaling/configs/scaling.yaml` is the overlay that holds everything but the instance fixed: exactly 100 train / 50 valid transitions per action (pinned min *and* max, so delivery does not sample 10× more than blocks-3), batch size 200, and validation / logging / checkpointing off. Sampling time is timed separately by wrapping `datamodule.setup` — a Lightning `Callback.setup` hook runs *after* the datamodule's and would measure nothing.
+- Ladder and Slurm resources live in `scaling/configs/sizes.yaml`. Instance ids encode the object count (`n0068`), which `scaling/generate_instances.py::OBJECT_COUNT` derives from the generator parameters and cross-checks against the parsed instance. Each size entry also carries a `target` — the shared ladder rung — because the domains scale in different units and cannot all hit the same count (logistics lands on 21/38/67/103/147). `run_scaling.ladder_for` pairs the two, and that pairing is what aligns the columns in `collect_scaling.py`; the exact counts get their own table.
+- `scaling/instances/<domain>/n<objects>.pddl` plus `index.json` are generated once and **committed**; running the study needs neither the submodule nor the generator toolchain. `scaling/generate_instances.py` rewrites generator output into the repo's domain dialect (blocksworld: `- object` typing plus the reflexive `(eq b b)` facts the repo domain's `(not (eq ?x ?y))` preconditions require; logistics: `OBJ` → `object`, `in-city` → `loc`, added `(vehicle ?v)` facts; delivery: unchanged but renamed). The delivery generator needs `tarski` and runs from a gitignored venv at `scaling/.venv-delivery`.
+- Layout mirrors the main pipeline: `launch_scaling.py` (submit) → `slurm/benchmark.sh` (array task) → `run_scaling.py` (one domain's ladder for one seed) → `benchmark.py` (one point) → `collect_scaling.py` (tables). It imports `_format_array` / `_sbatch_resource_opts` from `scripts/launch.py` rather than re-deriving the sbatch flags — keep it that way.
+- Two deliberate departures from `scripts/launch.py`: an array task is one **(domain, seed)** and walks the whole ladder (so one curve is measured on one physical GPU), and it requests an **exclusive** GPU on a **pinned** partition (`gres: gpu:1`, `--partition=rleap_gpu_24gb`) instead of a `shard:N` slice — co-tenants on a shared GPU would land in the throughput numbers, and mixed GPU models would make a curve meaningless. Re-running on a different card belongs in a different `--experiment`.
+- Each size runs as its own subprocess so a CUDA OOM costs one point, not the ladder. OOM is a recorded outcome (`status: "oom"`, exit 0), shown as `oom` by `collect_scaling.py`; a non-zero exit is a real failure. Memory is quadratic in objects, so the top of the `delivery` ladder is expected to exceed 24 GB.
+- Results: `logs/scaling/<experiment>/<domain>/<instance>-s<seed>.json` (under the gitignored `logs/`).
 
 ## Paper-Level Modeling Notes
 
