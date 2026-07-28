@@ -27,10 +27,16 @@ axis-default column is read from that existing experiment.
 ``scripts/launch_threshold_validation.py``). Those columns share one set of
 trained checkpoints, so they isolate the effect of the threshold alone.
 
+Without a sweep, ``--experiment`` takes any number of unrelated experiments (an
+ablation set, say): each gets its own table, and ``--markdown`` writes them into
+one document with a cross-experiment summary on top.
+
 Usage:
     python scripts/collect_results.py --experiment paper-main
     python scripts/collect_results.py --experiment paper-main --source wandb
     python scripts/collect_results.py --experiment noise-a2r2 --domains gripper hanoi
+    python scripts/collect_results.py --experiment dias-full abl-no-pcgrad \
+        --markdown local/ablations-results-summary.md
     python scripts/collect_results.py --experiment dias-full --threshold-sweep \
         --markdown logs/threshold-sweep.md
     python scripts/collect_results.py --experiment aux-sweep --sweep aux-loss-weight \
@@ -349,11 +355,106 @@ def print_table(
         print("(no results found)")
 
 
+def write_experiments_markdown(
+    path: Path,
+    experiments: list[str],
+    results: dict[str, dict[str, list[tuple[float, float]]]],
+    domains: list[str],
+    source: str,
+) -> None:
+    """Write one domain table per experiment, plus a cross-experiment summary.
+
+    Every table spans the union of the domains, so an experiment that is missing
+    a domain entirely shows a row of ``-`` instead of silently dropping it.
+    """
+    columns = (*METRICS, "n")
+    # Per domain, the seed count of the most complete experiment in the set:
+    # the yardstick for "is this experiment fully collected?".
+    expected = sum(max(len(results[e].get(d, [])) for e in experiments) for d in domains)
+
+    def pooled_of(experiment: str) -> list[tuple[float, float]]:
+        return [pr for d in domains for pr in results[experiment].get(d, [])]
+
+    lines = [
+        "# Validation results",
+        "",
+        "Experiments: " + ", ".join(f"`{e}`" for e in experiments) + ".",
+        "",
+        f"Rows are domains (source: {source}); each cell aggregates over the "
+        "seeds of that (experiment, domain) pair. `ALL` pools every seed of "
+        "every domain of that experiment, `-` means no results.",
+        "",
+        "| Column | Meaning |",
+        "| --- | --- |",
+        *(f"| {c} | {METRIC_LABELS[c]} |" for c in columns),
+        "",
+        "## Summary",
+        "",
+        f"`n` is compared against {expected} seeds — the most complete "
+        "experiment of this set, per domain.",
+        "",
+        "| experiment | " + " | ".join(columns) + " |",
+        "|" + "---|" * (len(columns) + 1),
+    ]
+    for experiment in experiments:
+        pooled = pooled_of(experiment)
+        cells = [_cell_value(c, pooled) for c in METRICS]
+        lines.append(
+            f"| `{experiment}` | "
+            + " | ".join(cells)
+            + f" | {len(pooled)}/{expected} |"
+        )
+    lines.append("")
+
+    for experiment in experiments:
+        lines += [
+            f"## `{experiment}`",
+            "",
+            "| domain | " + " | ".join(columns) + " |",
+            "|" + "---|" * (len(columns) + 1),
+        ]
+        for domain in domains:
+            row = [_cell_value(c, results[experiment].get(domain)) for c in columns]
+            lines.append(f"| {domain} | " + " | ".join(row) + " |")
+        pooled = pooled_of(experiment)
+        lines += [
+            "| **ALL** | " + " | ".join(_cell_value(c, pooled) for c in columns) + " |",
+            "",
+        ]
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines))
+    print(f"\nwrote {path}")
+
+
+def run_experiments(args: argparse.Namespace, experiments: list[str]) -> None:
+    """Print one table per experiment and optionally write them as markdown."""
+    results = {e: _collect(e, args) for e in experiments}
+    for experiment in experiments:
+        print_table(results[experiment], experiment)
+    if not args.markdown:
+        return
+    domains = sorted({d for by_domain in results.values() for d in by_domain})
+    if not domains:
+        raise SystemExit("--markdown: no results found, nothing written")
+    write_experiments_markdown(
+        args.markdown, experiments, results, domains, args.source
+    )
+
+
 def main() -> int:
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    p.add_argument("--experiment", required=True, help="Experiment name (= W&B group).")
+    p.add_argument(
+        "--experiment",
+        required=True,
+        nargs="+",
+        metavar="NAME",
+        help="Experiment name(s) (= W&B group). Several names are allowed "
+        "without a sweep: each gets its own table, and --markdown writes them "
+        "into one document. A sweep takes exactly one (its base name).",
+    )
     p.add_argument("--source", default="local", choices=["local", "wandb"])
     p.add_argument(
         "--domains", nargs="+", default=None, help="Restrict to these domains."
@@ -415,10 +516,24 @@ def main() -> int:
         "--markdown",
         type=Path,
         default=None,
-        help="With --sweep / --threshold-sweep: also write the matrices to this "
-        "markdown file (one table per metric).",
+        help="Also write the tables to this markdown file: one table per metric "
+        "with --sweep / --threshold-sweep, one table per experiment otherwise.",
     )
     args = p.parse_args()
+
+    experiments = list(dict.fromkeys(args.experiment))
+    sweeping = (
+        args.sweep is not None
+        or args.aux_sweep is not None
+        or args.threshold_sweep is not None
+    )
+    if len(experiments) > 1 and sweeping:
+        raise SystemExit(
+            "--sweep / --threshold-sweep read the sub-experiments of a single "
+            f"base experiment; got {len(experiments)}: {', '.join(experiments)}"
+        )
+    # The sweep paths derive sub-experiment names from one base name.
+    args.experiment = experiments[0]
 
     if args.threshold_sweep is not None:
         if args.sweep is not None or args.aux_sweep is not None:
@@ -448,14 +563,12 @@ def main() -> int:
     if axis_name is not None:
         run_sweep(args, axis_name, values or list(SWEEP_AXES[axis_name].values))
         return 0
-    if args.markdown:
-        raise SystemExit("--markdown is only supported together with --sweep")
     if args.sweep_values:
         raise SystemExit("--sweep-values requires --sweep")
     if args.reuse_default:
         raise SystemExit("--reuse-default requires --sweep")
 
-    print_table(_collect(args.experiment, args), args.experiment)
+    run_experiments(args, experiments)
     return 0
 
 
