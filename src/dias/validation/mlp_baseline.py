@@ -18,6 +18,7 @@ from tqdm import tqdm
 from dias.data.datamodule import PddlGraphDataModule
 from dias.data.generate_samples import generate_bfs
 from dias.models.dias import DIAS
+from dias.pddl.states import state_fluents, transfer_state
 from dias.schema import DomainSchema
 
 from .transpiler import PDDLTranspiler
@@ -445,11 +446,9 @@ class ModelValidation:
 
         self.state_pairs = []
         for orig_state in sampled_orig_states:
-            learned_state = self.transfer_state(orig_state, self.learned_problem)
-            orig_shared = self._state_fluents_on_predicates(orig_state, shared_preds)
-            learned_shared = self._state_fluents_on_predicates(
-                learned_state, shared_preds
-            )
+            learned_state = transfer_state(orig_state, self.learned_problem)
+            orig_shared = state_fluents(orig_state, shared_preds)
+            learned_shared = state_fluents(learned_state, shared_preds)
             assert orig_shared == learned_shared, (
                 f"State transfer mismatch (shared predicates):\n"
                 f"  shared: {sorted(shared_preds)}\n"
@@ -872,47 +871,3 @@ class ModelValidation:
     # ──────────────────────────────────────────────────────────────────
     #  state utilities (kept from the previous validator)
     # ──────────────────────────────────────────────────────────────────
-    @staticmethod
-    def _state_fluents_on_predicates(state, predicate_names):
-        return frozenset(
-            str(atom)
-            for atom in state.get_atoms(ignore_static=False, ignore_derived=True)
-            if atom.get_predicate().get_name() in predicate_names
-        )
-
-    @staticmethod
-    def transfer_state(source_state, target_problem):
-        """Reconstruct a pymimir State on target_problem matching source_state.
-
-        Both problems must share object and (fluent) predicate names.
-        Static predicates in the target domain stay as defined by the
-        target problem.
-        """
-        adv_problem = target_problem._advanced_problem
-
-        fluent_pred_by_name = {
-            p.get_name(): p for p in adv_problem.get_domain().get_fluent_predicates()
-        }
-        obj_by_name = {o.get_name(): o for o in adv_problem.get_objects()}
-
-        target_adv_atoms = []
-        for atom in source_state.get_atoms(ignore_static=False, ignore_derived=True):
-            pred_name = atom.get_predicate().get_name()
-            fluent_pred = fluent_pred_by_name.get(pred_name)
-            if fluent_pred is None:
-                continue
-
-            obj_names = [t.get_name() for t in atom.get_terms()]
-            objs = ObjectList([obj_by_name[n] for n in obj_names])
-            adv_atom = adv_problem.get_or_create_ground_atom(fluent_pred, objs)
-            target_adv_atoms.append(adv_atom)
-
-        fluent_list = FluentGroundAtomList(target_adv_atoms)
-        (
-            adv_state,
-            _,
-        ) = target_problem._search_context.get_state_repository().get_or_create_state(
-            fluent_list, []
-        )
-
-        return State(adv_state, target_problem)

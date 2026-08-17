@@ -6,17 +6,12 @@ import tempfile
 from pathlib import Path
 
 import pymimir
-import torch
-from pymimir.advanced.formalism import FluentGroundAtomList, ObjectList
-from pymimir.wrapper_formalism import State
 from tqdm import tqdm
 
-from dias.data.datamodule import PddlGraphDataModule
 from dias.data.generate_samples import generate_bfs
-from dias.models.dias import DIAS
+from dias.pddl.states import state_fluents, transfer_state
 
-from .transpiler import PDDLTranspiler
-from .utils import extract_domain_header, process_model_logits, strip_problem_types
+from .utils import extract_domain_header, strip_problem_types
 
 
 class ModelValidation:
@@ -305,11 +300,9 @@ class ModelValidation:
 
         merged_state_set = []
         for state in self.state_set:
-            merged_state = self.transfer_state(state, self.merged_problem)
-            orig_shared = self._state_fluents_on_predicates(state, shared_preds)
-            merged_shared = self._state_fluents_on_predicates(
-                merged_state, shared_preds
-            )
+            merged_state = transfer_state(state, self.merged_problem)
+            orig_shared = state_fluents(state, shared_preds)
+            merged_shared = state_fluents(merged_state, shared_preds)
             assert orig_shared == merged_shared, (
                 f"State transfer mismatch (comparison restricted to predicates "
                 f"present in both domains):\n"
@@ -413,66 +406,6 @@ class ModelValidation:
             cid = sid
             self._state_id_cache[sid] = cid
         return cid
-
-    @staticmethod
-    def state_fluents(state):
-        return frozenset(
-            str(atom)
-            for atom in state.get_atoms(ignore_static=False, ignore_derived=True)
-        )
-
-    @staticmethod
-    def state_dynamic_fluents(state):
-        return frozenset(
-            str(atom)
-            for atom in state.get_atoms(ignore_static=True, ignore_derived=True)
-        )
-
-    @staticmethod
-    def _state_fluents_on_predicates(state, predicate_names):
-        return frozenset(
-            str(atom)
-            for atom in state.get_atoms(ignore_static=False, ignore_derived=True)
-            if atom.get_predicate().get_name() in predicate_names
-        )
-
-    @staticmethod
-    def transfer_state(source_state, target_problem):
-        """Reconstruct a pymimir State on target_problem that matches source_state's atoms.
-
-        Both problems must share the same object and predicate names (e.g. same problem file,
-        different domain file). Static predicates in the target domain are kept from the
-        target problem definition and are not copied from source_state.
-        """
-
-        adv_problem = target_problem._advanced_problem
-
-        fluent_pred_by_name = {
-            p.get_name(): p for p in adv_problem.get_domain().get_fluent_predicates()
-        }
-        obj_by_name = {o.get_name(): o for o in adv_problem.get_objects()}
-
-        target_adv_atoms = []
-        for atom in source_state.get_atoms(ignore_static=False, ignore_derived=True):
-            pred_name = atom.get_predicate().get_name()
-            fluent_pred = fluent_pred_by_name.get(pred_name)
-            if fluent_pred is None:
-                continue  # static in target (shouldn't happen with dummy action)
-
-            obj_names = [t.get_name() for t in atom.get_terms()]
-            objs = ObjectList([obj_by_name[n] for n in obj_names])
-            adv_atom = adv_problem.get_or_create_ground_atom(fluent_pred, objs)
-            target_adv_atoms.append(adv_atom)
-
-        fluent_list = FluentGroundAtomList(target_adv_atoms)
-        (
-            adv_state,
-            _,
-        ) = target_problem._search_context.get_state_repository().get_or_create_state(
-            fluent_list, []
-        )
-
-        return State(adv_state, target_problem)
 
     @staticmethod
     def _extract_action_blocks(domain_text: str) -> list[str]:

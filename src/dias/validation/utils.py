@@ -1,22 +1,11 @@
-import argparse
+import re
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import torch
 from torch.nn import functional as F
 
-from dias.main import CLI
-
-
-class CheckpointCLI(CLI):
-    def add_arguments_to_parser(self, parser: argparse.ArgumentParser) -> None:
-        parser.add_argument(
-            "--ckpt_path", type=Optional[Path], required=False, default=None
-        )
-        parser.add_argument(
-            "--experiment", type=Optional[str], required=False, default=None
-        )
+from dias.pddl import text as pddl_text
 
 
 def resolve_best_checkpoint(ckpt_dir: Path) -> Path:
@@ -129,23 +118,14 @@ def strip_problem_types(
     type-derived unary predicates (e.g. ``(cell c_0_0)``, ``(locatable p1)``) are injected
     into :init so that the untyped learned domain can use them as static preconditions.
     """
-    import re
-
     text = Path(problem_pddl_path).read_text()
 
     type_atoms: list[str] = []
     object_names: list[str] = []
 
     if domain_pddl_path is not None:
-        # Parse the type hierarchy from the domain: "child - parent"
         domain_text = Path(domain_pddl_path).read_text()
-        types_match = re.search(r"\(:types(.*?)\)", domain_text, re.DOTALL)
-        type_parents: dict[str, str] = {}  # child → parent
-        if types_match:
-            for m in re.finditer(r"([\w\s]+)-\s+(\w+)", types_match.group(1)):
-                parent = m.group(2).strip()
-                for child in m.group(1).split():
-                    type_parents[child.strip()] = parent
+        type_parents = pddl_text.type_parents(domain_text)
 
         # Parse object-type assignments from the problem: "obj1 obj2 - typename".
         # Tokenize so object names containing '-' (e.g. "p1-0") are not split.
@@ -243,20 +223,17 @@ def extract_domain_header(
     # after "(define (domain <name>)", so the learned domain is always valid.
     # Only add :equality if the *original* domain declared it, so pymimir does
     # not auto-materialise reflexive (= x x) atoms where the original wouldn't.
-    import re as _re
 
-    orig_reqs_match = _re.search(r"\(:requirements([^)]*)\)", text)
+    orig_reqs_match = re.search(r"\(:requirements([^)]*)\)", text)
     needs_equality = bool(orig_reqs_match and ":equality" in orig_reqs_match.group(1))
     reqs = ":negative-preconditions"
     if needs_equality and keep_equality_requirement:
         reqs += " :equality"
-    header = _re.sub(r"\(:requirements[^)]*\)\s*", "", header)
-    m_def = _re.search(r"\(define\s*\(domain\s+\S+\s*\)", header)
+    header = re.sub(r"\(:requirements[^)]*\)\s*", "", header)
+    m_def = re.search(r"\(define\s*\(domain\s+\S+\s*\)", header)
     if m_def is not None:
         pos = m_def.end()
         header = header[:pos] + f"\n  (:requirements {reqs})" + header[pos:]
-
-    import re
 
     # --- remove typing: :types block, :typing requirement, type annotations ---
     header = re.sub(r"\(:types[^)]*\)\s*", "", header)
@@ -298,36 +275,19 @@ def extract_domain_header(
 
         # Also declare type-derived predicates (unary) and any original-domain
         # predicates not already covered by rel_names (e.g. "object")
-        types_match = re.search(r"\(:types(.*?)\)", text, re.DOTALL)
-        if types_match:
-            for m2 in re.finditer(r"([\w\s]+)-\s+(\w+)", types_match.group(1)):
-                parent = m2.group(2).strip()
-                for child in m2.group(1).split():
-                    child = child.strip()
-                    if child and child not in declared:
-                        declared.add(child)
-                        decls.append(f"({child} ?x)")
-                if parent and parent != "object" and parent not in declared:
-                    declared.add(parent)
-                    decls.append(f"({parent} ?x)")
+        for children, parent in pddl_text.parse_type_groups(text):
+            for child in children:
+                if child and child not in declared:
+                    declared.add(child)
+                    decls.append(f"({child} ?x)")
+            if parent and parent != "object" and parent not in declared:
+                declared.add(parent)
+                decls.append(f"({parent} ?x)")
 
-        # Extract the original :predicates block with proper paren balancing
-        # (non-greedy regex stops at the first ')' which breaks for multi-line blocks).
         orig_pred_body = None
-        pp = text.find("(:predicates")
-        if pp != -1:
-            depth = 0
-            start = None
-            for i in range(pp, len(text)):
-                if text[i] == "(":
-                    if depth == 0:
-                        start = i
-                    depth += 1
-                elif text[i] == ")":
-                    depth -= 1
-                    if depth == 0:
-                        orig_pred_body = text[start + len("(:predicates") : i]
-                        break
+        if text.find("(:predicates") != -1:
+            block, _ = pddl_text.find_balanced_expr(text, text.find("(:predicates"))
+            orig_pred_body = block[len("(:predicates") : -1]
         if orig_pred_body is not None:
             for m2 in re.finditer(
                 r"\((\w+)((?:\s+\?\w+(?:\s+-\s+\w+)?)*)\)", orig_pred_body
