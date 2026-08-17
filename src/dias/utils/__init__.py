@@ -206,9 +206,9 @@ def add_adj_noise_expected_count(
         enabled_relations = [True] * R
     else:
         enabled_relations = [bool(x) for x in relation_mask]
-        assert len(enabled_relations) == R, (
-            f"relation_mask length {len(enabled_relations)} != R={R}"
-        )
+        assert (
+            len(enabled_relations) == R
+        ), f"relation_mask length {len(enabled_relations)} != R={R}"
 
     noisy = adj.clone()
     ones_positions_per_rel: list[torch.Tensor] = []

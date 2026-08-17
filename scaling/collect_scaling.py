@@ -40,7 +40,9 @@ METRICS = [
 ]
 
 
-def load_results(results_dir: Path, experiment: str, domain: str) -> dict[str, list[dict]]:
+def load_results(
+    results_dir: Path, experiment: str, domain: str
+) -> dict[str, list[dict]]:
     """{instance id: [record per seed]} for one domain."""
     out: dict[str, list[dict]] = {}
     directory = results_dir / experiment / domain
@@ -53,7 +55,9 @@ def load_results(results_dir: Path, experiment: str, domain: str) -> dict[str, l
 def _cell(records: list[dict], key: str, fmt: str) -> str:
     if not records:
         return "-"
-    values = [r[key] for r in records if r.get("status") == "ok" and r.get(key) is not None]
+    values = [
+        r[key] for r in records if r.get("status") == "ok" and r.get(key) is not None
+    ]
     if not values:
         statuses = {r.get("status", "?") for r in records}
         return "oom" if statuses == {"oom"} else "/".join(sorted(statuses))
@@ -63,7 +67,9 @@ def _cell(records: list[dict], key: str, fmt: str) -> str:
     return cell
 
 
-def _columns(domains: list[str], ladders: dict[str, list[tuple[int, str]]]) -> list[int]:
+def _columns(
+    domains: list[str], ladders: dict[str, list[tuple[int, str]]]
+) -> list[int]:
     """The shared ladder rungs, ascending."""
     return sorted({target for d in domains for target, _ in ladders[d]})
 
@@ -111,16 +117,16 @@ def main() -> int:
     p.add_argument("--results-dir", type=Path, default=DEFAULT_RESULTS_DIR)
     p.add_argument("--sizes-config", type=Path, default=SIZES_CONFIG)
     p.add_argument("--domains", nargs="+", default=None)
-    p.add_argument("--markdown", type=Path, default=None, help="Write tables as markdown.")
+    p.add_argument(
+        "--markdown", type=Path, default=None, help="Write tables as markdown."
+    )
     p.add_argument("--csv", type=Path, default=None, help="Write the raw per-run rows.")
     args = p.parse_args()
 
     cfg = yaml.safe_load(args.sizes_config.read_text())
     domains = args.domains or list(cfg["domains"])
     ladders = {d: ladder_for(d, cfg) for d in domains}
-    results = {
-        d: load_results(args.results_dir, args.experiment, d) for d in domains
-    }
+    results = {d: load_results(args.results_dir, args.experiment, d) for d in domains}
 
     found = sum(len(v) for r in results.values() for v in r.values())
     if not found:

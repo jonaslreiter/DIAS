@@ -53,7 +53,9 @@ INSTANCES_DIR = SCALING_DIR / "instances"
 DEFAULT_RESULTS_DIR = PROJECT_ROOT / "logs" / "scaling"
 
 
-def result_path(results_dir: Path, experiment: str, domain: str, instance: str, seed: int) -> Path:
+def result_path(
+    results_dir: Path, experiment: str, domain: str, instance: str, seed: int
+) -> Path:
     """Where one benchmark point is written (mirrors logs/validation/ layout)."""
     return results_dir / experiment / domain / f"{instance}-s{seed}.json"
 
@@ -148,8 +150,10 @@ def _build_callback():
             if self._cuda:
                 out.update(
                     {
-                        "gpu_peak_allocated_mib": torch.cuda.max_memory_allocated() / 2**20,
-                        "gpu_peak_reserved_mib": torch.cuda.max_memory_reserved() / 2**20,
+                        "gpu_peak_allocated_mib": torch.cuda.max_memory_allocated()
+                        / 2**20,
+                        "gpu_peak_reserved_mib": torch.cuda.max_memory_reserved()
+                        / 2**20,
                     }
                 )
             return out
@@ -239,7 +243,12 @@ def run_benchmark(
         try:
             cli = CLI(
                 args=_lightning_args(
-                    domain, domain_pddl, problem_pddl, seed, warmup + measure, accelerator
+                    domain,
+                    domain_pddl,
+                    problem_pddl,
+                    seed,
+                    warmup + measure,
+                    accelerator,
                 ),
                 run=False,
                 save_config_callback=None,
@@ -285,7 +294,9 @@ def run_benchmark(
     except torch.cuda.OutOfMemoryError as exc:
         record["status"] = "oom"
         record["error"] = str(exc).splitlines()[0]
-        print(f"[oom] {domain}/{instance} seed={seed}: {record['error']}", file=sys.stderr)
+        print(
+            f"[oom] {domain}/{instance} seed={seed}: {record['error']}", file=sys.stderr
+        )
     except Exception as exc:  # noqa: BLE001 - recorded, the ladder continues
         # CPU OOM and a few CUDA paths surface as plain RuntimeError/MemoryError.
         oom = isinstance(exc, MemoryError) or "out of memory" in str(exc).lower()
@@ -315,7 +326,9 @@ def main() -> int:
     p.add_argument("--results-dir", type=Path, default=DEFAULT_RESULTS_DIR)
     p.add_argument("--sizes-config", type=Path, default=SIZES_CONFIG)
     p.add_argument(
-        "--domain-settings", type=Path, default=PROJECT_ROOT / "pddl/domain-settings.yaml"
+        "--domain-settings",
+        type=Path,
+        default=PROJECT_ROOT / "pddl/domain-settings.yaml",
     )
     p.add_argument(
         "--accelerator", default=None, help="Override trainer.accelerator (e.g. cpu)."

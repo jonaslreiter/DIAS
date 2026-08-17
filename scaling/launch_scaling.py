@@ -50,11 +50,11 @@ SLURM_SCRIPT = SCALING_DIR / "slurm" / "benchmark.sh"
 # Appended, not prepended: this directory must stay ahead of scripts/ so the
 # sibling imports below cannot be shadowed.
 sys.path.append(str(PROJECT_ROOT / "scripts"))
+from benchmark import DEFAULT_RESULTS_DIR, SIZES_CONFIG  # noqa: E402
+
 # Reused rather than re-derived so this study's sbatch flags mean exactly what
 # the main pipeline's mean (see AGENTS.md on keeping launchers in sync).
 from launch import _format_array, _sbatch_resource_opts  # noqa: E402
-
-from benchmark import DEFAULT_RESULTS_DIR, SIZES_CONFIG  # noqa: E402
 from run_scaling import instances_for, run_ladder  # noqa: E402
 
 
@@ -101,7 +101,9 @@ def main() -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     p.add_argument("--experiment", default="scaling", help="Results group name.")
-    p.add_argument("--domains", nargs="+", default=None, help="Default: all in sizes.yaml.")
+    p.add_argument(
+        "--domains", nargs="+", default=None, help="Default: all in sizes.yaml."
+    )
     p.add_argument(
         "--seeds", nargs="+", type=int, default=None, help="Default: sizes.yaml seeds."
     )
@@ -109,7 +111,9 @@ def main() -> int:
     p.add_argument("--results-dir", type=Path, default=DEFAULT_RESULTS_DIR)
     p.add_argument("--sizes-config", type=Path, default=SIZES_CONFIG)
     p.add_argument(
-        "--domain-settings", type=Path, default=PROJECT_ROOT / "pddl/domain-settings.yaml"
+        "--domain-settings",
+        type=Path,
+        default=PROJECT_ROOT / "pddl/domain-settings.yaml",
     )
     p.add_argument("--time", default=None, help="Override the Slurm --time.")
     p.add_argument("--mem", default=None, help="Override the Slurm --mem.")
@@ -118,9 +122,7 @@ def main() -> int:
         action="store_true",
         help="Skip (domain, size, seed) points that already have a result JSON.",
     )
-    p.add_argument(
-        "--accelerator", default=None, help="local backend only, e.g. cpu."
-    )
+    p.add_argument("--accelerator", default=None, help="local backend only, e.g. cpu.")
     p.add_argument("--dry-run", action="store_true", help="Print, do not submit/run.")
     args = p.parse_args()
 

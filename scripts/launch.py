@@ -749,7 +749,9 @@ def main() -> int:
         values = values or list(axis.values)
         for param in _axis_params(axis):
             if any(o.startswith(f"{param}=") for o in args.overrides):
-                raise SystemExit(f"--set {param}=... conflicts with --sweep {axis_name}")
+                raise SystemExit(
+                    f"--set {param}=... conflicts with --sweep {axis_name}"
+                )
         if axis_name == "aux-loss-weight" and args.ablation == "no-aux-loss":
             raise SystemExit(
                 "--ablation no-aux-loss disables the auxiliary losses, so "

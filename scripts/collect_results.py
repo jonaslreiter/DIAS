@@ -229,9 +229,7 @@ def write_sweep_markdown(
         f"Rows are domains, columns are `{param}` (source: {source}); each cell "
         "aggregates over the seeds of that (domain, value) pair. `ALL` pools "
         "every seed of every domain at that value. Columns come from the "
-        "sub-experiments "
-        + ", ".join(f"`{v:g}` → `{names[v]}`" for v in values)
-        + ".",
+        "sub-experiments " + ", ".join(f"`{v:g}` → `{names[v]}`" for v in values) + ".",
         "",
     ]
     for metric in (*METRICS, "n"):
@@ -370,7 +368,9 @@ def write_experiments_markdown(
     columns = (*METRICS, "n")
     # Per domain, the seed count of the most complete experiment in the set:
     # the yardstick for "is this experiment fully collected?".
-    expected = sum(max(len(results[e].get(d, [])) for e in experiments) for d in domains)
+    expected = sum(
+        max(len(results[e].get(d, [])) for e in experiments) for d in domains
+    )
 
     def pooled_of(experiment: str) -> list[tuple[float, float]]:
         return [pr for d in domains for pr in results[experiment].get(d, [])]

@@ -134,7 +134,9 @@ def main() -> int:
     p.add_argument("--results-dir", type=Path, default=DEFAULT_RESULTS_DIR)
     p.add_argument("--sizes-config", type=Path, default=SIZES_CONFIG)
     p.add_argument(
-        "--domain-settings", type=Path, default=PROJECT_ROOT / "pddl/domain-settings.yaml"
+        "--domain-settings",
+        type=Path,
+        default=PROJECT_ROOT / "pddl/domain-settings.yaml",
     )
     p.add_argument(
         "--skip-existing",
