@@ -135,13 +135,6 @@ class ValidationCharacterizationTest(unittest.TestCase):
         validation = ModelValidation(
             model_id, str(directory), problem_path=str(TEST_PROBLEM)
         )
-        # ModelValidation writes the merged domain and problem to /tmp with
-        # delete=False and never removes them, so the test does it instead.
-        # Phase 2 moves this into a context-managed helper.
-        for attribute in ("merged_domain_filename", "merged_problem_filename"):
-            self.addCleanup(
-                Path(getattr(validation, attribute)).unlink, missing_ok=True
-            )
         validation.setup(num_samples=NUM_SAMPLES, sample_population=SAMPLE_POPULATION)
         return validation.validate()
 

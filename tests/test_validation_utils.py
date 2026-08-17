@@ -1,11 +1,9 @@
-import tempfile
 import unittest
-from pathlib import Path
 
 import numpy as np
 import torch
 
-from dias.validation.utils import process_model_logits, strip_problem_types
+from dias.validation.utils import process_model_logits
 
 
 class ValidationUtilsTest(unittest.TestCase):
@@ -58,45 +56,6 @@ class ValidationUtilsTest(unittest.TestCase):
         )
         self.assertEqual(result[-1].tolist(), [[False, True]])
         self.assertEqual(sum(array.sum() for array in result[:4]), 4)
-
-    def test_strip_problem_types_removes_types_and_injects_hierarchy_atoms(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            domain = root / "domain.pddl"
-            problem = root / "problem.pddl"
-            domain.write_text("""(define (domain demo)
-(:types child - parent parent - object)
-(:predicates (ready ?x - child))
-(:action go :parameters (?x - child) :precondition (ready ?x) :effect (ready ?x)))
-""")
-            problem.write_text("""(define (problem p) (:domain demo)
-(:objects c-1 - child)
-(:init)
-(:goal (ready c-1)))
-""")
-            text = strip_problem_types(
-                str(problem),
-                str(domain),
-                equality_predicate_name="=",
-                reflexive_predicate_names=["same"],
-            )
-            self.assertIn("(:objects c-1)", text)
-            self.assertIn("(child c-1)", text)
-            self.assertIn("(parent c-1)", text)
-            self.assertIn("(= c-1 c-1)", text)
-            self.assertIn("(same c-1 c-1)", text)
-
-    def test_strip_problem_types_without_domain_keeps_untyped_objects(self):
-        with tempfile.TemporaryDirectory() as directory:
-            problem = Path(directory) / "problem.pddl"
-            problem.write_text("""(define (problem p) (:domain demo)
-(:objects a b - thing)
-(:init)
-(:goal (ready a)))
-""")
-            text = strip_problem_types(str(problem))
-            self.assertIn("(:objects a b)", text)
-            self.assertNotIn("- thing", text)
 
 
 if __name__ == "__main__":

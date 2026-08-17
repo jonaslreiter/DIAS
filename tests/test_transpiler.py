@@ -2,7 +2,8 @@ import unittest
 
 import numpy as np
 
-from dias.validation.transpiler import ActionSchema, GroundAtom, PDDLTranspiler
+from dias.pddl.transpiler import PDDLTranspiler
+from dias.schema.action import ActionSchema, GroundAtom
 
 
 class TranspilerTest(unittest.TestCase):
@@ -83,7 +84,7 @@ class TranspilerTest(unittest.TestCase):
             PDDLTranspiler(**{**kwargs, "predicate_names": ("ready",)})
         with self.assertRaisesRegex(ValueError, "same length"):
             PDDLTranspiler(**{**kwargs, "predicate_arities": []})
-        with self.assertRaisesRegex(ValueError, "number of action names"):
+        with self.assertRaisesRegex(ValueError, "one action name per action"):
             PDDLTranspiler(**{**kwargs, "action_names": []})
 
     def test_add_unreachable_action_references_original_predicates(self):
@@ -104,6 +105,17 @@ class TranspilerTest(unittest.TestCase):
             ["(ready ?x0)", "(dummy_guard)"],
         )
         self.assertIn("dummy_action_unreachable", str(transpiler))
+
+    def test_add_unreachable_action_leaves_the_caller_lists_alone(self):
+        valid = np.zeros((1, 1, 1, 1), dtype=np.int64)
+        names, arities = ["ready"], [1]
+        transpiler = PDDLTranspiler(
+            valid, valid.copy(), valid.copy(), valid.copy(), names, arities, ["go"]
+        )
+        transpiler.add_unreachable_action()
+        self.assertEqual(transpiler.predicate_names, ["ready", "dummy_guard"])
+        self.assertEqual(names, ["ready"])
+        self.assertEqual(arities, [1])
 
 
 if __name__ == "__main__":

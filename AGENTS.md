@@ -61,10 +61,16 @@ When working on data generation or dataset code, preserve these assumptions unle
 - `src/dias/models/dias.py`: main DIAS architecture.
 - `src/dias/models/gnn.py`: graph encoder components.
 - `src/dias/models/prediction.py`: `PredictionModule` — Sinkhorn slot selection plus learnable precondition/effect tensors. With `state_dependent_effects=True` the effect tensor is replaced by an MLP that predicts effects from the current state (the MLP baseline; consumed by `validation/mlp_baseline.py`).
+- `src/dias/schema/domain.py`: `DomainSchema` — the frozen relation/action/object metadata of one `(domain, problem)` pair, built `from_pddl` or `from_checkpoint`. Consumers that only need metadata use this instead of constructing a datamodule.
+- `src/dias/schema/action.py`: `ActionSchema` / `GroundAtom` — a lifted action schema over slot indices, and its PDDL serialization.
+- `src/dias/pddl/text.py`: pure PDDL string handling (paren balancing, block extraction, typed-parameter and type-hierarchy parsing, equality rewriting). Imports nothing.
+- `src/dias/pddl/untype.py`: compiling typed PDDL to untyped PDDL — `extract_domain_header` and `strip_problem_types`, both text in / text out.
+- `src/dias/pddl/transpiler.py`: `PDDLTranspiler` — binarized schema tensors to `ActionSchema`s.
+- `src/dias/pddl/states.py`: reading pymimir states (`state_fluents`) and re-hosting one problem's state on another (`transfer_state`).
 - `src/dias/validation/dias_validate.py`: reconstruct learned schemas from checkpoints and compare successor-state behavior.
 - `src/dias/validation/l1.py`: L1 validation logic.
 - `src/dias/validation/mlp_baseline.py`: MLP-effects baseline validation.
-- `src/dias/validation/transpiler.py`: transpilation from learned tensors to PDDL-like action schema output.
+- `src/dias/validation/artifacts.py`: `PddlWorkspace` — the self-deleting temp directory holding generated PDDL, since pymimir only parses from paths.
 - `scripts/launch.py`: the single experiment launcher. Per domain it submits a Slurm training array (one task per seed) plus a `--dependency=aftercorr` validation array, or runs the same steps sequentially with `--backend local`. Selects the experiment via `--experiment-type {dias,mlp,noise}`.
 - `scripts/validate_runs.py`: compute-side per-`(experiment, domain, seed)` validation; picks the validator by experiment type and writes the per-run JSON. Invoked by `scripts/slurm/validate.sh` and by `launch.py --backend local`. `--threshold` / `--results-experiment` support post-hoc re-validation (see below).
 - `scripts/launch_threshold_validation.py`: re-validates the checkpoints of a finished experiment at several binarization thresholds, into sibling `logs/validation/<experiment>-thr<T>/` directories. Validation only — no training.

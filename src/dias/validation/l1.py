@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import random
 import re
-import tempfile
 from pathlib import Path
 
 import pymimir
@@ -10,8 +9,9 @@ from tqdm import tqdm
 
 from dias.data.generate_samples import generate_bfs
 from dias.pddl.states import state_fluents, transfer_state
+from dias.pddl.untype import extract_domain_header, strip_problem_types
 
-from .utils import extract_domain_header, strip_problem_types
+from .artifacts import PddlWorkspace
 
 
 class ModelValidation:
@@ -34,95 +34,65 @@ class ModelValidation:
         has_equality = self._domain_uses_equality(original_domain_text)
         fluent_equal_predicates = self._fluent_equal_predicates(original_domain_text)
 
-        # Create a merged untyped domain: transformed original actions + transformed learned actions.
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".pddl", dir="/tmp", delete=False
-        ) as f:
+        # A merged untyped domain: transformed original + learned actions.
+        original_actions_text = "\n\n".join(
+            self._transform_original_action(action_block, replace_equality=has_equality)
+            for action_block in self._extract_action_blocks(original_domain_text)
+        )
+        learned_actions_text = "\n\n".join(
+            self._transform_learned_action(action_block)
+            for action_block in self._extract_action_blocks(learned_domain_text)
+        )
+        header = self._patch_missing_predicates(
+            extract_domain_header(
+                original_domain_text, keep_equality_requirement=False
+            ),
+            original_actions_text,
+            original_domain_text,
+            has_equality=has_equality,
+        )
+        merged_domain_text = (
+            header
+            + "\n\n"
+            + original_actions_text
+            + "\n\n"
+            + learned_actions_text
+            + "\n)"
+        )
 
-            # Note: Removed pddl_transpiler kwargs. If extract_domain_header requires
-            # them, you may need to adjust that utility function to just parse the original file.
-            header, _ = extract_domain_header(
-                original_domain_path,
-                keep_equality_requirement=False,
-            )
-
-            # Process Original Actions
-            original_actions = self._extract_action_blocks(original_domain_text)
-            transformed_original_actions = [
-                self._transform_original_action(
-                    action_block, replace_equality=has_equality
-                )
-                for action_block in original_actions
-            ]
-
-            # Process Learned Actions
-            learned_actions = self._extract_action_blocks(learned_domain_text)
-            transformed_learned_actions = [
-                self._transform_learned_action(action_block)
-                for action_block in learned_actions
-            ]
-
-            # --- NEW: Patch missing predicates before merging ---
-            all_original_actions_text = "\n\n".join(transformed_original_actions)
-            header = self._patch_missing_predicates(
-                header,
-                all_original_actions_text,
+        self.workspace = PddlWorkspace()
+        self.merged_domain_filename = self.workspace.write(
+            "merged-domain.pddl", merged_domain_text + "\n\n"
+        )
+        # An untyped problem, with the type and equality facts in :init.
+        self.merged_problem_filename = self.workspace.write(
+            "merged-problem.pddl",
+            strip_problem_types(
+                Path(problem_path).read_text(),
                 original_domain_text,
-                has_equality=has_equality,
-            )
-            # ----------------------------------------------------
-
-            # Merge everything into a single PDDL string
-            pddl_str = (
-                header
-                + "\n\n"
-                + all_original_actions_text
-                + "\n\n"
-                + "\n\n".join(transformed_learned_actions)
-                + "\n)"
-            )
-            self.merged_domain_filename = f.name
-            print(f"Merged domain file: {self.merged_domain_filename}")
-            f.write(pddl_str + "\n\n")
-
-        # Create an untyped problem with type/equality facts in :init.
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".pddl", dir="/tmp", delete=False
-        ) as pf:
-            self.merged_problem_filename = pf.name
-            pf.write(
-                strip_problem_types(
-                    problem_path,
-                    original_domain_path,
-                    equality_predicate_name=(
-                        self.EQUALITY_PREDICATE_NAME if has_equality else None
-                    ),
-                    reflexive_predicate_names=fluent_equal_predicates or None,
-                )
-            )
-            print(f"Merged problem file: {self.merged_problem_filename}")
+                equality_predicate_name=(
+                    self.EQUALITY_PREDICATE_NAME if has_equality else None
+                ),
+                reflexive_predicate_names=fluent_equal_predicates or None,
+            ),
+        )
 
         self.merged_domain = pymimir.Domain(Path(self.merged_domain_filename))
         self.merged_problem = pymimir.Problem(
             self.merged_domain, Path(self.merged_problem_filename)
         )
 
-        # Note: datamodule_hparams seems to be a global or outer-scope variable in your script.
         self.original_domain = pymimir.Domain(Path(original_domain_path))
 
         original_problem_path_to_use = problem_path
         if fluent_equal_predicates:
-            patched_text = self._inject_reflexive_atoms(
-                Path(problem_path).read_text(), fluent_equal_predicates
-            )
-            with tempfile.NamedTemporaryFile(
-                mode="w", suffix=".pddl", dir="/tmp", delete=False
-            ) as opf:
-                opf.write(patched_text)
-                original_problem_path_to_use = opf.name
-            print(
-                f"Patched original problem with reflexive {fluent_equal_predicates}: "
-                f"{original_problem_path_to_use}"
+            # The original domain needs the same reflexive atoms the stripped
+            # problem got, or the two would not enumerate the same actions.
+            original_problem_path_to_use = self.workspace.write(
+                "original-problem.pddl",
+                self._inject_reflexive_atoms(
+                    Path(problem_path).read_text(), fluent_equal_predicates
+                ),
             )
 
         self.original_problem = pymimir.Problem(

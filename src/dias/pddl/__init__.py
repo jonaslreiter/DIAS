@@ -1,7 +1,8 @@
-"""PDDL source manipulation.
+"""PDDL source manipulation: text in, text out.
 
-`text` is pure string handling and imports nothing; `states` needs pymimir and
-is therefore not re-exported here, so importing the text helpers stays cheap.
+`text` is pure string handling and imports nothing, and only its helpers are
+re-exported here. `untype`, `transpiler` and `states` are imported as
+submodules, so pulling in a regex helper does not pull in numpy or pymimir.
 """
 
 from .text import (

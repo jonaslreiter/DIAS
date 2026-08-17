@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import random
 import re
-import tempfile
 from pathlib import Path
 
 import pymimir
@@ -13,15 +12,12 @@ from dias.data.datamodule import PddlGraphDataModule
 from dias.data.generate_samples import generate_bfs
 from dias.models.dias import DIAS
 from dias.pddl.states import state_fluents, transfer_state
+from dias.pddl.transpiler import PDDLTranspiler
+from dias.pddl.untype import extract_domain_header, strip_problem_types
 from dias.schema import DomainSchema
 
-from .transpiler import PDDLTranspiler
-from .utils import (
-    extract_domain_header,
-    process_model_logits,
-    resolve_best_checkpoint,
-    strip_problem_types,
-)
+from .artifacts import PddlWorkspace
+from .utils import process_model_logits, resolve_best_checkpoint
 
 
 class ModelValidation:
@@ -130,53 +126,41 @@ class ModelValidation:
         for schema in pddl_transpiler.action_schemas:
             schema.name = f"{self.LEARNED_ACTION_PREFIX}{schema.name}"
 
-        # Create a merged untyped domain: transformed original actions + learned actions.
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".pddl", dir="/tmp", delete=False
-        ) as f:
-            header, _ = extract_domain_header(
-                original_domain_path,
-                rel_names=pddl_transpiler.predicate_names,
-                predicate_arities=pddl_transpiler.predicate_arities,
-                keep_equality_requirement=False,
-            )
-            original_actions = self._extract_action_blocks(original_domain_text)
-            transformed_original_actions = [
-                self._transform_original_action(
-                    action_block, replace_equality=has_equality
-                )
-                for action_block in original_actions
-            ]
-            action_schemas_str = [
-                str(action_schema) for action_schema in pddl_transpiler.action_schemas
-            ]
-            pddl_str = (
-                header
-                + "\n\n"
-                + "\n\n".join(transformed_original_actions)
-                + "\n\n"
-                + "".join(action_schemas_str)
-                + "\n)"
-            )
-            self.merged_domain_filename = f.name
-            print(f"Merged domain file: {self.merged_domain_filename}")
-            f.write(pddl_str + "\n\n")
+        # A merged untyped domain: transformed original actions + learned actions.
+        header = extract_domain_header(
+            original_domain_text,
+            rel_names=pddl_transpiler.predicate_names,
+            predicate_arities=pddl_transpiler.predicate_arities,
+            keep_equality_requirement=False,
+        )
+        transformed_original_actions = [
+            self._transform_original_action(action_block, replace_equality=has_equality)
+            for action_block in self._extract_action_blocks(original_domain_text)
+        ]
+        merged_domain_text = (
+            header
+            + "\n\n"
+            + "\n\n".join(transformed_original_actions)
+            + "\n\n"
+            + "".join(str(schema) for schema in pddl_transpiler.action_schemas)
+            + "\n)"
+        )
 
-        # Create an untyped problem with type/equality facts in :init.
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".pddl", dir="/tmp", delete=False
-        ) as pf:
-            self.merged_problem_filename = pf.name
-            pf.write(
-                strip_problem_types(
-                    problem_path,
-                    original_domain_path,
-                    equality_predicate_name=(
-                        self.EQUALITY_PREDICATE_NAME if has_equality else None
-                    ),
-                )
-            )
-            print(f"Merged problem file: {self.merged_problem_filename}")
+        self.workspace = PddlWorkspace()
+        self.merged_domain_filename = self.workspace.write(
+            "merged-domain.pddl", merged_domain_text + "\n\n"
+        )
+        # An untyped problem, with the type and equality facts in :init.
+        self.merged_problem_filename = self.workspace.write(
+            "merged-problem.pddl",
+            strip_problem_types(
+                Path(problem_path).read_text(),
+                original_domain_text,
+                equality_predicate_name=(
+                    self.EQUALITY_PREDICATE_NAME if has_equality else None
+                ),
+            ),
+        )
 
         self.merged_domain = pymimir.Domain(Path(self.merged_domain_filename))
         self.merged_problem = pymimir.Problem(

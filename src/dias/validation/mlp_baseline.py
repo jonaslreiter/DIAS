@@ -3,7 +3,6 @@ from __future__ import annotations
 import multiprocessing as _mp
 import random
 import re
-import tempfile
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
@@ -19,15 +18,12 @@ from dias.data.datamodule import PddlGraphDataModule
 from dias.data.generate_samples import generate_bfs
 from dias.models.dias import DIAS
 from dias.pddl.states import state_fluents, transfer_state
+from dias.pddl.transpiler import PDDLTranspiler
+from dias.pddl.untype import extract_domain_header, strip_problem_types
 from dias.schema import DomainSchema
 
-from .transpiler import PDDLTranspiler
-from .utils import (
-    extract_domain_header,
-    process_model_logits,
-    resolve_best_checkpoint,
-    strip_problem_types,
-)
+from .artifacts import PddlWorkspace
+from .utils import process_model_logits, resolve_best_checkpoint
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -328,52 +324,41 @@ class ModelValidation:
         pddl_transpiler.add_unreachable_action()
 
         # Build the learned-only domain.
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".pddl", dir="/tmp", delete=False
-        ) as f:
-            header, _ = extract_domain_header(
-                original_domain_path,
-                rel_names=pddl_transpiler.predicate_names,
-                predicate_arities=pddl_transpiler.predicate_arities,
-                keep_equality_requirement=False,
+        header = extract_domain_header(
+            original_domain_text,
+            rel_names=pddl_transpiler.predicate_names,
+            predicate_arities=pddl_transpiler.predicate_arities,
+            keep_equality_requirement=False,
+        )
+        action_blocks = [
+            self._format_learned_action(
+                schema=schema, slot_indices=self.active_slot_indices[a]
             )
-
-            learned_blocks = [
-                self._format_learned_action(
-                    schema=schema,
-                    slot_indices=self.active_slot_indices[a],
-                )
-                for a, schema in enumerate(
-                    pddl_transpiler.action_schemas[:num_learned_actions]
-                )
-            ]
-            # The dummy unreachable action uses the transpiler's default
-            # serializer (which emits non-empty effects on all
-            # predicates so pymimir keeps them fluent).
-            dummy_block = str(
-                pddl_transpiler.action_schemas[num_learned_actions]
-            ).rstrip()
-            action_blocks = learned_blocks + [dummy_block]
-            pddl_str = header + "\n\n" + "\n\n".join(action_blocks) + "\n)"
-            self.learned_domain_filename = f.name
-            print(f"Learned domain file: {self.learned_domain_filename}")
-            f.write(pddl_str + "\n")
-
-        # Build a stripped (untyped) problem file for the learned domain.
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".pddl", dir="/tmp", delete=False
-        ) as pf:
-            self.learned_problem_filename = pf.name
-            pf.write(
-                strip_problem_types(
-                    problem_path,
-                    original_domain_path,
-                    equality_predicate_name=(
-                        self.EQUALITY_PREDICATE_NAME if has_equality else None
-                    ),
-                )
+            for a, schema in enumerate(
+                pddl_transpiler.action_schemas[:num_learned_actions]
             )
-            print(f"Learned problem file: {self.learned_problem_filename}")
+        ]
+        # The dummy unreachable action keeps the transpiler's own serializer,
+        # whose non-empty effects on every predicate are the point of it.
+        action_blocks.append(
+            str(pddl_transpiler.action_schemas[num_learned_actions]).rstrip()
+        )
+
+        self.workspace = PddlWorkspace()
+        self.learned_domain_filename = self.workspace.write(
+            "learned-domain.pddl",
+            header + "\n\n" + "\n\n".join(action_blocks) + "\n)" + "\n",
+        )
+        self.learned_problem_filename = self.workspace.write(
+            "learned-problem.pddl",
+            strip_problem_types(
+                Path(problem_path).read_text(),
+                original_domain_text,
+                equality_predicate_name=(
+                    self.EQUALITY_PREDICATE_NAME if has_equality else None
+                ),
+            ),
+        )
 
         self.learned_domain = pymimir.Domain(Path(self.learned_domain_filename))
         self.learned_problem = pymimir.Problem(
