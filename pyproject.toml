@@ -9,10 +9,38 @@ description = "DIAS: Differentiable Induction of Action Schemas"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
-dynamic = ["dependencies"]
+dependencies = [
+    "torch>=2.0",
+    "pymimir==0.13.62",
+    "lightning>=2.0",
+    "jsonargparse[signatures]>=4.27.7",
+    "torch-geometric>=2.4",
+    "numpy>=1.24",
+    "pyyaml>=6.0",
+    "matplotlib>=3.7",
+    "wandb>=0.16",
+    "tqdm>=4.65",
+]
+
+[project.scripts]
+dias-train = "dias.main:main"
+
+[project.optional-dependencies]
+dev = ["pytest", "coverage", "black", "isort"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.setuptools.dynamic]
-dependencies = { file = ["requirements.txt"] }
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.black]
+# Without this, black targets the newest Python it knows and warns that the
+# running interpreter cannot verify its own output.
+target-version = ["py310"]
+extend-exclude = "/(submodules|\\.venv-delivery)/"
+
+[tool.isort]
+profile = "black"
+src_paths = ["src", "tests", "scripts", "scaling"]
+extend_skip_glob = ["submodules/*", "*/.venv-delivery/*"]

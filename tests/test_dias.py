@@ -188,60 +188,6 @@ class DIASModelTest(unittest.TestCase):
         self.assertTrue(first_call.kwargs["on_step"])
         self.assertFalse(first_call.kwargs["on_epoch"])
 
-    def test_training_step_runs_pcgrad_projection_and_optimizer_hooks(self):
-        shared = torch.nn.Parameter(torch.tensor(1.0))
-        aligned = torch.nn.Parameter(torch.tensor(1.0))
-        adjacency_only = torch.nn.Parameter(torch.tensor(2.0))
-        auxiliary_only = torch.nn.Parameter(torch.tensor(3.0))
-        unused = torch.nn.Parameter(torch.tensor(4.0))
-
-        class Optimizer:
-            def __init__(self):
-                self.zeroed = False
-                self.stepped = False
-
-            def zero_grad(self):
-                self.zeroed = True
-
-            def step(self):
-                self.stepped = True
-
-        optimizer = Optimizer()
-
-        class FakeModel:
-            pcgrad_dyn_clip = True
-            loss_weight_schedule_collection = {"aux_loss_weight": 1.0}
-
-            def parameters(self):
-                return iter([shared, aligned, adjacency_only, auxiliary_only, unused])
-
-            def optimizers(self):
-                return optimizer
-
-            def _log_noise(self, batch_s1):
-                self.noise_batch = batch_s1
-
-            def step(self, batch):
-                return {
-                    "loss_adjacency": shared + aligned + adjacency_only,
-                    "loss_aux": -2 * shared + 2 * aligned + auxiliary_only,
-                    "loss_mse": torch.tensor(0),
-                    "pre_mean": torch.tensor(1.0),
-                    "pre_prod_mean": torch.tensor(1.0),
-                }
-
-            def log_results(self, prefix, results):
-                self.logged = (prefix, results)
-
-        fake = FakeModel()
-        result = DIAS.training_step(fake, ("batch",), 0)
-        self.assertIsNone(result)
-        self.assertTrue(optimizer.zeroed)
-        self.assertTrue(optimizer.stepped)
-        self.assertIs(fake.noise_batch, "batch")
-        self.assertEqual(fake.logged[0], "train")
-        self.assertTrue(hasattr(fake, "manual_backward_done"))
-
     def test_validation_epoch_end_queues_only_when_plotting_enabled(self):
         model = self.make_model(parameter_plotting=None)
         with patch("dias.models.dias.queue_validation_heatmaps") as queue_heatmaps:

@@ -9,7 +9,7 @@ from torch_geometric.utils import to_dense_adj
 from dias.utils import LossWeightScheduleCollection, resolve_label_names
 from dias.utils.plotting import PlotWorker, queue_validation_heatmaps
 
-from .gnn import GNNModule
+from .gnn import DEFAULT_HIDDEN_DIMS, GNNModule
 from .prediction import PredictionModule
 from .utils import build_relation_change_edges
 
@@ -44,6 +44,7 @@ class DIAS(L.LightningModule):
         use_precondition_loss: bool = True,
         use_effect_loss: bool = True,
         use_pcgrad: bool = True,
+        encoder_hidden_dims: list[int] | None = None,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -141,6 +142,7 @@ class DIAS(L.LightningModule):
             self.num_relations * 2
             + self.num_action_relations
             + self.num_successor_relations,
+            hidden_dims=encoder_hidden_dims or DEFAULT_HIDDEN_DIMS,
         )
 
         self.automatic_optimization = False
