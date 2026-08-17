@@ -14,6 +14,7 @@ from tqdm import tqdm
 from dias.data.datamodule import PddlGraphDataModule
 from dias.data.generate_samples import generate_bfs
 from dias.models.dias import DIAS
+from dias.schema import DomainSchema
 
 from .transpiler import PDDLTranspiler
 from .utils import (
@@ -52,18 +53,20 @@ class ModelValidation:
             for k, v in ckpt["datamodule_hyper_parameters"].items()
             if not k.startswith("_") and k not in _legacy_keys
         }
-        project_root = Path(__file__).parent.parent
+        # Relative paths in a checkpoint were relative to the working directory
+        # the run was launched from, which is the repository root.
         for key in ("domain_path", "problem_path", "pt_file"):
             if datamodule_hparams.get(key) is not None:
-                datamodule_hparams[key] = str(project_root / datamodule_hparams[key])
+                datamodule_hparams[key] = str(Path(datamodule_hparams[key]).resolve())
 
-        datamodule_hparams["metadata_only"] = True
-        for key in ("edge_remove_ratio", "edge_add_ratio"):
-            if datamodule_hparams.get(key) is not None:
-                datamodule_hparams[key] = 0.0
-
-        self.datamodule = PddlGraphDataModule(**datamodule_hparams)
-        self.datamodule.setup()
+        self.schema = DomainSchema.from_pddl(
+            datamodule_hparams["domain_path"],
+            datamodule_hparams["problem_path"],
+            include_statics=datamodule_hparams.get("include_statics", False),
+            default_statics=datamodule_hparams.get("default_statics"),
+            action_arguments=datamodule_hparams.get("action_arguments", False),
+            strips_plus_actions=datamodule_hparams.get("strips_plus_actions", False),
+        )
 
         self.model = DIAS.load_from_checkpoint(self.ckpt_file, map_location="cpu")
         self.model.to("cpu")
@@ -87,8 +90,8 @@ class ModelValidation:
             action_arguments=action_arguments,
             strips_plus_actions=strips_plus_actions,
             free_pos_map=free_pos_map,
-            action_names=self.datamodule.action_names,
-            action_arities=self.datamodule.action_arities,
+            action_names=list(self.schema.action_names),
+            action_arities=list(self.schema.action_arities),
             num_slots=self.model.num_slots,
             random_flip=False,
             threshold=threshold,
@@ -98,8 +101,8 @@ class ModelValidation:
         original_domain_text = Path(original_domain_path).read_text()
         has_equality = self._domain_uses_equality(original_domain_text)
 
-        relation_names = list(self.datamodule.relation_names)
-        relation_arities = list(self.datamodule.arity_relations)
+        relation_names = list(self.schema.relation_names)
+        relation_arities = list(self.schema.relation_arities)
         if not has_equality:
             keep = [i for i, n in enumerate(relation_names) if n != "="]
             add_eff = add_eff[:, keep, :, :]
@@ -121,7 +124,7 @@ class ModelValidation:
             negative_preconditions=neg_prec,
             predicate_names=transpiler_predicate_names,
             predicate_arities=relation_arities,
-            action_names=self.datamodule.action_names,
+            action_names=list(self.schema.action_names),
         )
         pddl_transpiler.generate_action_schemas()
 

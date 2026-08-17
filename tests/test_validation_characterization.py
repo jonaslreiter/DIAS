@@ -25,8 +25,8 @@ from pathlib import Path
 
 import torch
 
-from dias.data.datamodule import PddlGraphDataModule
 from dias.models.dias import DIAS
+from dias.schema import DomainSchema
 from dias.validation.dias_validate import ModelValidation
 
 torch.set_num_threads(1)
@@ -57,19 +57,23 @@ def datamodule_hparams() -> dict:
 
 def build_checkpoint(directory: Path) -> str:
     """Write a checkpoint whose only learned action is a correct `stack`."""
-    metadata = PddlGraphDataModule(**datamodule_hparams(), metadata_only=True)
-    metadata.setup()
-    relation = {name: i for i, name in enumerate(metadata.relation_names)}
-    action = {name: i for i, name in enumerate(metadata.action_names)}
+    hparams = datamodule_hparams()
+    schema = DomainSchema.from_pddl(
+        hparams["domain_path"],
+        hparams["problem_path"],
+        include_statics=hparams["include_statics"],
+    )
+    relation = {name: i for i, name in enumerate(schema.relation_names)}
+    action = {name: i for i, name in enumerate(schema.action_names)}
 
     model_hparams = {
-        "num_objects": metadata.num_objects,
-        "arity_relations": list(metadata.arity_relations),
-        "num_actions": metadata.num_actions,
+        "num_objects": schema.num_objects,
+        "arity_relations": list(schema.relation_arities),
+        "num_actions": schema.num_actions,
         "object_dim": 8,
-        "num_slots": max(metadata.action_arities),
-        "action_arities": list(metadata.action_arities),
-        "action_arg_positions": [list(p) for p in metadata.action_arg_positions],
+        "num_slots": max(schema.action_arities),
+        "action_arities": list(schema.action_arities),
+        "action_arg_positions": [list(p) for p in schema.action_arg_positions],
         "successor_relations": True,
         "parameter_plotting": None,
         "batch_size": 2,

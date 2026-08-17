@@ -40,7 +40,6 @@ class DataModuleTest(unittest.TestCase):
             data_module = PddlGraphDataModule.__new__(PddlGraphDataModule)
             defaults = {
                 "pt_file": None,
-                "metadata_only": False,
                 "min_per_label_train": None,
                 "min_per_label_valid": None,
                 "num_train": None,
@@ -132,22 +131,6 @@ class DataModuleTest(unittest.TestCase):
         data_module.arity_relations = [1, 2]
         data_module._base = PddlTransitionDataset(make_data())
         self.assertEqual(data_module._compute_relation_true_ratio(), [1 / 7, 1 / 7])
-
-    def test_empty_data_uses_metadata_and_keeps_shapes(self):
-        data_module = PddlGraphDataModule.__new__(PddlGraphDataModule)
-        data_module.metadata = {
-            "objects": {"0": "a"},
-            "object_name_to_idx": {"a": 0},
-            "predicates": [{"name": "clear", "arity": 1, "static": False}],
-            "actions": [{"name": "go", "arity": 0}],
-        }
-        data_module.arity_relations = [1]
-        data_module.include_statics = False
-        data_module.default_statics = ["object"]
-        empty = data_module._empty_data()
-        self.assertEqual(tuple(empty["states"].shape), (0, 1, 1, 1))
-        self.assertEqual(tuple(empty["action_args"].shape), (0, 0))
-        self.assertEqual(empty["relation_names"], ["clear"])
 
 
 if __name__ == "__main__":

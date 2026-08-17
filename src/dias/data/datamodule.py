@@ -9,12 +9,14 @@ import torch
 from torch.utils.data import Dataset, IterableDataset
 from torch_geometric.loader import DataLoader as PyGDataLoader
 
+from dias.schema import DomainSchema
 from dias.utils import (
     add_adj_noise,
     add_adj_noise_expected_count,
     adj_to_pyg_data,
 )
 
+from ..schema.domain import _argument_positions
 from .generate_samples import generate_random_walk, get_metadata, samples_to_tensors
 
 
@@ -242,7 +244,6 @@ class PddlGraphDataModule(L.LightningDataModule):
         expected_removed_atoms: float = 0.0,
         expected_added_atoms: float = 0.0,
         noise_on_fluents_only: bool = True,
-        metadata_only: bool = False,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -274,7 +275,6 @@ class PddlGraphDataModule(L.LightningDataModule):
         self.expected_removed_atoms = expected_removed_atoms
         self.expected_added_atoms = expected_added_atoms
         self.noise_on_fluents_only = noise_on_fluents_only
-        self.metadata_only = metadata_only
 
         if batch_sampling_strategy not in ("random", "stratified"):
             raise ValueError(
@@ -293,25 +293,24 @@ class PddlGraphDataModule(L.LightningDataModule):
         self.domain = pymimir.Domain(Path(domain_path))
         self.problem = pymimir.Problem(self.domain, Path(problem_path))
         self.metadata = get_metadata(self.domain, self.problem)
-
-        self.arity_relations: list[int] = [
-            p["arity"] for p in self.metadata["predicates"] if self._keep_predicate(p)
-        ]
+        self.schema = DomainSchema.from_metadata(
+            self.metadata,
+            include_statics=self.include_statics,
+            default_statics=self.default_statics,
+            action_arg_positions=_argument_positions(
+                self.metadata["actions"],
+                domain_path=domain_path,
+                action_arguments=self.action_arguments,
+                strips_plus_actions=self.strips_plus_actions,
+            ),
+        )
+        self.arity_relations: list[int] = list(self.schema.relation_arities)
 
         self._base: Optional[PddlTransitionDataset] = None
         self._train_ds = None
         self._valid_ds = None
         self._train_idx: list[int] = []
         self._valid_idx: list[int] = []
-
-    def _keep_predicate(self, p: dict) -> bool:
-        if p["arity"] > 2:
-            return False
-        if not self.include_statics and p["static"]:
-            return False
-        if self.include_statics and p["static"] and p["name"] in self.default_statics:
-            return False
-        return True
 
     def _apply_min_per_label_floors(self) -> None:
         """Raise ``min_per_label_*`` to a shared lower bound, never lower it.
@@ -353,14 +352,13 @@ class PddlGraphDataModule(L.LightningDataModule):
         )
 
     def _validate_sampling_config(self) -> None:
-        if self.pt_file is not None or self.metadata_only:
+        if self.pt_file is not None:
             return
         if not self._has_min and not self._has_num:
             raise ValueError(
                 "PddlGraphDataModule: at least one of "
                 "(min_per_label_train, min_per_label_valid) or "
-                "(num_train, num_valid) must be set. "
-                "Pass metadata_only=True to build an empty dataset."
+                "(num_train, num_valid) must be set."
             )
         if self._has_min and (
             self.min_per_label_train <= 0 or self.min_per_label_valid <= 0
@@ -429,46 +427,42 @@ class PddlGraphDataModule(L.LightningDataModule):
         assert self._base is not None, "Call .setup() first."
         return self._base
 
+    # Metadata comes from the schema, so it is available before setup().
     @property
     def num_relations(self) -> int:
-        return len(self.arity_relations)
+        return self.schema.num_relations
 
     @property
     def num_objects(self) -> int:
-        return len(self.metadata["objects"])
+        return self.schema.num_objects
 
     @property
     def num_actions(self) -> int:
-        return len(self.metadata["actions"])
+        return self.schema.num_actions
 
     @property
     def max_action_arity(self) -> int:
-        return max(a["arity"] for a in self.metadata["actions"])
+        return self.schema.max_action_arity
 
     @property
     def action_arities(self) -> list[int]:
-        return [a["arity"] for a in self.metadata["actions"]]
+        return list(self.schema.action_arities)
 
     @property
     def action_arg_positions(self) -> list[list[int]]:
-        if not self.action_arguments:
-            return [[] for _ in self.metadata["actions"]]
-        if self.strips_plus_actions:
-            free = self._load_strips_plus_yaml(self.domain_path)
-            return [sorted(free.get(a["name"], [])) for a in self.metadata["actions"]]
-        return [list(range(a["arity"])) for a in self.metadata["actions"]]
+        return [list(p) for p in self.schema.action_arg_positions]
 
     @property
     def relation_names(self) -> list[str]:
-        return self.base.relation_names
+        return list(self.schema.relation_names)
 
     @property
     def action_names(self) -> list[str]:
-        return self.base.action_names
+        return list(self.schema.action_names)
 
     @property
     def object_names(self) -> dict:
-        return self.base.object_names
+        return dict(self.schema.object_names)
 
     @property
     def dataset_size(self) -> int:
@@ -477,8 +471,6 @@ class PddlGraphDataModule(L.LightningDataModule):
     def setup(self, stage: Optional[str] = None) -> None:
         if self.pt_file is not None:
             data = torch.load(self.pt_file, weights_only=False)
-        elif self.metadata_only:
-            data = self._empty_data()
         else:
             samples = self._sample_transitions()
             self._postprocess_action_args(samples)
@@ -740,29 +732,6 @@ class PddlGraphDataModule(L.LightningDataModule):
             print(
                 f"  {name}: {count} ({100.0 * count / len(ds):.1f}%)", file=sys.stderr
             )
-
-    def _empty_data(self) -> dict:
-        n_obj = len(self.metadata["objects"])
-        n_rel = len(self.arity_relations)
-        max_arity = max((a["arity"] for a in self.metadata["actions"]), default=0)
-        relation_names = [
-            p["name"] for p in self.metadata["predicates"] if self._keep_predicate(p)
-        ]
-        return {
-            "states": torch.zeros(0, n_rel, n_obj, n_obj),
-            "next_states": torch.zeros(0, n_rel, n_obj, n_obj),
-            "action_indices": torch.zeros(0, dtype=torch.long),
-            "action_args": torch.zeros(0, max_arity, dtype=torch.long),
-            "relation_names": relation_names,
-            "relation_arities": list(self.arity_relations),
-            "object_names": self.metadata["objects"],
-            "object_name_to_idx": self.metadata["object_name_to_idx"],
-            "action_names": [a["name"] for a in self.metadata["actions"]],
-            "action_arities": [a["arity"] for a in self.metadata["actions"]],
-            "applicable_actions": [],
-            "num_objects": n_obj,
-            "num_relations": n_rel,
-        }
 
     def _make_stratified(
         self,
