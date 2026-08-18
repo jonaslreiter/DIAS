@@ -124,6 +124,11 @@ def compare_successors(states: list, learned_action_prefix: str) -> dict:
         "accuracy": matches / len(states),
         "precision": _ratio(tp_total, fp_total),
         "recall": _ratio(tp_total, fn_total),
+        # Pooled counts, so several problems can be micro-averaged downstream
+        # instead of averaging their precisions.
+        "tp": tp_total,
+        "fp": fp_total,
+        "fn": fn_total,
         "action_stats": {
             name: {
                 "tp": action_tp[name],

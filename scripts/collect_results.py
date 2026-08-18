@@ -68,36 +68,49 @@ ONE = 1.0 - 1e-9
 
 
 def _seed_precision_recall(per_problem: dict) -> tuple[float, float] | None:
-    """Reduce one seed's per-problem results to a single (precision, recall)."""
+    """Reduce one seed's per-problem results to a single (precision, recall).
+
+    Micro-averaged: the per-problem tp/fp/fn are pooled, so a problem with many
+    reachable successors counts for more than a small one. Every validator emits
+    those counts; `action_stats` covers results written before they did, and the
+    mean of per-problem precisions is a last resort for older W&B runs whose
+    summaries carry nothing else.
+    """
     tp = fp = fn = 0
+    counted = False
     precisions: list[float] = []
     recalls: list[float] = []
-    saw_stats = False
     any_ok = False
     for result in per_problem.values():
         if not isinstance(result, dict) or "error" in result:
             continue
         any_ok = True
-        stats = result.get("action_stats")
-        if isinstance(stats, dict):
-            saw_stats = True
-            for a in stats.values():
-                tp += int(a.get("tp", 0))
-                fp += int(a.get("fp", 0))
-                fn += int(a.get("fn", 0))
+        if all(isinstance(result.get(k), int) for k in ("tp", "fp", "fn")):
+            counted = True
+            tp += result["tp"]
+            fp += result["fp"]
+            fn += result["fn"]
+        elif isinstance(result.get("action_stats"), dict):
+            counted = True
+            for action in result["action_stats"].values():
+                tp += int(action.get("tp", 0))
+                fp += int(action.get("fp", 0))
+                fn += int(action.get("fn", 0))
         if isinstance(result.get("precision"), (int, float)):
             precisions.append(float(result["precision"]))
         if isinstance(result.get("recall"), (int, float)):
             recalls.append(float(result["recall"]))
     if not any_ok:
         return None
-    if saw_stats:
-        p = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-        r = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-    else:
-        p = sum(precisions) / len(precisions) if precisions else 0.0
-        r = sum(recalls) / len(recalls) if recalls else 0.0
-    return p, r
+    if counted:
+        return (
+            tp / (tp + fp) if tp + fp else 0.0,
+            tp / (tp + fn) if tp + fn else 0.0,
+        )
+    return (
+        sum(precisions) / len(precisions) if precisions else 0.0,
+        sum(recalls) / len(recalls) if recalls else 0.0,
+    )
 
 
 def collect_local(
@@ -122,7 +135,9 @@ def collect_wandb(
     api = wandb.Api()
     path = f"{entity}/{project}" if entity else project
     by_domain: dict[str, list[tuple[float, float]]] = {}
-    key_re = re.compile(r"^validation/(?P<stem>.+)/(?P<metric>precision|recall)$")
+    key_re = re.compile(
+        r"^validation/(?P<stem>.+)/(?P<metric>precision|recall|tp|fp|fn)$"
+    )
     for run in api.runs(path, filters={"group": experiment}):
         domain = run.config.get("domain")
         if domain is None:
@@ -131,7 +146,10 @@ def collect_wandb(
         for key, val in run.summary.items():
             m = key_re.match(str(key))
             if m and isinstance(val, (int, float)):
-                per_problem.setdefault(m["stem"], {})[m["metric"]] = float(val)
+                metric = m["metric"]
+                per_problem.setdefault(m["stem"], {})[metric] = (
+                    int(val) if metric in ("tp", "fp", "fn") else float(val)
+                )
         pr = _seed_precision_recall(per_problem)
         if pr is not None:
             by_domain.setdefault(domain, []).append(pr)
