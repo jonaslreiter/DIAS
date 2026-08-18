@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import multiprocessing as _mp
 import random
-import re
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
@@ -17,6 +16,7 @@ from tqdm import tqdm
 from dias.data.datamodule import PddlGraphDataModule
 from dias.data.generate_samples import generate_bfs
 from dias.models.dias import DIAS
+from dias.pddl import text as pddl_text
 from dias.pddl.states import state_fluents, transfer_state
 from dias.pddl.transpiler import PDDLTranspiler
 from dias.pddl.untype import extract_domain_header, strip_problem_types
@@ -252,7 +252,7 @@ class ModelValidation:
 
         original_domain_path = datamodule_hparams["domain_path"]
         original_domain_text = Path(original_domain_path).read_text()
-        has_equality = self._domain_uses_equality(original_domain_text)
+        has_equality = pddl_text.domain_uses_equality(original_domain_text)
 
         relation_names = list(self.schema.relation_names)
         relation_arities = list(self.schema.relation_arities)
@@ -847,12 +847,3 @@ class ModelValidation:
             f"  :effect ()\n"
             f")"
         )
-
-    @staticmethod
-    def _domain_uses_equality(domain_text: str) -> bool:
-        req_match = re.search(r"\(:requirements([^)]*)\)", domain_text, re.IGNORECASE)
-        return bool(req_match and ":equality" in req_match.group(1).lower())
-
-    # ──────────────────────────────────────────────────────────────────
-    #  state utilities (kept from the previous validator)
-    # ──────────────────────────────────────────────────────────────────

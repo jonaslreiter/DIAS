@@ -8,10 +8,19 @@ import pymimir
 from tqdm import tqdm
 
 from dias.data.generate_samples import generate_bfs
+from dias.pddl import text as pddl_text
 from dias.pddl.states import state_fluents, transfer_state
-from dias.pddl.untype import extract_domain_header, strip_problem_types
+from dias.pddl.untype import (
+    extract_domain_header,
+    inject_reflexive_atoms,
+    strip_problem_types,
+    untype_action,
+)
 
 from .artifacts import PddlWorkspace
+
+# A learned schema's parameters carry these when it has no real type for them.
+UNINFORMATIVE_TYPES = frozenset({"untyped", "object"})
 
 
 class ModelValidation:
@@ -31,17 +40,26 @@ class ModelValidation:
         original_domain_text = Path(original_domain_path).read_text()
         learned_domain_text = Path(learned_domain_path).read_text()
 
-        has_equality = self._domain_uses_equality(original_domain_text)
+        has_equality = pddl_text.domain_uses_equality(original_domain_text)
         fluent_equal_predicates = self._fluent_equal_predicates(original_domain_text)
 
         # A merged untyped domain: transformed original + learned actions.
         original_actions_text = "\n\n".join(
-            self._transform_original_action(action_block, replace_equality=has_equality)
-            for action_block in self._extract_action_blocks(original_domain_text)
+            untype_action(
+                action_block,
+                equality_predicate_name=(
+                    self.EQUALITY_PREDICATE_NAME if has_equality else None
+                ),
+            )
+            for action_block in pddl_text.extract_action_blocks(original_domain_text)
         )
         learned_actions_text = "\n\n".join(
-            self._transform_learned_action(action_block)
-            for action_block in self._extract_action_blocks(learned_domain_text)
+            untype_action(
+                action_block,
+                name_prefix=self.LEARNED_ACTION_PREFIX,
+                ignored_types=UNINFORMATIVE_TYPES,
+            )
+            for action_block in pddl_text.extract_action_blocks(learned_domain_text)
         )
         header = self._patch_missing_predicates(
             extract_domain_header(
@@ -90,7 +108,7 @@ class ModelValidation:
             # problem got, or the two would not enumerate the same actions.
             original_problem_path_to_use = self.workspace.write(
                 "original-problem.pddl",
-                self._inject_reflexive_atoms(
+                inject_reflexive_atoms(
                     Path(problem_path).read_text(), fluent_equal_predicates
                 ),
             )
@@ -191,48 +209,6 @@ class ModelValidation:
         return header
 
     @classmethod
-    def _transform_learned_action(cls, action_text: str) -> str:
-        """
-        Transforms a learned action block by prefixing its name to prevent
-        collisions, stripping its parameter types, and injecting the dropped
-        types as unary predicate preconditions so the action remains typed
-        in the untyped merged domain.
-        """
-        m = re.match(r"\(\s*:action\s+(\S+)", action_text)
-        if m is None:
-            raise ValueError("Failed to parse learned action name")
-        action_name = f"{cls.LEARNED_ACTION_PREFIX}{m.group(1)}"
-
-        params_idx = action_text.find(":parameters")
-        pre_idx = action_text.find(":precondition")
-        eff_idx = action_text.find(":effect")
-
-        if params_idx == -1 or pre_idx == -1 or eff_idx == -1:
-            raise ValueError(
-                f"Learned action '{action_name}' is missing parameters/precondition/effect"
-            )
-
-        param_expr, _ = cls._find_balanced_expr(action_text, params_idx)
-        pre_expr, _ = cls._find_balanced_expr(action_text, pre_idx)
-        eff_expr, _ = cls._find_balanced_expr(action_text, eff_idx)
-
-        params, typed_params = cls._parse_typed_parameters(param_expr)
-        typed_preconditions = [
-            f"({type_name} {var_name})"
-            for var_name, type_name in typed_params
-            if type_name.lower() not in {"untyped", "object"}
-        ]
-        pre_expr = cls._inject_extra_preconditions(pre_expr, typed_preconditions)
-
-        params_str = " ".join(params)
-        return (
-            f"(:action {action_name}\n"
-            f"  :parameters ({params_str})\n"
-            f"  :precondition {pre_expr}\n"
-            f"  :effect {eff_expr}\n"
-            f")"
-        )
-
     def setup(self, num_samples: int = 250, sample_population: int = 500):
 
         if num_samples > sample_population:
@@ -378,133 +354,6 @@ class ModelValidation:
         return cid
 
     @staticmethod
-    def _extract_action_blocks(domain_text: str) -> list[str]:
-        blocks: list[str] = []
-        i = 0
-        while True:
-            start = domain_text.find("(:action", i)
-            if start == -1:
-                break
-
-            depth = 0
-            end = None
-            for j in range(start, len(domain_text)):
-                ch = domain_text[j]
-                if ch == "(":
-                    depth += 1
-                elif ch == ")":
-                    depth -= 1
-                    if depth == 0:
-                        end = j + 1
-                        break
-
-            if end is None:
-                raise ValueError("Unbalanced parentheses while parsing :action block")
-
-            blocks.append(domain_text[start:end].strip())
-            i = end
-
-        return blocks
-
-    @staticmethod
-    def _find_balanced_expr(text: str, start_idx: int) -> tuple[str, int]:
-        left = text.find("(", start_idx)
-        if left == -1:
-            raise ValueError("Expected balanced expression but found no '('")
-
-        depth = 0
-        for i in range(left, len(text)):
-            if text[i] == "(":
-                depth += 1
-            elif text[i] == ")":
-                depth -= 1
-                if depth == 0:
-                    return text[left : i + 1], i + 1
-
-        raise ValueError("Unbalanced parentheses while parsing expression")
-
-    @staticmethod
-    def _parse_typed_parameters(
-        param_expr: str,
-    ) -> tuple[list[str], list[tuple[str, str]]]:
-        tokens = param_expr.strip()[1:-1].split()
-        vars_out: list[str] = []
-        typed_vars: list[tuple[str, str]] = []
-
-        pending: list[str] = []
-        i = 0
-        while i < len(tokens):
-            tok = tokens[i]
-            if tok == "-" and i + 1 < len(tokens):
-                type_name = tokens[i + 1]
-                for var_name in pending:
-                    vars_out.append(var_name)
-                    typed_vars.append((var_name, type_name))
-                pending = []
-                i += 2
-            else:
-                pending.append(tok)
-                i += 1
-
-        for var_name in pending:
-            vars_out.append(var_name)
-
-        return vars_out, typed_vars
-
-    @classmethod
-    def _replace_equality_with_predicate(cls, expr: str) -> str:
-        return re.sub(
-            r"\(\s*=\s+([^\s()]+)\s+([^\s()]+)\s*\)",
-            rf"({cls.EQUALITY_PREDICATE_NAME} \1 \2)",
-            expr,
-        )
-
-    @staticmethod
-    def _domain_uses_equality(domain_text: str) -> bool:
-        req_match = re.search(r"\(:requirements([^)]*)\)", domain_text, re.IGNORECASE)
-        return bool(req_match and ":equality" in req_match.group(1).lower())
-
-    @staticmethod
-    def _inject_reflexive_atoms(problem_text: str, predicate_names: list[str]) -> str:
-        """Inject `(p X X)` atoms for every predicate name in *predicate_names* and
-        every object in the problem's :objects block, into the :init section.
-        Works for both typed and untyped :objects.
-        """
-        if not predicate_names:
-            return problem_text
-        objects_match = re.search(r"\(:objects(.*?)\)", problem_text, re.DOTALL)
-        if not objects_match:
-            return problem_text
-        tokens = objects_match.group(1).split()
-        object_names: list[str] = []
-        i = 0
-        while i < len(tokens):
-            if tokens[i] == "-" and i + 1 < len(tokens):
-                i += 2
-            else:
-                object_names.append(tokens[i])
-                i += 1
-        if not object_names:
-            return problem_text
-        eq_atoms = sorted(
-            {
-                f"({name} {obj} {obj})"
-                for name in predicate_names
-                for obj in object_names
-            }
-        )
-        goal_pos = problem_text.find("(:goal")
-        init_close = (
-            problem_text.rfind(")", 0, goal_pos)
-            if goal_pos != -1
-            else problem_text.rfind(")")
-        )
-        if init_close == -1:
-            return problem_text
-        extra = "\n        " + "\n        ".join(eq_atoms)
-        return problem_text[:init_close] + extra + "\n    " + problem_text[init_close:]
-
-    @staticmethod
     def _fluent_equal_predicates(domain_text: str) -> list[str]:
         """Return names of binary fluent predicates that look like reflexive equality
         (e.g. `equal`, `eq`) declared in the domain's :predicates block. The kr_2024
@@ -525,61 +374,3 @@ class ModelValidation:
             if var_count == 2:
                 results.append(m.group(1))
         return results
-
-    @staticmethod
-    def _inject_extra_preconditions(precondition_expr: str, extras: list[str]) -> str:
-        pre = precondition_expr.strip()
-        if not extras:
-            return pre
-
-        if pre in {"()", "(and)"}:
-            return "(and " + " ".join(extras) + ")"
-
-        if pre.startswith("(and") and pre.endswith(")"):
-            inner = pre[4:-1].strip()
-            if inner:
-                return "(and " + " ".join(extras) + " " + inner + ")"
-            return "(and " + " ".join(extras) + ")"
-
-        return "(and " + " ".join(extras) + " " + pre + ")"
-
-    @classmethod
-    def _transform_original_action(
-        cls, action_block: str, replace_equality: bool = True
-    ) -> str:
-        m = re.match(r"\(\s*:action\s+(\S+)", action_block)
-        if m is None:
-            raise ValueError("Failed to parse action name")
-        action_name = m.group(1)
-
-        params_idx = action_block.find(":parameters")
-        pre_idx = action_block.find(":precondition")
-        eff_idx = action_block.find(":effect")
-
-        if params_idx == -1 or pre_idx == -1 or eff_idx == -1:
-            raise ValueError(
-                f"Action '{action_name}' is missing parameters/precondition/effect"
-            )
-
-        param_expr, _ = cls._find_balanced_expr(action_block, params_idx)
-        pre_expr, _ = cls._find_balanced_expr(action_block, pre_idx)
-        eff_expr, _ = cls._find_balanced_expr(action_block, eff_idx)
-
-        params, typed_params = cls._parse_typed_parameters(param_expr)
-        typed_preconditions = [
-            f"({type_name} {var_name})" for var_name, type_name in typed_params
-        ]
-
-        if replace_equality:
-            pre_expr = cls._replace_equality_with_predicate(pre_expr)
-            eff_expr = cls._replace_equality_with_predicate(eff_expr)
-        pre_expr = cls._inject_extra_preconditions(pre_expr, typed_preconditions)
-
-        params_str = " ".join(params)
-        return (
-            f"(:action {action_name}\n"
-            f"  :parameters ({params_str})\n"
-            f"  :precondition {pre_expr}\n"
-            f"  :effect {eff_expr}\n"
-            f")"
-        )

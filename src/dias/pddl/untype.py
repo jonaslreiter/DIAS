@@ -58,16 +58,7 @@ def strip_problem_types(
                     i += 1
 
     if not object_names:
-        objects_match = re.search(r"\(:objects(.*?)\)", text, re.DOTALL)
-        if objects_match:
-            tokens = objects_match.group(1).split()
-            i = 0
-            while i < len(tokens):
-                if tokens[i] == "-" and i + 1 < len(tokens):
-                    i += 2
-                else:
-                    object_names.append(tokens[i])
-                    i += 1
+        object_names = problem_object_names(text)
 
     text = re.sub(r"\s+-\s+\w+", "", text)
 
@@ -176,3 +167,88 @@ def extract_domain_header(
 
     preds_block = "    (:predicates\n        " + "\n        ".join(decls) + "\n    )"
     return header.rstrip() + "\n\n" + preds_block
+
+
+def problem_object_names(problem_text: str) -> list[str]:
+    """Every object a problem declares, with any type annotations dropped."""
+    match = re.search(r"\(:objects(.*?)\)", problem_text, re.DOTALL)
+    if not match:
+        return []
+    tokens = match.group(1).split()
+    names: list[str] = []
+    index = 0
+    while index < len(tokens):
+        if tokens[index] == "-" and index + 1 < len(tokens):
+            index += 2
+        else:
+            names.append(tokens[index])
+            index += 1
+    return names
+
+
+def inject_reflexive_atoms(problem_text: str, predicate_names: list[str]) -> str:
+    """Assert ``(p o o)`` in :init for each named predicate and every object.
+
+    Domains that declare their own equality-like predicate expect those atoms
+    in the initial state; problem files written elsewhere do not supply them.
+    """
+    objects = problem_object_names(problem_text) if predicate_names else []
+    if not objects:
+        return problem_text
+    return _extend_init(
+        problem_text,
+        [f"({name} {obj} {obj})" for name in predicate_names for obj in objects],
+    )
+
+
+def untype_action(
+    action_block: str,
+    name_prefix: str = "",
+    equality_predicate_name: str | None = None,
+    ignored_types: frozenset[str] = frozenset(),
+) -> str:
+    """Rewrite one ``(:action ...)`` block without types.
+
+    Each typed parameter becomes an ordinary unary precondition, which is what
+    lets an untyped learned schema be compared against a typed domain. Types in
+    *ignored_types* carry no information and are dropped instead.
+    """
+    match = re.match(r"\(\s*:action\s+(\S+)", action_block)
+    if match is None:
+        raise ValueError("Failed to parse action name")
+    action_name = f"{name_prefix}{match.group(1)}"
+
+    indices = [
+        action_block.find(part) for part in (":parameters", ":precondition", ":effect")
+    ]
+    if -1 in indices:
+        raise ValueError(
+            f"Action '{action_name}' is missing parameters/precondition/effect"
+        )
+    param_expr, pre_expr, eff_expr = (
+        pddl_text.find_balanced_expr(action_block, index)[0] for index in indices
+    )
+
+    params, typed_params = pddl_text.parse_typed_parameters(param_expr)
+    type_preconditions = [
+        f"({type_name} {var_name})"
+        for var_name, type_name in typed_params
+        if type_name.lower() not in ignored_types
+    ]
+
+    if equality_predicate_name is not None:
+        pre_expr = pddl_text.replace_equality_with_predicate(
+            pre_expr, equality_predicate_name
+        )
+        eff_expr = pddl_text.replace_equality_with_predicate(
+            eff_expr, equality_predicate_name
+        )
+    pre_expr = pddl_text.inject_extra_preconditions(pre_expr, type_preconditions)
+
+    return (
+        f"(:action {action_name}\n"
+        f"  :parameters ({' '.join(params)})\n"
+        f"  :precondition {pre_expr}\n"
+        f"  :effect {eff_expr}\n"
+        f")"
+    )

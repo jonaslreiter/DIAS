@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import random
-import re
 from pathlib import Path
 
 import pymimir
@@ -11,9 +10,10 @@ from tqdm import tqdm
 from dias.data.datamodule import PddlGraphDataModule
 from dias.data.generate_samples import generate_bfs
 from dias.models.dias import DIAS
+from dias.pddl import text as pddl_text
 from dias.pddl.states import state_fluents, transfer_state
 from dias.pddl.transpiler import PDDLTranspiler
-from dias.pddl.untype import extract_domain_header, strip_problem_types
+from dias.pddl.untype import extract_domain_header, strip_problem_types, untype_action
 from dias.schema import DomainSchema
 
 from .artifacts import PddlWorkspace
@@ -94,7 +94,7 @@ class ModelValidation:
 
         original_domain_path = datamodule_hparams["domain_path"]
         original_domain_text = Path(original_domain_path).read_text()
-        has_equality = self._domain_uses_equality(original_domain_text)
+        has_equality = pddl_text.domain_uses_equality(original_domain_text)
 
         relation_names = list(self.schema.relation_names)
         relation_arities = list(self.schema.relation_arities)
@@ -133,9 +133,10 @@ class ModelValidation:
             predicate_arities=pddl_transpiler.predicate_arities,
             keep_equality_requirement=False,
         )
+        equality_predicate = self.EQUALITY_PREDICATE_NAME if has_equality else None
         transformed_original_actions = [
-            self._transform_original_action(action_block, replace_equality=has_equality)
-            for action_block in self._extract_action_blocks(original_domain_text)
+            untype_action(action_block, equality_predicate_name=equality_predicate)
+            for action_block in pddl_text.extract_action_blocks(original_domain_text)
         ]
         merged_domain_text = (
             header
@@ -318,148 +319,3 @@ class ModelValidation:
             cid = sid
             self._state_id_cache[sid] = cid
         return cid
-
-    @staticmethod
-    def _extract_action_blocks(domain_text: str) -> list[str]:
-        blocks: list[str] = []
-        i = 0
-        while True:
-            start = domain_text.find("(:action", i)
-            if start == -1:
-                break
-
-            depth = 0
-            end = None
-            for j in range(start, len(domain_text)):
-                ch = domain_text[j]
-                if ch == "(":
-                    depth += 1
-                elif ch == ")":
-                    depth -= 1
-                    if depth == 0:
-                        end = j + 1
-                        break
-
-            if end is None:
-                raise ValueError("Unbalanced parentheses while parsing :action block")
-
-            blocks.append(domain_text[start:end].strip())
-            i = end
-
-        return blocks
-
-    @staticmethod
-    def _find_balanced_expr(text: str, start_idx: int) -> tuple[str, int]:
-        left = text.find("(", start_idx)
-        if left == -1:
-            raise ValueError("Expected balanced expression but found no '('")
-
-        depth = 0
-        for i in range(left, len(text)):
-            if text[i] == "(":
-                depth += 1
-            elif text[i] == ")":
-                depth -= 1
-                if depth == 0:
-                    return text[left : i + 1], i + 1
-
-        raise ValueError("Unbalanced parentheses while parsing expression")
-
-    @staticmethod
-    def _parse_typed_parameters(
-        param_expr: str,
-    ) -> tuple[list[str], list[tuple[str, str]]]:
-        tokens = param_expr.strip()[1:-1].split()
-        vars_out: list[str] = []
-        typed_vars: list[tuple[str, str]] = []
-
-        pending: list[str] = []
-        i = 0
-        while i < len(tokens):
-            tok = tokens[i]
-            if tok == "-" and i + 1 < len(tokens):
-                type_name = tokens[i + 1]
-                for var_name in pending:
-                    vars_out.append(var_name)
-                    typed_vars.append((var_name, type_name))
-                pending = []
-                i += 2
-            else:
-                pending.append(tok)
-                i += 1
-
-        for var_name in pending:
-            vars_out.append(var_name)
-
-        return vars_out, typed_vars
-
-    @classmethod
-    def _replace_equality_with_predicate(cls, expr: str) -> str:
-        return re.sub(
-            r"\(\s*=\s+([^\s()]+)\s+([^\s()]+)\s*\)",
-            rf"({cls.EQUALITY_PREDICATE_NAME} \1 \2)",
-            expr,
-        )
-
-    @staticmethod
-    def _domain_uses_equality(domain_text: str) -> bool:
-        req_match = re.search(r"\(:requirements([^)]*)\)", domain_text, re.IGNORECASE)
-        return bool(req_match and ":equality" in req_match.group(1).lower())
-
-    @staticmethod
-    def _inject_extra_preconditions(precondition_expr: str, extras: list[str]) -> str:
-        pre = precondition_expr.strip()
-        if not extras:
-            return pre
-
-        if pre in {"()", "(and)"}:
-            return "(and " + " ".join(extras) + ")"
-
-        if pre.startswith("(and") and pre.endswith(")"):
-            inner = pre[4:-1].strip()
-            if inner:
-                return "(and " + " ".join(extras) + " " + inner + ")"
-            return "(and " + " ".join(extras) + ")"
-
-        return "(and " + " ".join(extras) + " " + pre + ")"
-
-    @classmethod
-    def _transform_original_action(
-        cls, action_block: str, replace_equality: bool = True
-    ) -> str:
-        m = re.match(r"\(\s*:action\s+(\S+)", action_block)
-        if m is None:
-            raise ValueError("Failed to parse action name")
-        action_name = m.group(1)
-
-        params_idx = action_block.find(":parameters")
-        pre_idx = action_block.find(":precondition")
-        eff_idx = action_block.find(":effect")
-
-        if params_idx == -1 or pre_idx == -1 or eff_idx == -1:
-            raise ValueError(
-                f"Action '{action_name}' is missing parameters/precondition/effect"
-            )
-
-        param_expr, _ = cls._find_balanced_expr(action_block, params_idx)
-        pre_expr, _ = cls._find_balanced_expr(action_block, pre_idx)
-        eff_expr, _ = cls._find_balanced_expr(action_block, eff_idx)
-
-        params, typed_params = cls._parse_typed_parameters(param_expr)
-        typed_preconditions = [
-            f"({type_name} {var_name})" for var_name, type_name in typed_params
-        ]
-
-        if replace_equality:
-            pre_expr = cls._replace_equality_with_predicate(pre_expr)
-            eff_expr = cls._replace_equality_with_predicate(eff_expr)
-        pre_expr = cls._inject_extra_preconditions(pre_expr, typed_preconditions)
-
-        params_str = " ".join(params)
-        return (
-            f"(:action {action_name}\n"
-            f"  :parameters ({params_str})\n"
-            f"  :precondition {pre_expr}\n"
-            f"  :effect {eff_expr}\n"
-            f")"
-        )

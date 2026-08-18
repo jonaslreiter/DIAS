@@ -1,12 +1,19 @@
 """Unit tests for compiling typed PDDL down to untyped PDDL.
 
-Both functions used to take file paths and live in `validation.utils`, which
-made them reachable only with a filesystem. They now take source text.
+These used to be private static methods duplicated across the validator
+classes, taking file paths, which
+made them reachable only by constructing a validator. They now take source text.
 """
 
 import unittest
 
-from dias.pddl.untype import extract_domain_header, strip_problem_types
+from dias.pddl.untype import (
+    extract_domain_header,
+    inject_reflexive_atoms,
+    problem_object_names,
+    strip_problem_types,
+    untype_action,
+)
 
 DOMAIN = """(define (domain demo)
   (:requirements :strips :typing :equality)
@@ -87,6 +94,54 @@ class ExtractDomainHeaderTest(unittest.TestCase):
         # "=" is a built-in enabled by :equality, never a declared predicate.
         self.assertNotIn("(= ", header)
         self.assertEqual(header.count("(ready"), 1)
+
+
+class UntypeActionTest(unittest.TestCase):
+    ACTION = (
+        "(:action push\n"
+        "  :parameters (?p - player ?c - crate)\n"
+        "  :precondition (and (at ?p) (= ?p ?c))\n"
+        "  :effect (at ?c))"
+    )
+
+    def test_types_become_preconditions_and_equality_is_rewritten(self):
+        text = untype_action(self.ACTION, equality_predicate_name="eq")
+        self.assertIn(":parameters (?p ?c)", text)
+        self.assertIn("(player ?p)", text)
+        self.assertIn("(crate ?c)", text)
+        self.assertIn("(eq ?p ?c)", text)
+        self.assertNotIn("(= ", text)
+
+    def test_equality_is_left_alone_without_a_predicate_name(self):
+        self.assertIn("(= ?p ?c)", untype_action(self.ACTION))
+
+    def test_prefix_and_ignored_types(self):
+        text = untype_action(
+            "(:action go :parameters (?x - untyped ?y - cell)"
+            " :precondition (and) :effect (at ?y))",
+            name_prefix="learned_",
+            ignored_types=frozenset({"untyped"}),
+        )
+        self.assertIn("(:action learned_go", text)
+        self.assertNotIn("untyped", text)
+        self.assertIn("(cell ?y)", text)
+
+    def test_a_malformed_block_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "missing parameters"):
+            untype_action("(:action broken :parameters (?x))")
+
+
+class ReflexiveAtomsTest(unittest.TestCase):
+    def test_objects_are_read_without_their_types(self):
+        self.assertEqual(problem_object_names(PROBLEM), ["c-1"])
+
+    def test_atoms_are_injected_once_per_predicate_and_object(self):
+        text = inject_reflexive_atoms(PROBLEM, ["eq", "equal"])
+        self.assertIn("(eq c-1 c-1)", text)
+        self.assertIn("(equal c-1 c-1)", text)
+
+    def test_no_predicates_leaves_the_problem_untouched(self):
+        self.assertEqual(inject_reflexive_atoms(PROBLEM, []), PROBLEM)
 
 
 if __name__ == "__main__":
