@@ -10,9 +10,15 @@ from __future__ import annotations
 
 from typing import Callable
 
-from dias.schedules import Constant, Exponential, PiecewiseLinear, schedule_config
+from dias.schedules import (
+    Constant,
+    Exponential,
+    PiecewiseLinear,
+    as_schedule,
+    schedule_config,
+)
 
-CHECKPOINT_VERSION = 2
+CHECKPOINT_VERSION = 3
 VERSION_KEY = "dias_checkpoint_version"
 
 
@@ -46,8 +52,40 @@ def _to_v2(checkpoint: dict) -> bool:
     return True
 
 
+def _to_v3(checkpoint: dict) -> bool:
+    """v2 added `gmean_offset` to tau after the schedule; v3 folds it in.
+
+    The offset was an asymptote the schedule had to be pre-scaled around, so
+    v0 and vT meant "the decaying part" rather than tau itself. Shifting both
+    endpoints up by the offset and recording it as `floor` reproduces the same
+    trajectory exactly.
+    """
+    hparams = checkpoint.get("hyper_parameters")
+    if hparams is None or "gmean_offset" not in hparams:
+        return False
+    offset = float(hparams.pop("gmean_offset") or 0.0)
+    schedule = as_schedule(hparams.get("gmean_temperature"))
+    if offset:
+        if isinstance(schedule, Exponential):
+            schedule = Exponential(
+                v0=schedule.v0 + offset,
+                vT=schedule.vT + offset,
+                T=schedule.T,
+                floor=offset,
+            )
+        elif isinstance(schedule, Constant):
+            schedule = Constant(schedule.value + offset)
+        else:
+            schedule = PiecewiseLinear(
+                {step: value + offset for step, value in schedule.keypoints.items()}
+            )
+    hparams["gmean_temperature"] = schedule_config(schedule)
+    return True
+
+
 MIGRATIONS: tuple[tuple[int, str, Callable[[dict], bool]], ...] = (
     (2, "one typed tau schedule instead of a dict of named schedules", _to_v2),
+    (3, "the tau offset folded into the schedule as its floor", _to_v3),
 )
 
 

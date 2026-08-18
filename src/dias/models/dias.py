@@ -44,7 +44,6 @@ class DIAS(L.LightningModule):
         },
         gmean_temperature: Schedule | Mapping | None = None,
         pcgrad_dyn_clip: bool = True,
-        gmean_offset: float = 0.0,
         state_dependent_effects: bool = False,
         use_slot_weights: bool = True,
         use_precondition_loss: bool = True,
@@ -74,7 +73,6 @@ class DIAS(L.LightningModule):
         self.successor_relations = successor_relations
         self.random_node_embeddings = random_node_embeddings
         self.pcgrad_dyn_clip = pcgrad_dyn_clip
-        self.gmean_offset = gmean_offset
         self.state_dependent_effects = state_dependent_effects
         self.use_slot_weights = use_slot_weights
         self.use_precondition_loss = use_precondition_loss
@@ -122,7 +120,6 @@ class DIAS(L.LightningModule):
             per_action_slots=self.per_action_slots,
             learn_preconditions=self.learn_preconditions,
             action_arities=self.action_arities,
-            gmean_offset=self.gmean_offset,
             state_dependent_effects=self.state_dependent_effects,
             use_slot_weights=self.use_slot_weights,
         )

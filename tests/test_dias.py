@@ -98,7 +98,7 @@ class DIASModelTest(unittest.TestCase):
             model.hparams["gmean_temperature"],
             {
                 "class_path": "dias.schedules.Exponential",
-                "init_args": {"v0": 1.0, "vT": 0.1, "T": 10},
+                "init_args": {"v0": 1.0, "vT": 0.1, "T": 10, "floor": 0.0},
             },
         )
 

@@ -26,7 +26,6 @@ class PredictionModule(nn.Module):
         per_action_slots: bool = False,
         learn_preconditions: bool = True,
         action_arities: list[int] | None = None,
-        gmean_offset: float = 0.0,
         state_dependent_effects: bool = False,
         use_slot_weights: bool = True,
     ):
@@ -38,7 +37,6 @@ class PredictionModule(nn.Module):
         self.force_action_args = force_action_args
         self.per_action_slots = per_action_slots
         self.learn_preconditions = learn_preconditions
-        self.gmean_offset = gmean_offset
         self.state_dependent_effects = state_dependent_effects
         self.use_slot_weights = use_slot_weights
         self.num_relations = len(arity_relations)
@@ -242,9 +240,7 @@ class PredictionModule(nn.Module):
         precond_fulfilled = (
             (1 - pos_proj * (1 - adj_batch)) * (1 - neg_proj * adj_batch)
         ).flatten(start_dim=1)
-        pre = soft_conjunction(
-            precond_fulfilled, dim=-1, temperature=gmean_temperature + self.gmean_offset
-        )
+        pre = soft_conjunction(precond_fulfilled, dim=-1, temperature=gmean_temperature)
         self._last_pre_mean = pre.mean().detach()
         self._last_pre_prod_mean = precond_fulfilled.prod(dim=-1).mean().detach()
 

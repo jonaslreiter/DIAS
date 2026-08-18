@@ -74,12 +74,13 @@ V1_ENCODER_KEYS = tuple(
 # Hyper-parameters v1 had that the current constructor no longer takes. Each
 # refactor step that renames or regroups one adds it here and a rule to
 # dias.models.checkpoints, which is what keeps archived runs loadable.
-V1_ONLY_HPARAMS = {"loss_weight_schedule"}
+V1_ONLY_HPARAMS = {"loss_weight_schedule", "gmean_offset"}
 
 # What v1 becomes after migration.
-V2_HPARAMS = {
+CURRENT_HPARAMS = {
     key: value for key, value in V1_HPARAMS.items() if key not in V1_ONLY_HPARAMS
 } | {
+    # v1's gmean_offset of 0.0 leaves the schedule unchanged.
     "gmean_temperature": schedule_config(Exponential(v0=1.0, vT=0.1, T=500)),
     # Added after v1, so a v1 checkpoint gets the constructor default.
     "encoder_hidden_dims": None,
@@ -145,7 +146,7 @@ class CheckpointLayoutTest(unittest.TestCase):
         path = self.write_v1_checkpoint()
         model = DIAS.load_from_checkpoint(path, map_location="cpu")
         self.addCleanup(model.teardown, "test")
-        self.assertEqual(dict(model.hparams), V2_HPARAMS)
+        self.assertEqual(dict(model.hparams), CURRENT_HPARAMS)
 
     def test_a_current_checkpoint_loads_without_migrating(self):
         """The stock loader must handle it; migration is the fallback only."""
@@ -170,6 +171,32 @@ class CheckpointLayoutTest(unittest.TestCase):
             reloaded = DIAS.load_from_checkpoint(path, map_location="cpu")
         self.addCleanup(reloaded.teardown, "test")
         self.assertEqual(dict(reloaded.hparams), dict(model.hparams))
+
+    def test_a_v1_offset_becomes_the_schedules_floor(self):
+        """The noise runs' tau trajectory has to survive the fold exactly."""
+        directory = self.enterContext(tempfile.TemporaryDirectory())
+        path = Path(directory) / "noise.ckpt"
+        checkpoint = build_v1_checkpoint()
+        checkpoint["hyper_parameters"]["gmean_offset"] = 0.1
+        checkpoint["hyper_parameters"]["loss_weight_schedule"] = {
+            "gmean_temperature": {
+                "type": "exponential",
+                "v0": 0.9,
+                "vT": 0.09,
+                "T": 500,
+            }
+        }
+        torch.save(checkpoint, path)
+        model = DIAS.load_from_checkpoint(path, map_location="cpu")
+        self.addCleanup(model.teardown, "test")
+
+        def v1_tau(step):
+            return 0.9 * (0.09 / 0.9) ** (step / 500) + 0.1
+
+        for step in (0, 100, 500, 1000, 10000):
+            self.assertAlmostEqual(
+                model.gmean_temperature(step), v1_tau(step), places=12
+            )
 
     def test_a_v1_checkpoint_missing_a_renamed_key_still_loads(self):
         """Not every old checkpoint contains everything a later version renamed."""

@@ -21,21 +21,36 @@ class Constant:
 
 @dataclass(frozen=True)
 class Exponential:
-    """Geometric decay from `v0`, reaching `vT` at step `T` and continuing past it.
+    """Geometric decay from `v0` through `vT` at step `T`, toward `floor`.
 
-    ``T = 0`` is the degenerate case: the decay is instantaneous, so the value
-    is 0 from the first step. That is the limit of the expression below as
-    T -> 0+, written out because it would otherwise divide by zero.
+    `v0` and `vT` are the values actually taken, and the curve keeps decaying
+    past `T` toward `floor` without reaching it. A non-zero `floor` is how the
+    noise experiments keep tau from collapsing to the exact product.
+
+    ``T = 0`` is the degenerate case -- decay is instantaneous, so the value is
+    `floor` from the first step. That is the limit as T -> 0+, written out
+    because the general form would divide by zero.
     """
 
     v0: float = 1.0
     vT: float = 0.1
     T: int = 500
+    floor: float = 0.0
+
+    def __post_init__(self):
+        # The curve approaches `floor` without crossing it, so both endpoints
+        # have to sit on the same side of it.
+        if self.v0 <= self.floor or self.vT <= self.floor:
+            raise ValueError(
+                f"Expected v0 and vT above floor, got v0={self.v0}, "
+                f"vT={self.vT}, floor={self.floor}"
+            )
 
     def __call__(self, step: int) -> float:
         if self.T == 0:
-            return 0.0
-        return self.v0 * (self.vT / self.v0) ** (step / self.T)
+            return self.floor
+        span = self.v0 - self.floor
+        return self.floor + span * ((self.vT - self.floor) / span) ** (step / self.T)
 
 
 @dataclass(frozen=True)
