@@ -197,25 +197,16 @@ class ModelValidation:
         action_arguments = datamodule_hparams.get("action_arguments", False)
         strips_plus_actions = datamodule_hparams.get("strips_plus_actions", False)
 
-        # Note: process_model_logits has the precondition/effect arguments
-        # swapped (see validate.py for the same call).  We follow that
-        # convention here so the per-relation/per-slot tensors land in the
-        # right buckets.  Effects come from the MLP at predict time, so the
-        # add/del arrays produced here are only used to drive the
-        # active-slots mask -- we discard their content for action effects.
         precondition_logits = self.model.graph_edit.preconditions.detach().cpu()
         slot_weights = self.model.graph_edit.slot_weight_logits.detach().cpu()
 
-        # process_model_logits expects two logit tensors of identical
-        # shape; the effects MLP doesn't have a static effects tensor any
-        # more, so we feed a zeros tensor of the same shape.  Its output
-        # add/del arrays will all be zero, which is fine (we use only the
-        # precondition arrays + active_slots).
-        zero_effect_logits = torch.zeros_like(precondition_logits)
-
+        # This baseline predicts its effects from the state at validation time,
+        # so it has no static effect tensor to decode -- only the preconditions
+        # and the slot activations are read off here. Zeros stand in for the
+        # effects, whose decoded arrays are discarded.
         _, _, pos_prec, neg_prec, active_slots = process_model_logits(
-            preconditions_logits=zero_effect_logits,
-            effect_logits=precondition_logits,
+            effect_logits=torch.zeros_like(precondition_logits),
+            precondition_logits=precondition_logits,
             slot_weight_logits=slot_weights,
             force_action_args=self.model.force_action_args,
             action_arguments=action_arguments,

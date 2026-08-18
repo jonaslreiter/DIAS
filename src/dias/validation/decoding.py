@@ -6,8 +6,8 @@ from torch.nn import functional as F
 
 
 def process_model_logits(
-    preconditions_logits: torch.tensor,
     effect_logits: torch.tensor,
+    precondition_logits: torch.tensor,
     slot_weight_logits: torch.tensor,
     force_action_args: bool,
     action_arguments: bool,
@@ -27,11 +27,11 @@ def process_model_logits(
     both more effects and more preconditions; raising it yields fewer of each.
     0.5 is the default the paper's numbers use.
     """
-    effect_probs = F.softmax(preconditions_logits, dim=-1)
+    effect_probs = F.softmax(effect_logits, dim=-1)
     add_effects_probs = effect_probs[..., 1]
     del_effects_probs = effect_probs[..., -1]
 
-    precond_probs = F.softmax(effect_logits, dim=-1)
+    precond_probs = F.softmax(precondition_logits, dim=-1)
     pos_precond_probs = precond_probs[..., 1]
     neg_precond_probs = precond_probs[..., -1]
 

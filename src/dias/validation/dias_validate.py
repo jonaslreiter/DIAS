@@ -70,8 +70,8 @@ class ModelValidation:
         """
         hparams = run.datamodule_hparams
         add_eff, del_eff, pos_prec, neg_prec, _ = process_model_logits(
-            preconditions_logits=self.model.graph_edit.effects.detach().cpu(),
-            effect_logits=self.model.graph_edit.preconditions.detach().cpu(),
+            effect_logits=self.model.graph_edit.effects.detach().cpu(),
+            precondition_logits=self.model.graph_edit.preconditions.detach().cpu(),
             slot_weight_logits=self.model.graph_edit.slot_weight_logits.detach().cpu(),
             force_action_args=self.model.force_action_args,
             action_arguments=hparams.get("action_arguments", False),
