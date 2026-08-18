@@ -158,7 +158,16 @@ class ModelValidation:
     LEARNED_ACTION_PREFIX = "learned_"
     EQUALITY_PREDICATE_NAME = "eq"
 
-    def __init__(self, model_id, logs_path_abs, problem_path=None):
+    def __init__(
+        self,
+        model_id,
+        logs_path_abs,
+        problem_path=None,
+        batch_size: int = 4096,
+        num_workers: int = 1,
+    ):
+        self.batch_size = batch_size
+        self.num_workers = num_workers
         self.model_id = model_id
         self.logs_path_abs = logs_path_abs
 
@@ -370,7 +379,7 @@ class ModelValidation:
         )
         self.state_pairs = list(zip(original_states, learned_states))
 
-    def validate(self, batch_size: int = 4096, num_workers: int = 1):
+    def validate(self):
         """
         Validates states by batching all MLP forward passes on GPU.
 
@@ -388,6 +397,8 @@ class ModelValidation:
         chunks, so the MLP runs once per chunk instead of once per
         (state, action).
         """
+        batch_size = self.batch_size
+        num_workers = self.num_workers
         if self.state_pairs is None:
             raise RuntimeError("\033[91mCall setup() before validate().\033[0m")
 
@@ -591,8 +602,6 @@ class ModelValidation:
                     s_chunk_cpu = flat_state_idx_list[chunk_start:chunk_end]
                     for b in range(B):
                         per_state_pred_sigs[s_chunk_cpu[b]].add(sigs_flat[b].tobytes())
-                print("\n")
-                print("GPU task done.")
 
         # ── Phase 3: metrics ──────────────────────────────────────────────
         matches = tp_total = fp_total = fn_total = 0

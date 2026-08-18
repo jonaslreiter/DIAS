@@ -74,8 +74,23 @@ def _seed_precision_recall(per_problem: dict) -> tuple[float, float] | None:
     reachable successors counts for more than a small one. Every validator emits
     those counts; `action_stats` covers results written before they did, and the
     mean of per-problem precisions is a last resort for older W&B runs whose
-    summaries carry nothing else.
+    summaries carry nothing else. The counts arrive as floats from JSON.
     """
+
+    def counts(result: dict) -> tuple[int, int, int] | None:
+        """The pooled tp/fp/fn of one problem, however that result was written."""
+        values = [result.get(k) for k in ("tp", "fp", "fn")]
+        # JSON round-trips these as floats; they are counts either way.
+        if all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in values):
+            return tuple(int(v) for v in values)
+        stats = result.get("action_stats")
+        if isinstance(stats, dict):
+            return tuple(
+                sum(int(a.get(k, 0)) for a in stats.values())
+                for k in ("tp", "fp", "fn")
+            )
+        return None
+
     tp = fp = fn = 0
     counted = False
     precisions: list[float] = []
@@ -85,17 +100,12 @@ def _seed_precision_recall(per_problem: dict) -> tuple[float, float] | None:
         if not isinstance(result, dict) or "error" in result:
             continue
         any_ok = True
-        if all(isinstance(result.get(k), int) for k in ("tp", "fp", "fn")):
+        pooled = counts(result)
+        if pooled is not None:
             counted = True
-            tp += result["tp"]
-            fp += result["fp"]
-            fn += result["fn"]
-        elif isinstance(result.get("action_stats"), dict):
-            counted = True
-            for action in result["action_stats"].values():
-                tp += int(action.get("tp", 0))
-                fp += int(action.get("fp", 0))
-                fn += int(action.get("fn", 0))
+            tp += pooled[0]
+            fp += pooled[1]
+            fn += pooled[2]
         if isinstance(result.get("precision"), (int, float)):
             precisions.append(float(result["precision"]))
         if isinstance(result.get("recall"), (int, float)):

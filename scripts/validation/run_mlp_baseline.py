@@ -23,8 +23,8 @@ def main() -> None:
     p.add_argument("--problem", type=Path, required=True)
     p.add_argument("--num-samples", type=int, default=250)
     p.add_argument("--sample-population", type=int, default=500)
-    p.add_argument("--num-workers", type=int, default=20)
-    p.add_argument("--batch-size", type=int, default=2048)
+    p.add_argument("--num-workers", type=int, default=1)
+    p.add_argument("--batch-size", type=int, default=4096)
     p.add_argument("--out", type=Path, default=None)
     args = p.parse_args()
 
@@ -32,9 +32,11 @@ def main() -> None:
         model_id=args.model_id,
         logs_path_abs=str(args.logs_dir.resolve()),
         problem_path=str(args.problem.resolve()),
+        num_workers=args.num_workers,
+        batch_size=args.batch_size,
     )
     v.setup(num_samples=args.num_samples, sample_population=args.sample_population)
-    result = v.validate(num_workers=args.num_workers, batch_size=args.batch_size)
+    result = v.validate()
     print(json.dumps(result, indent=2, default=str))
 
     if args.out:

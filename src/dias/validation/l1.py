@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 
@@ -19,6 +20,8 @@ from .successors import (
     sample_reachable_states,
     transfer_states,
 )
+
+logger = logging.getLogger(__name__)
 
 # A learned schema's parameters carry these when it has no real type for them.
 UNINFORMATIVE_TYPES = frozenset({"untyped", "object"})
@@ -127,54 +130,34 @@ class ModelValidation:
         original_domain_text: str = "",
         has_equality: bool = False,
     ) -> str:
-        """
-        Detects undeclared predicates in the actions and injects them
-        into the (:predicates ...) block of the header. Also injects all
-        type names from the original domain's :types hierarchy as unary
-        predicates, since strip_problem_types emits them in :init for
-        every parent in the chain (e.g. (locatable bob)). When the original
-        domain uses :equality, declares the binary 'eq' replacement
-        predicate even if no action body references it.
-        """
-        import re
+        """Declare every predicate the merged domain uses but does not define.
 
-        # 1. Collect everything that looks like a word after an opening parenthesis in the header
-        # This will safely catch 'at', 'carrying', 'link', etc., as well as PDDL keywords.
-        defined_words = set(
-            [m.group(1).lower() for m in re.finditer(r"\(\s*([a-zA-Z0-9_\-]+)", header)]
-        )
-
-        # Standard keywords to ignore. Note: 'eq' is intentionally NOT here —
-        # it is a user-defined replacement for '=' that must be declared.
+        Three sources go missing: predicates an action body references that the
+        header never declared, the `eq` replacement for `=` (strip_problem_types
+        puts `(eq o o)` in :init even when no action mentions equality), and the
+        type names, which become unary atoms like `(locatable bob)` for every
+        parent in the chain.
+        """
+        defined_words = {
+            m.group(1).lower() for m in re.finditer(r"\(\s*([a-zA-Z0-9_\-]+)", header)
+        }
+        # `eq` is deliberately absent: it is a user-defined predicate here, not
+        # a keyword, and must be declared.
         keywords = {"and", "or", "not", "imply", "when", "forall", "exists", "=", "-"}
 
-        missing_preds = {}
+        missing_preds: dict[str, int] = {}
 
-        # 2. Find all predicate usages in the original actions text
-        # Looks for (predicate_name ?arg1 ?arg2 ...)
         for match in re.finditer(r"\(\s*([a-zA-Z0-9_\-]+)\s+([^()]*)\)", actions_text):
             name = match.group(1).lower()
-
-            # If it's not a keyword and not in the header, it's missing!
             if name not in keywords and name not in defined_words:
-                if name not in missing_preds:
-                    # Count how many variables (words starting with '?') it uses
-                    args_str = match.group(2)
-                    vars_count = len([w for w in args_str.split() if w.startswith("?")])
-                    missing_preds[name] = vars_count
+                arity = len([w for w in match.group(2).split() if w.startswith("?")])
+                missing_preds.setdefault(name, arity)
 
-        # 2a. If the original domain uses :equality, strip_problem_types will
-        # inject (eq obj obj) atoms into :init for every object — even when no
-        # action body references equality. Declare the binary eq predicate so
-        # those atoms parse.
         if has_equality:
             eq_name = self.EQUALITY_PREDICATE_NAME.lower()
             if eq_name not in defined_words and eq_name not in missing_preds:
                 missing_preds[eq_name] = 2
 
-        # 2b. Pull every type name from the original domain's :types hierarchy and
-        # declare them as unary predicates. strip_problem_types injects atoms for
-        # parent types (e.g. (locatable bob)) that never appear in any action body.
         types_match = re.search(r"\(:types(.*?)\)", original_domain_text, re.DOTALL)
         if types_match:
             type_names: set[str] = set()
@@ -193,22 +176,18 @@ class ModelValidation:
                 ):
                     missing_preds[name] = 1
 
-        # 3. Inject the missing predicates right after the '(:predicates' keyword
         if missing_preds:
-            missing_str = ""
-            for name, arity in missing_preds.items():
-                args = " ".join([f"?v{i}" for i in range(arity)])
-                missing_str += f"\n    ({name} {args})"
-
-            # Use regex substitution to patch the header
-            header = re.sub(
-                r"(\(:predicates)", rf"\1{missing_str}", header, flags=re.IGNORECASE
+            declarations = "".join(
+                "\n    ({} {})".format(name, " ".join(f"?v{i}" for i in range(arity)))
+                for name, arity in missing_preds.items()
             )
-            print(f"Patched missing predicates: {list(missing_preds.keys())}")
+            header = re.sub(
+                r"(\(:predicates)", rf"\1{declarations}", header, flags=re.IGNORECASE
+            )
+            logger.debug("Declared missing predicates: %s", sorted(missing_preds))
 
         return header
 
-    @classmethod
     def setup(self, num_samples: int = 250, sample_population: int = 500):
         states = sample_reachable_states(
             self.original_problem, num_samples, sample_population

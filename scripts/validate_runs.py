@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import numbers
 import re
 import sys
 import traceback
@@ -117,10 +118,7 @@ def validate_run(
             traceback.print_exc()
             per_problem[stem] = {"error": str(e)}
             continue
-        per_problem[stem] = {
-            k: (float(val) if isinstance(val, (int, float)) else val)
-            for k, val in result.items()
-        }
+        per_problem[stem] = {k: _plain(val) for k, val in result.items()}
 
     _write_json(
         logs_dir, results_experiment, domain, seed, run_id, per_problem, threshold
@@ -128,6 +126,21 @@ def validate_run(
     if log_wandb:
         _log_to_wandb(results_experiment, domain, seed, run_id, logs_dir, per_problem)
     return per_problem
+
+
+def _plain(value: Any) -> Any:
+    """Coerce numpy scalars to Python numbers, keeping counts integral.
+
+    _write_json falls back to str() for anything it cannot serialise, so a
+    numpy int would otherwise land in the JSON as a string.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, numbers.Integral):
+        return int(value)
+    if isinstance(value, numbers.Real):
+        return float(value)
+    return value
 
 
 def _write_json(

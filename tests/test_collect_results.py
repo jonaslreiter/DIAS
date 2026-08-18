@@ -5,6 +5,7 @@ not, so `_seed_precision_recall` micro-averaged one column of the paper table
 and macro-averaged the other. Every validator now emits pooled tp/fp/fn.
 """
 
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -67,6 +68,18 @@ class SeedPrecisionRecallTest(unittest.TestCase):
         self.assertIsNone(_seed_precision_recall({"p": {"error": "boom"}}))
         self.assertEqual(
             _seed_precision_recall({**self.PER_PROBLEM, "p": {"error": "boom"}}),
+            _seed_precision_recall(self.PER_PROBLEM),
+        )
+
+    def test_counts_survive_the_json_round_trip(self):
+        """validate_runs writes the result as JSON, which has no integer type.
+
+        An earlier version keyed on `isinstance(v, int)` and silently fell back
+        to the macro mean for every result read off disk.
+        """
+        on_disk = json.loads(json.dumps(self.PER_PROBLEM))
+        self.assertEqual(
+            _seed_precision_recall(on_disk),
             _seed_precision_recall(self.PER_PROBLEM),
         )
 
