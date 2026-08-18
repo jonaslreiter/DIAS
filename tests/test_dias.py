@@ -87,18 +87,30 @@ class DIASModelTest(unittest.TestCase):
         self.assertEqual(model.num_action_relations, 0)
 
     def test_the_tau_schedule_is_kept_as_given(self):
-        model = self.make_model(gmean_temperature=Exponential(v0=1.0, vT=0.1, T=10))
-        self.assertEqual(model.gmean_temperature, Exponential(1.0, 0.1, 10))
+        model = self.make_model(
+            gmean_temperature=Exponential(start=1.0, factor=0.1, every=10)
+        )
+        self.assertEqual(
+            model.gmean_temperature,
+            Exponential(start=1.0, floor=0.0, factor=0.1, every=10),
+        )
         self.assertAlmostEqual(model.gmean_temperature(10), 0.1)
 
     def test_the_tau_schedule_is_stored_as_primitives(self):
         """A dataclass here would make the checkpoint unloadable."""
-        model = self.make_model(gmean_temperature=Exponential(v0=1.0, vT=0.1, T=10))
+        model = self.make_model(
+            gmean_temperature=Exponential(start=1.0, factor=0.1, every=10)
+        )
         self.assertEqual(
             model.hparams["gmean_temperature"],
             {
                 "class_path": "dias.schedules.Exponential",
-                "init_args": {"v0": 1.0, "vT": 0.1, "T": 10, "floor": 0.0},
+                "init_args": {
+                    "start": 1.0,
+                    "floor": 0.0,
+                    "factor": 0.1,
+                    "every": 10,
+                },
             },
         )
 
@@ -152,7 +164,9 @@ class DIASModelTest(unittest.TestCase):
         self.assertEqual(optimizer.param_groups[0]["lr"], model.learning_rate)
 
     def test_the_scheduled_tau_is_logged_for_the_current_step(self):
-        model = self.make_model(gmean_temperature=Exponential(v0=1.0, vT=0.1, T=10))
+        model = self.make_model(
+            gmean_temperature=Exponential(start=1.0, factor=0.1, every=10)
+        )
         model.log = Mock()
         with patch.object(
             type(model), "global_step", new_callable=lambda: property(lambda self: 10)

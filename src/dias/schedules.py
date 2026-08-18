@@ -21,36 +21,41 @@ class Constant:
 
 @dataclass(frozen=True)
 class Exponential:
-    """Geometric decay from `v0` through `vT` at step `T`, toward `floor`.
+    """Decay from `start` toward `floor`, by `factor` every `every` steps.
 
-    `v0` and `vT` are the values actually taken, and the curve keeps decaying
-    past `T` toward `floor` without reaching it. A non-zero `floor` is how the
-    noise experiments keep tau from collapsing to the exact product.
+    ``floor + (start - floor) * factor ** (step / every)``
 
-    ``T = 0`` is the degenerate case -- decay is instantaneous, so the value is
-    `floor` from the first step. That is the limit as T -> 0+, written out
-    because the general form would divide by zero.
+    The rate and the asymptote are independent: raising `floor` does not change
+    how fast the value falls. That is what the noise experiments need -- the
+    same decay as the clean setup, but bottoming out at 0.1 rather than 0,
+    because the exact precondition product is too strict a check under noise.
+
+    ``every = 0`` is the degenerate case: decay is instantaneous, so the value
+    is `floor` from the first step. That is the limit as every -> 0+, written
+    out because the general form would divide by zero.
     """
 
-    v0: float = 1.0
-    vT: float = 0.1
-    T: int = 500
+    start: float = 1.0
     floor: float = 0.0
+    factor: float = 0.1
+    every: int = 500
 
     def __post_init__(self):
-        # The curve approaches `floor` without crossing it, so both endpoints
-        # have to sit on the same side of it.
-        if self.v0 <= self.floor or self.vT <= self.floor:
+        # The curve approaches `floor` without crossing it.
+        if self.start <= self.floor:
             raise ValueError(
-                f"Expected v0 and vT above floor, got v0={self.v0}, "
-                f"vT={self.vT}, floor={self.floor}"
+                f"Expected start above floor, got start={self.start}, "
+                f"floor={self.floor}"
             )
+        if self.factor <= 0:
+            raise ValueError(f"Expected a positive factor, got {self.factor}")
 
     def __call__(self, step: int) -> float:
-        if self.T == 0:
+        if self.every == 0:
             return self.floor
-        span = self.v0 - self.floor
-        return self.floor + span * ((self.vT - self.floor) / span) ** (step / self.T)
+        return self.floor + (self.start - self.floor) * self.factor ** (
+            step / self.every
+        )
 
 
 @dataclass(frozen=True)

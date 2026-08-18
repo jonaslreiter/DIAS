@@ -32,9 +32,10 @@ model:
     gmean_temperature:
       class_path: dias.schedules.Exponential
       init_args:
-        v0: 1.0
-        vT: 0.1
-        T: 500
+        start: 1.0
+        floor: 0.0
+        factor: 0.1
+        every: 500
 
 data:
   class_path: dias.data.datamodule.PddlGraphDataModule

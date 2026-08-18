@@ -81,7 +81,9 @@ CURRENT_HPARAMS = {
     key: value for key, value in V1_HPARAMS.items() if key not in V1_ONLY_HPARAMS
 } | {
     # v1's gmean_offset of 0.0 leaves the schedule unchanged.
-    "gmean_temperature": schedule_config(Exponential(v0=1.0, vT=0.1, T=500)),
+    "gmean_temperature": schedule_config(
+        Exponential(start=1.0, floor=0.0, factor=0.1, every=500)
+    ),
     # Added after v1, so a v1 checkpoint gets the constructor default.
     "encoder_hidden_dims": None,
 }

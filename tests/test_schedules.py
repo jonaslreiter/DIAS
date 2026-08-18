@@ -22,17 +22,33 @@ class ScheduleValuesTest(unittest.TestCase):
         schedule = Constant(0.3)
         self.assertEqual([schedule(0), schedule(999)], [0.3, 0.3])
 
-    def test_exponential_hits_its_endpoints_and_keeps_going(self):
-        schedule = Exponential(v0=1.0, vT=0.1, T=500)
+    def test_exponential_falls_by_factor_every_period(self):
+        schedule = Exponential(start=1.0, floor=0.0, factor=0.1, every=500)
         self.assertAlmostEqual(schedule(0), 1.0)
         self.assertAlmostEqual(schedule(500), 0.1)
-        # Not clamped at T: the paper's tau keeps decaying toward zero.
+        # Not clamped at the period: the paper's tau keeps decaying.
         self.assertAlmostEqual(schedule(1000), 0.01)
 
-    def test_exponential_with_zero_period_decays_instantly(self):
-        """The T -> 0 limit, and the sweep's tau = 0 grid point."""
-        self.assertEqual(Exponential(v0=1.0, vT=0.1, T=0)(0), 0.0)
-        self.assertEqual(Exponential(v0=1.0, vT=0.1, T=0)(500), 0.0)
+    def test_the_floor_leaves_the_rate_alone(self):
+        """The point of the parametrisation: raising the floor is one change."""
+        clean = Exponential(start=1.0, floor=0.0, factor=0.1, every=500)
+        floored = Exponential(start=1.0, floor=0.1, factor=0.1, every=500)
+        for step in (0, 100, 500, 1000):
+            self.assertAlmostEqual(floored(step) - clean(step) * 0.9, 0.1, places=12)
+        self.assertAlmostEqual(floored(0), 1.0)
+        self.assertAlmostEqual(floored(500), 0.19)
+        self.assertAlmostEqual(floored(10**6), 0.1)
+
+    def test_a_zero_period_decays_instantly_to_the_floor(self):
+        """The every -> 0 limit, and the sweep's tau = 0 grid point."""
+        self.assertEqual(Exponential(start=1.0, factor=0.1, every=0)(0), 0.0)
+        self.assertEqual(Exponential(start=1.0, floor=0.1, factor=0.1, every=0)(9), 0.1)
+
+    def test_endpoints_below_the_floor_are_rejected(self):
+        with self.assertRaisesRegex(ValueError, "start above floor"):
+            Exponential(start=0.1, floor=0.5)
+        with self.assertRaisesRegex(ValueError, "positive factor"):
+            Exponential(factor=0.0)
 
     def test_piecewise_linear_interpolates_and_holds_flat_outside(self):
         schedule = PiecewiseLinear({0: 0.0, 10: 1.0})
@@ -42,7 +58,7 @@ class ScheduleValuesTest(unittest.TestCase):
 
     def test_schedules_are_stateless(self):
         """Querying out of order must not change later answers."""
-        schedule = Exponential(v0=1.0, vT=0.1, T=500)
+        schedule = Exponential(start=1.0, factor=0.1, every=500)
         out_of_order = [schedule(s) for s in (500, 0, 250)]
         self.assertEqual(out_of_order, [schedule(500), schedule(0), schedule(250)])
 
@@ -50,7 +66,7 @@ class ScheduleValuesTest(unittest.TestCase):
 class ScheduleConfigTest(unittest.TestCase):
     SCHEDULES = (
         Constant(0.0),
-        Exponential(0.9, 0.09, 500),
+        Exponential(start=1.0, floor=0.1, factor=0.1, every=500),
         PiecewiseLinear({0: 1.0, 500: 0.1}),
     )
 
