@@ -48,9 +48,7 @@ class L1ValidationTest(unittest.TestCase):
     def test_dropping_a_precondition_costs_precision(self):
         # `stack` requires the moved block to be clear; without that it applies
         # in states it should not, producing successors the original cannot.
-        weakened = re.sub(
-            r"\(clear \?bm\)\s*", "", DOMAIN.read_text(), count=1
-        )
+        weakened = re.sub(r"\(clear \?bm\)\s*", "", DOMAIN.read_text(), count=1)
         self.assertNotEqual(weakened, DOMAIN.read_text())
         result = self.validate(weakened)
         self.assertLess(result["precision"], 1.0)

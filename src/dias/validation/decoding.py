@@ -57,7 +57,8 @@ def process_model_logits(
             forced_slot_mask = slot_indices < arity_t  # (num_actions, num_slots)
         slot_probs[forced_slot_mask] = 1.0
 
-    active_slots = np.array(slot_probs) > threshold  # shape: (num_actions, num_slots)
+    # (num_actions, num_slots)
+    active_slots = slot_probs.detach().cpu().numpy() > threshold
 
     # Zero out rows and columns for inactive slots in effects/preconditions
     # Shapes: (num_actions, num_relations, num_slots, num_slots)

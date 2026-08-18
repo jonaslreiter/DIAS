@@ -15,12 +15,20 @@ from tqdm import tqdm
 from dias.data.datamodule import PddlGraphDataModule
 from dias.pddl import text as pddl_text
 from dias.pddl.transpiler import PDDLTranspiler
-from dias.pddl.untype import extract_domain_header, strip_problem_types
+from dias.pddl.untype import (
+    EQUALITY_PREDICATE,
+    extract_domain_header,
+    strip_problem_types,
+)
 
 from .artifacts import PddlWorkspace
 from .checkpoint import load_run
 from .decoding import process_model_logits
-from .successors import sample_reachable_states, transfer_states
+from .successors import (
+    LEARNED_ACTION_PREFIX,
+    sample_reachable_states,
+    transfer_states,
+)
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -155,9 +163,6 @@ def _phase1_worker(
 
 
 class ModelValidation:
-    LEARNED_ACTION_PREFIX = "learned_"
-    EQUALITY_PREDICATE_NAME = "eq"
-
     def __init__(
         self,
         model_id,
@@ -169,16 +174,8 @@ class ModelValidation:
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.model_id = model_id
-        self.logs_path_abs = logs_path_abs
-
-        self.sub_task_args = {
-            "model_id": model_id,
-            "logs_path_abs": logs_path_abs,
-            "problem_path": problem_path,
-        }
 
         run = load_run(model_id, logs_path_abs)
-        self.ckpt_file = run.checkpoint_path
         self.schema = run.schema
         self.model = run.model
         datamodule_hparams = run.datamodule_hparams
@@ -190,8 +187,12 @@ class ModelValidation:
                 "static-effects baseline."
             )
 
-        free_pos_map = PddlGraphDataModule._load_strips_plus_yaml(
-            datamodule_hparams["domain_path"],
+        free_pos_map = (
+            PddlGraphDataModule._load_strips_plus_yaml(
+                datamodule_hparams["domain_path"]
+            )
+            if datamodule_hparams.get("strips_plus_actions", False)
+            else {}
         )
         action_arguments = datamodule_hparams.get("action_arguments", False)
         strips_plus_actions = datamodule_hparams.get("strips_plus_actions", False)
@@ -240,7 +241,7 @@ class ModelValidation:
             relation_arities = [relation_arities[i] for i in keep]
 
         transpiler_predicate_names = [
-            self.EQUALITY_PREDICATE_NAME if has_equality and n == "=" else n
+            EQUALITY_PREDICATE if has_equality and n == "=" else n
             for n in relation_names
         ]
 
@@ -286,7 +287,7 @@ class ModelValidation:
 
         num_learned_actions = len(pddl_transpiler.action_schemas)
         for schema in pddl_transpiler.action_schemas:
-            schema.name = f"{self.LEARNED_ACTION_PREFIX}{schema.name}"
+            schema.name = f"{LEARNED_ACTION_PREFIX}{schema.name}"
 
         # All learned actions have :effect (), which would make pymimir
         # classify every predicate as static -- breaking transfer_state
@@ -330,9 +331,7 @@ class ModelValidation:
             strip_problem_types(
                 Path(problem_path).read_text(),
                 original_domain_text,
-                equality_predicate_name=(
-                    self.EQUALITY_PREDICATE_NAME if has_equality else None
-                ),
+                equality_predicate_name=(EQUALITY_PREDICATE if has_equality else None),
             ),
         )
 
@@ -441,7 +440,7 @@ class ModelValidation:
             "num_relations": R,
             "num_objects": N,
             "eq_channel_idx": self.eq_channel_idx,
-            "learned_action_prefix": self.LEARNED_ACTION_PREFIX,
+            "learned_action_prefix": LEARNED_ACTION_PREFIX,
             "max_arity": max_arity,
         }
 

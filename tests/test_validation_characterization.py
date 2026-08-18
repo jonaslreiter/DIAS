@@ -25,16 +25,10 @@ from pathlib import Path
 
 import torch
 
-from dias.models.dias import DIAS
-from dias.schema import DomainSchema
+from checkpoints import TEST_PROBLEM, build_model, domain_schema, save
 from dias.validation.dias_validate import ModelValidation
 
 torch.set_num_threads(1)
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DOMAIN = PROJECT_ROOT / "pddl" / "blocks-3" / "domain.pddl"
-TRAIN_PROBLEM = PROJECT_ROOT / "pddl" / "blocks-3" / "train.pddl"
-TEST_PROBLEM = PROJECT_ROOT / "pddl" / "blocks-3" / "test-1.pddl"
 
 # Softmax over the three channels turns these into ~(1, 0, 0) or ~(0, 1, 0),
 # which the 0.5 threshold reads as a clean off/on.
@@ -45,42 +39,12 @@ NUM_SAMPLES = 8
 SAMPLE_POPULATION = 20
 
 
-def datamodule_hparams() -> dict:
-    return {
-        "domain_path": str(DOMAIN),
-        "problem_path": str(TRAIN_PROBLEM),
-        "include_statics": True,
-        "action_arguments": False,
-        "strips_plus_actions": False,
-    }
-
-
 def build_checkpoint(directory: Path) -> str:
     """Write a checkpoint whose only learned action is a correct `stack`."""
-    hparams = datamodule_hparams()
-    schema = DomainSchema.from_pddl(
-        hparams["domain_path"],
-        hparams["problem_path"],
-        include_statics=hparams["include_statics"],
-    )
+    schema = domain_schema()
     relation = {name: i for i, name in enumerate(schema.relation_names)}
     action = {name: i for i, name in enumerate(schema.action_names)}
-
-    model_hparams = {
-        "num_objects": schema.num_objects,
-        "arity_relations": list(schema.relation_arities),
-        "num_actions": schema.num_actions,
-        "object_dim": 8,
-        "num_slots": max(schema.action_arities),
-        "action_arities": list(schema.action_arities),
-        "action_arg_positions": [list(p) for p in schema.action_arg_positions],
-        "successor_relations": True,
-        "parameter_plotting": None,
-        "batch_size": 2,
-        "encoder_hidden_dims": [4, 8, 8],
-    }
-    torch.manual_seed(5)
-    model = DIAS(**model_hparams)
+    model, hparams = build_model()
 
     stack = action["stack"]
     with torch.no_grad():
@@ -110,20 +74,7 @@ def build_checkpoint(directory: Path) -> str:
         enable(effects, "clear", 1, 1, 2)
         enable(effects, "on-table", 0, 0, 2)
 
-    checkpoint = {
-        "state_dict": model.state_dict(),
-        "hyper_parameters": model_hparams,
-        "datamodule_hyper_parameters": datamodule_hparams(),
-        "pytorch-lightning_version": "2.6.1",
-        "epoch": 1,
-        "global_step": 10,
-    }
-    model.teardown("build")
-
-    checkpoints = directory / "dias" / "run0" / "checkpoints"
-    checkpoints.mkdir(parents=True)
-    torch.save(checkpoint, checkpoints / "best-epoch=1-step=10.ckpt")
-    return "run0"
+    return save(directory, model, hparams)
 
 
 class ValidationCharacterizationTest(unittest.TestCase):

@@ -8,6 +8,7 @@ import pymimir
 
 from dias.pddl import text as pddl_text
 from dias.pddl.untype import (
+    EQUALITY_PREDICATE,
     extract_domain_header,
     inject_reflexive_atoms,
     strip_problem_types,
@@ -16,6 +17,7 @@ from dias.pddl.untype import (
 
 from .artifacts import PddlWorkspace
 from .successors import (
+    LEARNED_ACTION_PREFIX,
     compare_successors,
     sample_reachable_states,
     transfer_states,
@@ -28,9 +30,6 @@ UNINFORMATIVE_TYPES = frozenset({"untyped", "object"})
 
 
 class ModelValidation:
-    LEARNED_ACTION_PREFIX = "learned_"
-    EQUALITY_PREDICATE_NAME = "eq"
-
     def __init__(
         self,
         original_domain_path,
@@ -51,16 +50,14 @@ class ModelValidation:
         original_actions_text = "\n\n".join(
             untype_action(
                 action_block,
-                equality_predicate_name=(
-                    self.EQUALITY_PREDICATE_NAME if has_equality else None
-                ),
+                equality_predicate_name=(EQUALITY_PREDICATE if has_equality else None),
             )
             for action_block in pddl_text.extract_action_blocks(original_domain_text)
         )
         learned_actions_text = "\n\n".join(
             untype_action(
                 action_block,
-                name_prefix=self.LEARNED_ACTION_PREFIX,
+                name_prefix=LEARNED_ACTION_PREFIX,
                 ignored_types=UNINFORMATIVE_TYPES,
             )
             for action_block in pddl_text.extract_action_blocks(learned_domain_text)
@@ -92,9 +89,7 @@ class ModelValidation:
             strip_problem_types(
                 Path(problem_path).read_text(),
                 original_domain_text,
-                equality_predicate_name=(
-                    self.EQUALITY_PREDICATE_NAME if has_equality else None
-                ),
+                equality_predicate_name=(EQUALITY_PREDICATE if has_equality else None),
                 reflexive_predicate_names=fluent_equal_predicates or None,
             ),
         )
@@ -154,7 +149,7 @@ class ModelValidation:
                 missing_preds.setdefault(name, arity)
 
         if has_equality:
-            eq_name = self.EQUALITY_PREDICATE_NAME.lower()
+            eq_name = EQUALITY_PREDICATE.lower()
             if eq_name not in defined_words and eq_name not in missing_preds:
                 missing_preds[eq_name] = 2
 
@@ -199,7 +194,7 @@ class ModelValidation:
     def validate(self):
         if self.state_set is None:
             raise RuntimeError("Call setup() before validate().")
-        return compare_successors(self.state_set, self.LEARNED_ACTION_PREFIX)
+        return compare_successors(self.state_set, LEARNED_ACTION_PREFIX)
 
     @staticmethod
     def _fluent_equal_predicates(domain_text: str) -> list[str]:

@@ -17,6 +17,10 @@ from dias.pddl.states import state_fluents, transfer_state
 
 logger = logging.getLogger(__name__)
 
+# Learned actions are merged into the original domain under this prefix,
+# which is the only thing telling the two apart when scoring.
+LEARNED_ACTION_PREFIX = "learned_"
+
 
 def sample_reachable_states(problem, num_samples: int, sample_population: int) -> list:
     """Draw `num_samples` distinct states from a BFS over `problem`."""

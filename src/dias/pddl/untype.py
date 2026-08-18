@@ -12,6 +12,9 @@ import re
 
 from . import text as pddl_text
 
+# The predicate an untyped domain uses in place of the built-in `=`.
+EQUALITY_PREDICATE = "eq"
+
 
 def strip_problem_types(
     problem_text: str,
@@ -27,45 +30,37 @@ def strip_problem_types(
     preconditions. Named reflexive predicates get ``(name o o)`` for every
     object, which is how ``(= ?x ?y)`` survives the translation.
     """
-    text = problem_text
-
     type_atoms: list[str] = []
-    object_names: list[str] = []
 
     if domain_text is not None:
-        type_parents = pddl_text.type_parents(domain_text)
-
+        parents = pddl_text.type_parents(domain_text)
         # Tokenize "obj1 obj2 - typename" rather than splitting on '-', so
         # object names containing a hyphen (e.g. "p1-0") stay intact.
-        objects_match = re.search(r"\(:objects(.*?)\)", text, re.DOTALL)
-        if objects_match:
-            tokens = objects_match.group(1).split()
-            pending: list[str] = []
-            i = 0
-            while i < len(tokens):
-                if tokens[i] == "-" and i + 1 < len(tokens):
-                    type_name = tokens[i + 1]
-                    for obj_name in pending:
-                        object_names.append(obj_name)
-                        t = type_name
-                        while t and t != "object":
-                            type_atoms.append(f"({t} {obj_name})")
-                            t = type_parents.get(t)
-                    pending = []
-                    i += 2
-                else:
-                    pending.append(tokens[i])
-                    i += 1
+        match = re.search(r"\(:objects(.*?)\)", problem_text, re.DOTALL)
+        tokens = match.group(1).split() if match else []
+        pending: list[str] = []
+        index = 0
+        while index < len(tokens):
+            if tokens[index] == "-" and index + 1 < len(tokens):
+                for name in pending:
+                    # Assert the object's type and every ancestor of it.
+                    type_name = tokens[index + 1]
+                    while type_name and type_name != "object":
+                        type_atoms.append(f"({type_name} {name})")
+                        type_name = parents.get(type_name)
+                pending = []
+                index += 2
+            else:
+                pending.append(tokens[index])
+                index += 1
 
-    if not object_names:
-        object_names = problem_object_names(text)
-
-    text = re.sub(r"\s+-\s+\w+", "", text)
+    text = re.sub(r"\s+-\s+\w+", "", problem_text)
 
     reflexive_names = [equality_predicate_name] if equality_predicate_name else []
     reflexive_names += reflexive_predicate_names or []
+    objects = problem_object_names(problem_text) if reflexive_names else []
     reflexive_atoms = [
-        f"({name} {obj} {obj})" for name in reflexive_names for obj in object_names
+        f"({name} {obj} {obj})" for name in reflexive_names for obj in objects
     ]
 
     for atoms in (type_atoms, reflexive_atoms):

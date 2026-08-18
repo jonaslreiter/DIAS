@@ -7,12 +7,18 @@ import pymimir
 from dias.data.datamodule import PddlGraphDataModule
 from dias.pddl import text as pddl_text
 from dias.pddl.transpiler import PDDLTranspiler
-from dias.pddl.untype import extract_domain_header, strip_problem_types, untype_action
+from dias.pddl.untype import (
+    EQUALITY_PREDICATE,
+    extract_domain_header,
+    strip_problem_types,
+    untype_action,
+)
 
 from .artifacts import PddlWorkspace
 from .checkpoint import load_run
 from .decoding import process_model_logits
 from .successors import (
+    LEARNED_ACTION_PREFIX,
     compare_successors,
     sample_reachable_states,
     transfer_states,
@@ -20,113 +26,29 @@ from .successors import (
 
 
 class ModelValidation:
-    LEARNED_ACTION_PREFIX = "learned_"
-    EQUALITY_PREDICATE_NAME = "eq"
-
     def __init__(self, model_id, logs_path_abs, problem_path=None, threshold=0.5):
         self.model_id = model_id
-        self.logs_path_abs = logs_path_abs
         self.threshold = threshold
 
         run = load_run(model_id, logs_path_abs)
-        self.ckpt_file = run.checkpoint_path
         self.schema = run.schema
         self.model = run.model
-        datamodule_hparams = run.datamodule_hparams
 
-        free_pos_map = PddlGraphDataModule._load_strips_plus_yaml(
-            datamodule_hparams["domain_path"],
-        )
-        action_arguments = datamodule_hparams.get("action_arguments", False)
-        strips_plus_actions = datamodule_hparams.get("strips_plus_actions", False)
-
-        precondition_logits = self.model.graph_edit.effects.detach().cpu()
-        effect_logits = self.model.graph_edit.preconditions.detach().cpu()
-        slot_weights = self.model.graph_edit.slot_weight_logits.detach().cpu()
-
-        add_eff, del_eff, pos_prec, neg_prec, active_slots = process_model_logits(
-            preconditions_logits=precondition_logits,
-            effect_logits=effect_logits,
-            slot_weight_logits=slot_weights,
-            force_action_args=self.model.force_action_args,
-            action_arguments=action_arguments,
-            strips_plus_actions=strips_plus_actions,
-            free_pos_map=free_pos_map,
-            action_names=list(self.schema.action_names),
-            action_arities=list(self.schema.action_arities),
-            num_slots=self.model.num_slots,
-            random_flip=False,
-            threshold=threshold,
-        )
-
-        original_domain_path = datamodule_hparams["domain_path"]
-        original_domain_text = Path(original_domain_path).read_text()
-        has_equality = pddl_text.domain_uses_equality(original_domain_text)
-
-        relation_names = list(self.schema.relation_names)
-        relation_arities = list(self.schema.relation_arities)
-        if not has_equality:
-            keep = [i for i, n in enumerate(relation_names) if n != "="]
-            add_eff = add_eff[:, keep, :, :]
-            del_eff = del_eff[:, keep, :, :]
-            pos_prec = pos_prec[:, keep, :, :]
-            neg_prec = neg_prec[:, keep, :, :]
-            relation_names = [relation_names[i] for i in keep]
-            relation_arities = [relation_arities[i] for i in keep]
-
-        transpiler_predicate_names = [
-            self.EQUALITY_PREDICATE_NAME if has_equality and n == "=" else n
-            for n in relation_names
-        ]
-
-        pddl_transpiler = PDDLTranspiler(
-            add_effects=add_eff,
-            delete_effects=del_eff,
-            positive_preconditions=pos_prec,
-            negative_preconditions=neg_prec,
-            predicate_names=transpiler_predicate_names,
-            predicate_arities=relation_arities,
-            action_names=list(self.schema.action_names),
-        )
-        pddl_transpiler.generate_action_schemas()
-
-        for schema in pddl_transpiler.action_schemas:
-            schema.name = f"{self.LEARNED_ACTION_PREFIX}{schema.name}"
-
-        # A merged untyped domain: transformed original actions + learned actions.
-        header = extract_domain_header(
-            original_domain_text,
-            rel_names=pddl_transpiler.predicate_names,
-            predicate_arities=pddl_transpiler.predicate_arities,
-            keep_equality_requirement=False,
-        )
-        equality_predicate = self.EQUALITY_PREDICATE_NAME if has_equality else None
-        transformed_original_actions = [
-            untype_action(action_block, equality_predicate_name=equality_predicate)
-            for action_block in pddl_text.extract_action_blocks(original_domain_text)
-        ]
-        merged_domain_text = (
-            header
-            + "\n\n"
-            + "\n\n".join(transformed_original_actions)
-            + "\n\n"
-            + "".join(str(schema) for schema in pddl_transpiler.action_schemas)
-            + "\n)"
-        )
+        domain_text = Path(run.domain_path).read_text()
+        has_equality = pddl_text.domain_uses_equality(domain_text)
+        transpiler = self._read_learned_schemas(run, has_equality, threshold)
 
         self.workspace = PddlWorkspace()
         self.merged_domain_filename = self.workspace.write(
-            "merged-domain.pddl", merged_domain_text + "\n\n"
+            "merged-domain.pddl",
+            self._merge_domains(domain_text, has_equality, transpiler) + "\n\n",
         )
-        # An untyped problem, with the type and equality facts in :init.
         self.merged_problem_filename = self.workspace.write(
             "merged-problem.pddl",
             strip_problem_types(
                 Path(problem_path).read_text(),
-                original_domain_text,
-                equality_predicate_name=(
-                    self.EQUALITY_PREDICATE_NAME if has_equality else None
-                ),
+                domain_text,
+                equality_predicate_name=EQUALITY_PREDICATE if has_equality else None,
             ),
         )
 
@@ -134,13 +56,89 @@ class ModelValidation:
         self.merged_problem = pymimir.Problem(
             self.merged_domain, Path(self.merged_problem_filename)
         )
-
-        self.original_domain = pymimir.Domain(Path(datamodule_hparams["domain_path"]))
+        self.original_domain = pymimir.Domain(Path(run.domain_path))
         self.original_problem = pymimir.Problem(
             self.original_domain, Path(problem_path)
         )
-
         self.state_set = None
+
+    def _read_learned_schemas(self, run, has_equality: bool, threshold: float):
+        """Binarize the model's logits and transpile them into action schemas.
+
+        Returns the transpiler rather than the schemas, because it also carries
+        the predicate names and arities the merged domain has to declare.
+        """
+        hparams = run.datamodule_hparams
+        add_eff, del_eff, pos_prec, neg_prec, _ = process_model_logits(
+            preconditions_logits=self.model.graph_edit.effects.detach().cpu(),
+            effect_logits=self.model.graph_edit.preconditions.detach().cpu(),
+            slot_weight_logits=self.model.graph_edit.slot_weight_logits.detach().cpu(),
+            force_action_args=self.model.force_action_args,
+            action_arguments=hparams.get("action_arguments", False),
+            strips_plus_actions=hparams.get("strips_plus_actions", False),
+            free_pos_map=(
+                PddlGraphDataModule._load_strips_plus_yaml(run.domain_path)
+                if hparams.get("strips_plus_actions", False)
+                else {}
+            ),
+            action_names=list(self.schema.action_names),
+            action_arities=list(self.schema.action_arities),
+            num_slots=self.model.num_slots,
+            random_flip=False,
+            threshold=threshold,
+        )
+
+        names = list(self.schema.relation_names)
+        arities = list(self.schema.relation_arities)
+        if not has_equality:
+            # Without :equality the "=" channel has no predicate to write to.
+            keep = [i for i, name in enumerate(names) if name != "="]
+            add_eff, del_eff, pos_prec, neg_prec = (
+                array[:, keep, :, :] for array in (add_eff, del_eff, pos_prec, neg_prec)
+            )
+            names = [names[i] for i in keep]
+            arities = [arities[i] for i in keep]
+
+        transpiler = PDDLTranspiler(
+            add_effects=add_eff,
+            delete_effects=del_eff,
+            positive_preconditions=pos_prec,
+            negative_preconditions=neg_prec,
+            predicate_names=[
+                EQUALITY_PREDICATE if has_equality and n == "=" else n for n in names
+            ],
+            predicate_arities=arities,
+            action_names=list(self.schema.action_names),
+        )
+        transpiler.generate_action_schemas()
+        for schema in transpiler.action_schemas:
+            schema.name = f"{LEARNED_ACTION_PREFIX}{schema.name}"
+        return transpiler
+
+    @staticmethod
+    def _merge_domains(domain_text: str, has_equality: bool, transpiler) -> str:
+        """One untyped domain holding the original actions and the learned ones."""
+        header = extract_domain_header(
+            domain_text,
+            rel_names=transpiler.predicate_names,
+            predicate_arities=transpiler.predicate_arities,
+            keep_equality_requirement=False,
+        )
+        original_actions = [
+            untype_action(
+                block,
+                equality_predicate_name=EQUALITY_PREDICATE if has_equality else None,
+            )
+            for block in pddl_text.extract_action_blocks(domain_text)
+        ]
+        return (
+            header
+            + "\n\n"
+            + "\n\n".join(original_actions)
+            + "\n\n"
+            + "".join(str(schema) for schema in transpiler.action_schemas)
+            + "\n)"
+        )
 
     def setup(self, num_samples: int = 250, sample_population: int = 500):
         states = sample_reachable_states(
@@ -153,4 +151,4 @@ class ModelValidation:
     def validate(self):
         if self.state_set is None:
             raise RuntimeError("Call setup() before validate().")
-        return compare_successors(self.state_set, self.LEARNED_ACTION_PREFIX)
+        return compare_successors(self.state_set, LEARNED_ACTION_PREFIX)
