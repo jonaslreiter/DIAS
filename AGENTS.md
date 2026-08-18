@@ -70,6 +70,8 @@ When working on data generation or dataset code, preserve these assumptions unle
 - `src/dias/validation/dias_validate.py`: reconstruct learned schemas from checkpoints and compare successor-state behavior.
 - `src/dias/validation/l1.py`: L1 validation logic.
 - `src/dias/validation/mlp_baseline.py`: MLP-effects baseline validation.
+- `src/dias/validation/checkpoint.py`: `load_run` — resolves a run's best checkpoint, filters retired datamodule hparams, absolutises its paths, and returns the model plus its `DomainSchema` as a `TrainedRun`.
+- `src/dias/validation/decoding.py`: `process_model_logits` — binarizes the learned schema tensors at a threshold. (Was `validation/utils.py`.)
 - `src/dias/validation/successors.py`: state sampling (`sample_reachable_states`, `transfer_states`) and behavioural scoring (`compare_successors`), shared by all three validators.
 - `src/dias/validation/artifacts.py`: `PddlWorkspace` — the self-deleting temp directory holding generated PDDL, since pymimir only parses from paths.
 - `scripts/launch.py`: the single experiment launcher. Per domain it submits a Slurm training array (one task per seed) plus a `--dependency=aftercorr` validation array, or runs the same steps sequentially with `--backend local`. Selects the experiment via `--experiment-type {dias,mlp,noise}`.
@@ -86,7 +88,7 @@ When working on data generation or dataset code, preserve these assumptions unle
 - The default logger is W&B with entity `team-jonas-reiter`, project name `dias`, and save directory `logs`.
 - Sweep runs use a deterministic W&B run id `<experiment>-<domain>-s<seed>` (see `validate_runs.run_id_for`) so the validation array can locate each checkpoint without an id handoff.
 - Training checkpoints are expected under `logs/dias/<run_id>/checkpoints/`.
-- Validation code looks for a checkpoint matching `best-epoch*.ckpt`; preserve this naming unless the validation loader is updated in the same change. When a run id is reused (a re-run of one seed), several such files can coexist because Lightning suffixes the clash with `-v1`, so `validation/utils.resolve_best_checkpoint` picks the newest by mtime; both `dias_validate.py` and `mlp_baseline.py` go through it.
+- Validation code looks for a checkpoint matching `best-epoch*.ckpt`; preserve this naming unless the validation loader is updated in the same change. When a run id is reused (a re-run of one seed), several such files can coexist because Lightning suffixes the clash with `-v1`, so `validation/checkpoint.resolve_best_checkpoint` picks the newest by mtime; every validator reaches it through `load_run`.
 - `src/dias/main.py` links datamodule metadata such as numbers of objects, actions, and relations into model init args through LightningCLI. Keep these interfaces synchronized.
 - The default batching strategy in `configs/main.yaml` is `stratified`, which yields an effectively unbounded iterable dataset; training length is therefore controlled by `trainer.max_steps` and related trainer limits, not dataset exhaustion.
 - Noise ablations: `noise_model: ratio` uses `edge_remove_ratio` / `edge_add_ratio`; `noise_model: expected_count` uses `expected_removed_atoms` / `expected_added_atoms` (Poisson flip budget, `noise_on_fluents_only`). The `noise` experiment overlay selects `expected_count`.

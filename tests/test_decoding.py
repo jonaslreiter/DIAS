@@ -3,10 +3,10 @@ import unittest
 import numpy as np
 import torch
 
-from dias.validation.utils import process_model_logits
+from dias.validation.decoding import process_model_logits
 
 
-class ValidationUtilsTest(unittest.TestCase):
+class ProcessModelLogitsTest(unittest.TestCase):
     def test_process_model_logits_forces_known_slots_and_masks_inactive_slots(self):
         shape = (2, 1, 3, 3, 3)
         precondition_logits = torch.zeros(shape)

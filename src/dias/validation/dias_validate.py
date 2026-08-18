@@ -3,22 +3,20 @@ from __future__ import annotations
 from pathlib import Path
 
 import pymimir
-import torch
 
 from dias.data.datamodule import PddlGraphDataModule
-from dias.models.dias import DIAS
 from dias.pddl import text as pddl_text
 from dias.pddl.transpiler import PDDLTranspiler
 from dias.pddl.untype import extract_domain_header, strip_problem_types, untype_action
-from dias.schema import DomainSchema
 
 from .artifacts import PddlWorkspace
+from .checkpoint import load_run
+from .decoding import process_model_logits
 from .successors import (
     compare_successors,
     sample_reachable_states,
     transfer_states,
 )
-from .utils import process_model_logits, resolve_best_checkpoint
 
 
 class ModelValidation:
@@ -30,43 +28,11 @@ class ModelValidation:
         self.logs_path_abs = logs_path_abs
         self.threshold = threshold
 
-        ckpt_dir = Path(f"{logs_path_abs}/dias/{model_id}/checkpoints")
-        self.ckpt_file = str(resolve_best_checkpoint(ckpt_dir))
-
-        ckpt = torch.load(self.ckpt_file, map_location="cpu")
-        # Drop legacy hparams no longer accepted by PddlGraphDataModule so old
-        # checkpoints (pre-sampling-refactor) still load.
-        _legacy_keys = {
-            "method",
-            "num_val",
-            "num_test",
-            "balanced_min_per_label",
-            "balanced_max_steps",
-            "inapplicable_actions_ratio",
-        }
-        datamodule_hparams = {
-            k: v
-            for k, v in ckpt["datamodule_hyper_parameters"].items()
-            if not k.startswith("_") and k not in _legacy_keys
-        }
-        # Relative paths in a checkpoint were relative to the working directory
-        # the run was launched from, which is the repository root.
-        for key in ("domain_path", "problem_path", "pt_file"):
-            if datamodule_hparams.get(key) is not None:
-                datamodule_hparams[key] = str(Path(datamodule_hparams[key]).resolve())
-
-        self.schema = DomainSchema.from_pddl(
-            datamodule_hparams["domain_path"],
-            datamodule_hparams["problem_path"],
-            include_statics=datamodule_hparams.get("include_statics", False),
-            default_statics=datamodule_hparams.get("default_statics"),
-            action_arguments=datamodule_hparams.get("action_arguments", False),
-            strips_plus_actions=datamodule_hparams.get("strips_plus_actions", False),
-        )
-
-        self.model = DIAS.load_from_checkpoint(self.ckpt_file, map_location="cpu")
-        self.model.to("cpu")
-        self.model.eval()
+        run = load_run(model_id, logs_path_abs)
+        self.ckpt_file = run.checkpoint_path
+        self.schema = run.schema
+        self.model = run.model
+        datamodule_hparams = run.datamodule_hparams
 
         free_pos_map = PddlGraphDataModule._load_strips_plus_yaml(
             datamodule_hparams["domain_path"],

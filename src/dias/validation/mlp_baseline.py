@@ -13,15 +13,14 @@ from pymimir.wrapper_formalism import State
 from tqdm import tqdm
 
 from dias.data.datamodule import PddlGraphDataModule
-from dias.models.dias import DIAS
 from dias.pddl import text as pddl_text
 from dias.pddl.transpiler import PDDLTranspiler
 from dias.pddl.untype import extract_domain_header, strip_problem_types
-from dias.schema import DomainSchema
 
 from .artifacts import PddlWorkspace
+from .checkpoint import load_run
+from .decoding import process_model_logits
 from .successors import sample_reachable_states, transfer_states
-from .utils import process_model_logits, resolve_best_checkpoint
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -169,41 +168,11 @@ class ModelValidation:
             "problem_path": problem_path,
         }
 
-        ckpt_dir = Path(f"{logs_path_abs}/dias/{model_id}/checkpoints")
-        self.ckpt_file = str(resolve_best_checkpoint(ckpt_dir))
-
-        ckpt = torch.load(self.ckpt_file, map_location="cpu")
-        _legacy_keys = {
-            "method",
-            "num_val",
-            "num_test",
-            "balanced_min_per_label",
-            "balanced_max_steps",
-            "inapplicable_actions_ratio",
-        }
-        datamodule_hparams = {
-            k: v
-            for k, v in ckpt["datamodule_hyper_parameters"].items()
-            if not k.startswith("_") and k not in _legacy_keys
-        }
-        # Relative paths in a checkpoint were relative to the working directory
-        # the run was launched from, which is the repository root.
-        for key in ("domain_path", "problem_path", "pt_file"):
-            if datamodule_hparams.get(key) is not None:
-                datamodule_hparams[key] = str(Path(datamodule_hparams[key]).resolve())
-
-        self.schema = DomainSchema.from_pddl(
-            datamodule_hparams["domain_path"],
-            datamodule_hparams["problem_path"],
-            include_statics=datamodule_hparams.get("include_statics", False),
-            default_statics=datamodule_hparams.get("default_statics"),
-            action_arguments=datamodule_hparams.get("action_arguments", False),
-            strips_plus_actions=datamodule_hparams.get("strips_plus_actions", False),
-        )
-
-        self.model = DIAS.load_from_checkpoint(self.ckpt_file, map_location="cpu")
-        self.model.to("cpu")
-        self.model.eval()
+        run = load_run(model_id, logs_path_abs)
+        self.ckpt_file = run.checkpoint_path
+        self.schema = run.schema
+        self.model = run.model
+        datamodule_hparams = run.datamodule_hparams
 
         if not getattr(self.model.graph_edit, "state_dependent_effects", False):
             raise ValueError(
@@ -648,97 +617,6 @@ class ModelValidation:
             "fn": fn_total,
         }
 
-    # ──────────────────────────────────────────────────────────────────
-    #  prediction
-    # ──────────────────────────────────────────────────────────────────
-    def _predict_successors(
-        self,
-        input_adj: torch.Tensor,
-        action_name: str,
-        bindings: list[list[int]],
-    ) -> torch.Tensor:
-        """Return predicted next-state adjacencies for each grounding.
-
-        Mirrors the state-dependent branch in
-        :class:`PredictionModule.forward`:
-
-            adj_selection = einsum("bai,brij,bcj->brac", sel, adj, sel)
-            effects = softmax(effects_mlp(adj_selection))[arange(B), y_action]
-
-        Then projects the soft per-slot add/del effects back to the dense
-        adjacency and applies the XOR-style update
-        ``adj' = adj + (1 - adj) * add - adj * del``, before thresholding.
-        """
-        B = len(bindings)
-        K = self.num_slots
-        N = self.num_objects
-        R = len(self.relation_names)
-        a_idx = self.action_names.index(action_name)
-        slot_indices = self.active_slot_indices[a_idx]
-
-        device = input_adj.device
-        adj_float = input_adj.to(torch.float32)
-
-        # Map each parameter position to its real slot index.  Unused
-        # slots (those not in active_slot_indices) stay zero, which is
-        # what the model's active-slot mask requires.
-        selection = torch.zeros(B, K, N, dtype=torch.float32, device=device)
-        for b, binding in enumerate(bindings):
-            for param_pos, obj_idx in enumerate(binding):
-                if param_pos >= len(slot_indices):
-                    break
-                slot = slot_indices[param_pos]
-                selection[b, slot, obj_idx] = 1.0
-
-        adj_batch = adj_float.unsqueeze(0).expand(B, R, N, N).contiguous()
-        y_action = torch.full((B,), a_idx, dtype=torch.long, device=device)
-
-        adj_selection = torch.einsum(
-            "bai,brij,bcj->brac", selection, adj_batch, selection
-        )  # (B, R, K, K)
-        effects_logits = self.model.graph_edit.effects_mlp(adj_selection)
-        effects = F.softmax(effects_logits, dim=-1)
-        effects = effects[torch.arange(B, device=device), y_action]  # (B, R, K, K, 3)
-
-        add_effects = effects[..., 1]
-        del_effects = effects[..., -1]
-
-        add_proj = torch.einsum("bai,brac,bcj->brij", selection, add_effects, selection)
-        del_proj = torch.einsum("bai,brac,bcj->brij", selection, del_effects, selection)
-
-        delta = (1.0 - adj_batch) * add_proj - adj_batch * del_proj
-        adj_out = (adj_batch + delta).clamp(0.0, 1.0)
-        adj_bin = (adj_out > 0.5).to(torch.uint8)
-        return self._canonicalize_adj(adj_bin)
-
-    # ──────────────────────────────────────────────────────────────────
-    #  state ↔ adjacency
-    # ──────────────────────────────────────────────────────────────────
-    def _state_to_adj(self, state) -> torch.Tensor:
-        adj = torch.zeros(
-            len(self.relation_names),
-            self.num_objects,
-            self.num_objects,
-            dtype=torch.uint8,
-        )
-        for atom in state.get_atoms(ignore_static=False, ignore_derived=True):
-            pred_name = atom.get_predicate().get_name()
-            r = self.relation_name_to_idx.get(pred_name)
-            if r is None:
-                continue
-            arity = self.relation_arities[r]
-            terms = atom.get_terms()
-            if arity == 2:
-                i = self.object_name_to_idx[terms[0].get_name()]
-                j = self.object_name_to_idx[terms[1].get_name()]
-                adj[r, i, j] = 1
-            elif arity == 1:
-                i = self.object_name_to_idx[terms[0].get_name()]
-                adj[r, i, i] = 1
-            elif arity == 0:
-                adj[r, 0, 0] = 1
-        return adj
-
     def _canonicalize_adj(self, adj: torch.Tensor) -> torch.Tensor:
         """Zero out off-diagonal cells for arity-1 channels and any
         non-(0,0) cells for arity-0, so predicted and ground-truth adj
@@ -775,16 +653,6 @@ class ModelValidation:
         else:
             raise ValueError(f"Unexpected adj rank: {adj.shape}")
 
-    def _adj_signature(self, adj: torch.Tensor) -> bytes:
-        """Canonical bytes for an adjacency tensor; eq channel removed."""
-        if self.eq_channel_idx is not None:
-            keep = [i for i in range(adj.shape[0]) if i != self.eq_channel_idx]
-            adj = adj[keep]
-        return adj.to(torch.uint8).contiguous().cpu().numpy().tobytes()
-
-    # ──────────────────────────────────────────────────────────────────
-    #  PDDL helpers
-    # ──────────────────────────────────────────────────────────────────
     @staticmethod
     def _format_learned_action(schema, slot_indices: list[int]) -> str:
         """Serialize a learned action with empty effects and one parameter
