@@ -1,22 +1,23 @@
 from __future__ import annotations
 
-import random
 from pathlib import Path
 
 import pymimir
 import torch
-from tqdm import tqdm
 
 from dias.data.datamodule import PddlGraphDataModule
-from dias.data.generate_samples import generate_bfs
 from dias.models.dias import DIAS
 from dias.pddl import text as pddl_text
-from dias.pddl.states import state_fluents, transfer_state
 from dias.pddl.transpiler import PDDLTranspiler
 from dias.pddl.untype import extract_domain_header, strip_problem_types, untype_action
 from dias.schema import DomainSchema
 
 from .artifacts import PddlWorkspace
+from .successors import (
+    compare_successors,
+    sample_reachable_states,
+    transfer_states,
+)
 from .utils import process_model_logits, resolve_best_checkpoint
 
 
@@ -174,148 +175,16 @@ class ModelValidation:
         )
 
         self.state_set = None
-        self._state_id_cache: dict[int, int] = {}
 
     def setup(self, num_samples: int = 250, sample_population: int = 500):
-
-        if num_samples > sample_population:
-            num_samples = sample_population
-            print(
-                f"\033[93m[WARNING] num_samples ({num_samples}) exceeds population, clamping to {sample_population}.\033[0m"
-            )
-
-        self.state_set = []
-
-        bfs_samples = generate_bfs(self.original_problem, sample_population)
-        seen = set()
-        population_set = []
-        for s in bfs_samples:
-            st = s["_pymimir_state"]
-            sid = st.get_index()
-            if sid not in seen:
-                seen.add(sid)
-                population_set.append(st)
-            if len(population_set) >= sample_population:
-                break
-
-        if num_samples > len(population_set):
-            print(
-                f"\033[93m[WARNING] num_samples ({num_samples}) exceeds reachable "
-                f"states ({len(population_set)}), clamping.\033[0m"
-            )
-            num_samples = len(population_set)
-
-        self.state_set = random.sample(population_set, num_samples)
-
-        shared_preds = {p.get_name() for p in self.original_domain.get_predicates()} & {
-            p.get_name() for p in self.merged_domain.get_predicates()
-        }
-
-        merged_state_set = []
-        for state in self.state_set:
-            merged_state = transfer_state(state, self.merged_problem)
-            orig_shared = state_fluents(state, shared_preds)
-            merged_shared = state_fluents(merged_state, shared_preds)
-            assert orig_shared == merged_shared, (
-                f"State transfer mismatch (comparison restricted to predicates "
-                f"present in both domains):\n"
-                f"  shared predicates: {sorted(shared_preds)}\n"
-                f"  Len. original: {len(orig_shared)}\n"
-                f"  Len. merged:   {len(merged_shared)}\n"
-                f"  original: {orig_shared}\n"
-                f"  merged:   {merged_shared}\n"
-                f"  only in original: {orig_shared - merged_shared}\n"
-                f"  only in merged:   {merged_shared - orig_shared}"
-            )
-            merged_state_set.append(merged_state)
-
-        self.state_set = merged_state_set
+        states = sample_reachable_states(
+            self.original_problem, num_samples, sample_population
+        )
+        self.state_set = transfer_states(
+            states, self.merged_problem, self.original_domain, self.merged_domain
+        )
 
     def validate(self):
         if self.state_set is None:
-            raise RuntimeError("\033[91mCall setup() before validate().\033[0m")
-
-        matches = 0
-        tp_total = 0
-        fp_total = 0
-        fn_total = 0
-
-        from collections import defaultdict
-
-        action_tp = defaultdict(int)
-        action_fp = defaultdict(int)
-        action_fn = defaultdict(int)
-
-        prefix_len = len(self.LEARNED_ACTION_PREFIX)
-        state_id = self.state_id
-
-        for state in tqdm(
-            self.state_set, total=len(self.state_set), desc="Validating states"
-        ):
-            orig_by_action = defaultdict(set)
-            learned_by_action = defaultdict(set)
-            for ga in state.generate_applicable_actions():
-                succ_id = state_id(ga.apply(state))
-                action_name = ga.get_action().get_name()
-                if action_name.startswith(self.LEARNED_ACTION_PREFIX):
-                    learned_by_action[action_name[prefix_len:]].add(succ_id)
-                else:
-                    orig_by_action[action_name].add(succ_id)
-
-            orig_succs = (
-                set().union(*orig_by_action.values()) if orig_by_action else set()
-            )
-            learned_succs = (
-                set().union(*learned_by_action.values()) if learned_by_action else set()
-            )
-
-            tp = len(orig_succs & learned_succs)
-            fp = len(learned_succs) - tp
-            fn = len(orig_succs) - tp
-
-            tp_total += tp
-            fp_total += fp
-            fn_total += fn
-
-            if orig_succs == learned_succs:
-                matches += 1
-
-            for name in set(orig_by_action) | set(learned_by_action):
-                o = orig_by_action.get(name, set())
-                lrn = learned_by_action.get(name, set())
-                a_tp = len(o & lrn)
-                action_tp[name] += a_tp
-                action_fp[name] += len(lrn) - a_tp
-                action_fn[name] += len(o) - a_tp
-
-        precision = (
-            tp_total / (tp_total + fp_total) if (tp_total + fp_total) > 0 else 0.0
-        )
-        recall = tp_total / (tp_total + fn_total) if (tp_total + fn_total) > 0 else 0.0
-
-        action_stats = {
-            name: {
-                "tp": action_tp[name],
-                "fp": action_fp[name],
-                "fn": action_fn[name],
-                "conflicts": action_fp[name] + action_fn[name],
-            }
-            for name in set(action_tp) | set(action_fp) | set(action_fn)
-        }
-
-        return {
-            "matches": matches,
-            "total": len(self.state_set),
-            "accuracy": matches / len(self.state_set),
-            "precision": precision,
-            "recall": recall,
-            "action_stats": action_stats,
-        }
-
-    def state_id(self, state):
-        sid = state.get_index()
-        cid = self._state_id_cache.get(sid)
-        if cid is None:
-            cid = sid
-            self._state_id_cache[sid] = cid
-        return cid
+            raise RuntimeError("Call setup() before validate().")
+        return compare_successors(self.state_set, self.LEARNED_ACTION_PREFIX)

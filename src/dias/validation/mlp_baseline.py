@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import multiprocessing as _mp
-import random
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
@@ -14,15 +13,14 @@ from pymimir.wrapper_formalism import State
 from tqdm import tqdm
 
 from dias.data.datamodule import PddlGraphDataModule
-from dias.data.generate_samples import generate_bfs
 from dias.models.dias import DIAS
 from dias.pddl import text as pddl_text
-from dias.pddl.states import state_fluents, transfer_state
 from dias.pddl.transpiler import PDDLTranspiler
 from dias.pddl.untype import extract_domain_header, strip_problem_types
 from dias.schema import DomainSchema
 
 from .artifacts import PddlWorkspace
+from .successors import sample_reachable_states, transfer_states
 from .utils import process_model_logits, resolve_best_checkpoint
 
 
@@ -391,56 +389,17 @@ class ModelValidation:
 
         self.state_pairs: list[tuple] | None = None
 
-    # ──────────────────────────────────────────────────────────────────
-    #  setup
-    # ──────────────────────────────────────────────────────────────────
     def setup(self, num_samples: int = 250, sample_population: int = 500):
-        if num_samples > sample_population:
-            num_samples = sample_population
-            print(
-                f"\033[93m[WARNING] num_samples ({num_samples}) exceeds "
-                f"population, clamping to {sample_population}.\033[0m"
-            )
-
-        bfs_samples = generate_bfs(self.original_problem, sample_population)
-        seen = set()
-        population_set = []
-        for s in bfs_samples:
-            st = s["_pymimir_state"]
-            sid = st.get_index()
-            if sid not in seen:
-                seen.add(sid)
-                population_set.append(st)
-            if len(population_set) >= sample_population:
-                break
-
-        if num_samples > len(population_set):
-            print(
-                f"\033[93m[WARNING] num_samples ({num_samples}) exceeds reachable "
-                f"states ({len(population_set)}), clamping.\033[0m"
-            )
-            num_samples = len(population_set)
-
-        sampled_orig_states = random.sample(population_set, num_samples)
-
-        # Sanity check: the shared-fluents view should agree across
-        # original / learned problems for every sampled state.
-        shared_preds = {p.get_name() for p in self.original_domain.get_predicates()} & {
-            p.get_name() for p in self.learned_domain.get_predicates()
-        }
-
-        self.state_pairs = []
-        for orig_state in sampled_orig_states:
-            learned_state = transfer_state(orig_state, self.learned_problem)
-            orig_shared = state_fluents(orig_state, shared_preds)
-            learned_shared = state_fluents(learned_state, shared_preds)
-            assert orig_shared == learned_shared, (
-                f"State transfer mismatch (shared predicates):\n"
-                f"  shared: {sorted(shared_preds)}\n"
-                f"  only in original: {orig_shared - learned_shared}\n"
-                f"  only in learned:  {learned_shared - orig_shared}"
-            )
-            self.state_pairs.append((orig_state, learned_state))
+        original_states = sample_reachable_states(
+            self.original_problem, num_samples, sample_population
+        )
+        learned_states = transfer_states(
+            original_states,
+            self.learned_problem,
+            self.original_domain,
+            self.learned_domain,
+        )
+        self.state_pairs = list(zip(original_states, learned_states))
 
     def validate(self, batch_size: int = 4096, num_workers: int = 1):
         """
