@@ -11,11 +11,14 @@ what keeps each step independently landable without breaking archived runs.
 
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 import torch
 
+from dias.models.checkpoints import CHECKPOINT_VERSION, VERSION_KEY
 from dias.models.dias import DIAS
+from dias.schedules import Constant, Exponential, schedule_config
 
 V1_HPARAMS = {
     "num_objects": 4,
@@ -68,9 +71,33 @@ V1_ENCODER_KEYS = tuple(
 )
 
 
+# Hyper-parameters v1 had that the current constructor no longer takes. Each
+# refactor step that renames or regroups one adds it here and a rule to
+# dias.models.checkpoints, which is what keeps archived runs loadable.
+V1_ONLY_HPARAMS = {"loss_weight_schedule"}
+
+# What v1 becomes after migration.
+V2_HPARAMS = {
+    key: value for key, value in V1_HPARAMS.items() if key not in V1_ONLY_HPARAMS
+} | {
+    "gmean_temperature": schedule_config(Exponential(v0=1.0, vT=0.1, T=500)),
+    # Added after v1, so a v1 checkpoint gets the constructor default.
+    "encoder_hidden_dims": None,
+}
+
+
+def constructor_args() -> dict:
+    """V1_HPARAMS as the current constructor accepts them.
+
+    Only the hyper-parameters differ between versions; the tensor shapes do
+    not, so this still builds a state dict with the v1 key set.
+    """
+    return {k: v for k, v in V1_HPARAMS.items() if k not in V1_ONLY_HPARAMS}
+
+
 def build_v1_checkpoint(marker: float = 0.125) -> dict:
     """A v1 checkpoint whose schema parameters are all set to `marker`."""
-    reference = DIAS(**V1_HPARAMS)
+    reference = DIAS(**constructor_args())
     state_dict = {k: v.clone() for k, v in reference.state_dict().items()}
     reference.teardown("build")
     for key in V1_SCHEMA_KEYS:
@@ -92,7 +119,7 @@ class CheckpointLayoutTest(unittest.TestCase):
         return str(path)
 
     def test_v1_key_set_is_exactly_as_recorded(self):
-        model = DIAS(**V1_HPARAMS)
+        model = DIAS(**constructor_args())
         self.addCleanup(model.teardown, "test")
         expected = set(V1_SCHEMA_KEYS + V1_DERIVED_KEYS + V1_ENCODER_KEYS)
         self.assertEqual(set(model.state_dict()), expected)
@@ -114,12 +141,46 @@ class CheckpointLayoutTest(unittest.TestCase):
                 atol=0,
             )
 
-    def test_v1_hparams_round_trip(self):
+    def test_v1_hparams_migrate_to_the_current_layout(self):
         path = self.write_v1_checkpoint()
         model = DIAS.load_from_checkpoint(path, map_location="cpu")
         self.addCleanup(model.teardown, "test")
-        for key, value in V1_HPARAMS.items():
-            self.assertEqual(model.hparams[key], value, f"hparam {key} did not survive")
+        self.assertEqual(dict(model.hparams), V2_HPARAMS)
+
+    def test_a_current_checkpoint_loads_without_migrating(self):
+        """The stock loader must handle it; migration is the fallback only."""
+        directory = self.enterContext(tempfile.TemporaryDirectory())
+        path = Path(directory) / "v2.ckpt"
+        model = DIAS(**constructor_args())
+        self.addCleanup(model.teardown, "test")
+        checkpoint = {
+            "state_dict": model.state_dict(),
+            "hyper_parameters": dict(model.hparams),
+            "pytorch-lightning_version": "2.6.1",
+            "epoch": 3,
+            "global_step": 300,
+        }
+        model.on_save_checkpoint(checkpoint)
+        torch.save(checkpoint, path)
+        self.assertEqual(checkpoint[VERSION_KEY], CHECKPOINT_VERSION)
+
+        with unittest.mock.patch(
+            "dias.models.dias.migrate", side_effect=AssertionError("migrated")
+        ):
+            reloaded = DIAS.load_from_checkpoint(path, map_location="cpu")
+        self.addCleanup(reloaded.teardown, "test")
+        self.assertEqual(dict(reloaded.hparams), dict(model.hparams))
+
+    def test_a_v1_checkpoint_missing_a_renamed_key_still_loads(self):
+        """Not every old checkpoint contains everything a later version renamed."""
+        directory = self.enterContext(tempfile.TemporaryDirectory())
+        path = Path(directory) / "sparse.ckpt"
+        checkpoint = build_v1_checkpoint()
+        del checkpoint["hyper_parameters"]["loss_weight_schedule"]
+        torch.save(checkpoint, path)
+        model = DIAS.load_from_checkpoint(path, map_location="cpu")
+        self.addCleanup(model.teardown, "test")
+        self.assertEqual(model.gmean_temperature, Constant(1.0))
 
 
 if __name__ == "__main__":

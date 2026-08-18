@@ -9,12 +9,9 @@ import torch
 from torch.utils.data import Dataset, IterableDataset
 from torch_geometric.loader import DataLoader as PyGDataLoader
 
+from dias.adjacency import adj_to_pyg_data
+from dias.data.noise import add_adj_noise, add_adj_noise_expected_count
 from dias.schema import DomainSchema
-from dias.utils import (
-    add_adj_noise,
-    add_adj_noise_expected_count,
-    adj_to_pyg_data,
-)
 
 from ..schema.domain import _argument_positions
 from .generate_samples import generate_random_walk, get_metadata, samples_to_tensors

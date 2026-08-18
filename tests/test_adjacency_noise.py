@@ -6,7 +6,7 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from dias.utils import add_adj_noise
+from dias.data.noise import add_adj_noise
 
 
 class AdjacencyNoiseTest(unittest.TestCase):

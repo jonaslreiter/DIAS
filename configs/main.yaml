@@ -27,9 +27,11 @@ model:
     use_precondition_loss: true
     use_effect_loss: true
     use_pcgrad: true
-    loss_weight_schedule:
-      gmean_temperature:
-        type: exponential
+    # Tau: the root degree of the relaxed precondition product. Anneals from
+    # the geometric mean toward the exact product; gmean_offset floors it.
+    gmean_temperature:
+      class_path: dias.schedules.Exponential
+      init_args:
         v0: 1.0
         vT: 0.1
         T: 500

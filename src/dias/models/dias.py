@@ -1,3 +1,5 @@
+import io
+import logging
 import sys
 from typing import Mapping, Optional
 
@@ -6,11 +8,15 @@ import torch
 import torch.nn.functional as F
 from torch_geometric.utils import to_dense_adj
 
-from dias.utils import LossWeightScheduleCollection, resolve_label_names
-from dias.utils.plotting import PlotWorker, queue_validation_heatmaps
+from dias.reporting.labels import resolve_label_names
+from dias.reporting.plotting import PlotWorker, queue_validation_heatmaps
+from dias.schedules import Schedule, as_schedule, schedule_config
 
+from .checkpoints import CHECKPOINT_VERSION, VERSION_KEY, migrate
 from .gnn import DEFAULT_HIDDEN_DIMS, GNNModule
 from .prediction import PredictionModule
+
+logger = logging.getLogger(__name__)
 from .utils import build_relation_change_edges
 
 
@@ -36,7 +42,7 @@ class DIAS(L.LightningModule):
             "effect_and_precondition": False,
             "selection": False,
         },
-        loss_weight_schedule: dict | None = None,
+        gmean_temperature: Schedule | Mapping | None = None,
         pcgrad_dyn_clip: bool = True,
         gmean_offset: float = 0.0,
         state_dependent_effects: bool = False,
@@ -48,6 +54,11 @@ class DIAS(L.LightningModule):
     ):
         super().__init__()
         self.save_hyperparameters()
+        self.gmean_temperature = as_schedule(gmean_temperature)
+        # Hyperparameters must stay primitive: torch.load defaults to
+        # weights_only=True since 2.6 and refuses to unpickle a dataclass,
+        # which would make the whole checkpoint unloadable.
+        self.hparams["gmean_temperature"] = schedule_config(self.gmean_temperature)
 
         self.num_objects = num_objects
         self.arity_relations = arity_relations
@@ -147,18 +158,31 @@ class DIAS(L.LightningModule):
 
         self.automatic_optimization = False
 
-        defaults = {
-            "gmean_temperature": {"type": "linear", "keypoints": {0: 1.0}},
-        }
-        if loss_weight_schedule:
-            defaults.update(loss_weight_schedule)
-        self.loss_weight_schedule_collection = LossWeightScheduleCollection(
-            schedules=defaults
-        )
-
         self._plot_worker = PlotWorker()
         self._last_plot_step_submitted: int | None = None
         self._label_names: tuple[list[str], list[str], list[str]] | None = None
+
+    def on_save_checkpoint(self, checkpoint: dict) -> None:
+        checkpoint[VERSION_KEY] = CHECKPOINT_VERSION
+
+    @classmethod
+    def load_from_checkpoint(cls, checkpoint_path, *args, **kwargs):
+        """Load a checkpoint, bringing an older layout up to date on the way in.
+
+        The version stamp decides, not a failed load: Lightning drops
+        hyper-parameters it does not recognise instead of raising, so a renamed
+        one would silently fall back to its default and quietly change what the
+        archived run means.
+        """
+        checkpoint = torch.load(checkpoint_path, map_location="cpu")
+        version = checkpoint.get(VERSION_KEY, 1)
+        if version < CHECKPOINT_VERSION:
+            logger.info("Migrating checkpoint from version %d.", version)
+            checkpoint = migrate(checkpoint)
+        buffer = io.BytesIO()
+        torch.save(checkpoint, buffer)
+        buffer.seek(0)
+        return super().load_from_checkpoint(buffer, *args, **kwargs)
 
     def teardown(self, stage: str) -> None:
         if hasattr(self, "_plot_worker"):
@@ -254,7 +278,7 @@ class DIAS(L.LightningModule):
             batch_idx=batch_s1.batch,
             y_action=y_action,
             y_action_args=y_action_args,
-            gmean_temperature=self.loss_weight_schedule_collection["gmean_temperature"],
+            gmean_temperature=self.gmean_temperature(self.global_step),
         )
 
         self._last_selection = self.graph_edit._last_selection
@@ -345,17 +369,10 @@ class DIAS(L.LightningModule):
         }
 
     def on_train_batch_start(self, batch, batch_idx):
-        # x-axis is global_step (not epoch) so schedules advance per optimizer step.
-        self.loss_weight_schedule_collection.update_loss_weights(self.global_step)
-        self.log_dict(
-            {
-                f"scheduled_w/{name}": self.loss_weight_schedule_collection[name]
-                for name in self.loss_weight_schedule_collection
-            }
+        # Scheduled on global_step, not epoch, so it advances per optimizer step.
+        self.log(
+            "scheduled_w/gmean_temperature", self.gmean_temperature(self.global_step)
         )
-
-    def on_validation_epoch_start(self):
-        self.loss_weight_schedule_collection.update_loss_weights(self.global_step)
 
     def _log_noise(self, batch_s1) -> None:
         if hasattr(batch_s1, "num_flips_added"):

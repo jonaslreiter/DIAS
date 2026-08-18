@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from dias.models.preconditions import soft_conjunction
 from dias.models.utils import batched_sinkhorn_d1d2
-from dias.utils import gmean
 
 
 class PredictionModule(nn.Module):
@@ -242,7 +242,7 @@ class PredictionModule(nn.Module):
         precond_fulfilled = (
             (1 - pos_proj * (1 - adj_batch)) * (1 - neg_proj * adj_batch)
         ).flatten(start_dim=1)
-        pre = gmean(
+        pre = soft_conjunction(
             precond_fulfilled, dim=-1, temperature=gmean_temperature + self.gmean_offset
         )
         self._last_pre_mean = pre.mean().detach()

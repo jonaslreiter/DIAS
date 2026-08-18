@@ -6,6 +6,7 @@ import torch
 from torch_geometric.data import Batch, Data
 
 from dias.models.dias import DIAS
+from dias.schedules import Exponential
 
 
 def make_batch(action_args=(0, 1), changed=False):
@@ -81,15 +82,25 @@ class DIASModelTest(unittest.TestCase):
         )
         self.assertEqual(per_action.num_slots, 1)
 
-    def test_constructor_uses_default_argument_positions_and_custom_schedule(self):
-        model = self.make_model(
-            action_arg_positions=None,
-            loss_weight_schedule={
-                "learning_rate": {"type": "linear", "keypoints": {0: 0.2}}
+    def test_constructor_defaults_the_argument_positions_to_none(self):
+        model = self.make_model(action_arg_positions=None)
+        self.assertEqual(model.num_action_relations, 0)
+
+    def test_the_tau_schedule_is_kept_as_given(self):
+        model = self.make_model(gmean_temperature=Exponential(v0=1.0, vT=0.1, T=10))
+        self.assertEqual(model.gmean_temperature, Exponential(1.0, 0.1, 10))
+        self.assertAlmostEqual(model.gmean_temperature(10), 0.1)
+
+    def test_the_tau_schedule_is_stored_as_primitives(self):
+        """A dataclass here would make the checkpoint unloadable."""
+        model = self.make_model(gmean_temperature=Exponential(v0=1.0, vT=0.1, T=10))
+        self.assertEqual(
+            model.hparams["gmean_temperature"],
+            {
+                "class_path": "dias.schedules.Exponential",
+                "init_args": {"v0": 1.0, "vT": 0.1, "T": 10},
             },
         )
-        self.assertEqual(model.num_action_relations, 0)
-        self.assertEqual(model.loss_weight_schedule_collection["learning_rate"], 0.2)
 
     def test_forward_handles_action_argument_padding_truncation_and_changes(self):
         model = self.make_model(force_action_args=True)
@@ -135,19 +146,21 @@ class DIASModelTest(unittest.TestCase):
         self.assertTrue(torch.isfinite(test_loss))
         self.assertEqual(model.log_results.call_count, 2)
 
-    def test_optimizer_and_schedule_hooks_update_and_log(self):
+    def test_optimizer_uses_the_configured_learning_rate(self):
         model = self.make_model()
         optimizer = model.configure_optimizers()
         self.assertEqual(optimizer.param_groups[0]["lr"], model.learning_rate)
-        model.optimizers = Mock(return_value=optimizer)
-        model.log_dict = Mock()
+
+    def test_the_scheduled_tau_is_logged_for_the_current_step(self):
+        model = self.make_model(gmean_temperature=Exponential(v0=1.0, vT=0.1, T=10))
+        model.log = Mock()
         with patch.object(
-            type(model), "global_step", new_callable=lambda: property(lambda self: 0)
+            type(model), "global_step", new_callable=lambda: property(lambda self: 10)
         ):
             model.on_train_batch_start(None, 0)
-        self.assertEqual(optimizer.param_groups[0]["lr"], 0.01)
-        model.log_dict.assert_called_once()
-        model.on_validation_epoch_start()
+        name, value = model.log.call_args.args
+        self.assertEqual(name, "scheduled_w/gmean_temperature")
+        self.assertAlmostEqual(value, 0.1)
 
     def test_label_names_are_cached_and_noise_fields_are_logged(self):
         model = self.make_model()

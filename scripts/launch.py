@@ -86,7 +86,6 @@ Examples
 from __future__ import annotations
 
 import argparse
-import copy
 import shlex
 import subprocess
 import sys
@@ -119,9 +118,8 @@ ABLATION_OVERLAYS = {
     "no-pcgrad": EXPERIMENTS_DIR / "ablation-no-pcgrad.yaml",
     "no-random-embeddings": EXPERIMENTS_DIR / "ablation-no-random-embeddings.yaml",
 }
-# Lightning key of the whole loss-weight schedule dict; the gmean-temperature
-# axis lives inside it (see _sweep_override_args).
-SCHEDULE_KEY = "model.init_args.loss_weight_schedule"
+# The tau schedule is a typed dataclass, so its fields are ordinary dotted keys.
+SCHEDULE_KEY = "model.init_args.gmean_temperature"
 
 
 @dataclass(frozen=True)
@@ -195,10 +193,10 @@ SWEEP_AXES: dict[str, SweepAxis] = {
         default=5,
         cast=int,
     ),
-    # T = 0 is a special point: constant tau = 0 from step 0, i.e. the exact
-    # precondition product instead of a relaxation (see _sweep_override_args).
+    # T = 0 means tau = 0 from step 0, i.e. the exact precondition product
+    # rather than a relaxation (Exponential handles the degenerate case).
     "gmean-temperature": SweepAxis(
-        param=f"{SCHEDULE_KEY}.gmean_temperature.T",
+        param=f"{SCHEDULE_KEY}.init_args.T",
         tag="gmeanT",
         values=(0, 100, 500, 1000, 5000),
         default=500,
@@ -263,34 +261,10 @@ def _config_value(cfg: dict, dotted_key: str):
     return node
 
 
-def _sweep_override_args(axis: SweepAxis, value: float, train_cfg: dict) -> list[str]:
+def _sweep_override_args(axis: SweepAxis, value: float) -> list[str]:
     """Lightning args pinning ``axis`` to ``value`` (appended last, so they win)."""
     extra = axis.linked(value) if axis.linked else {}
     linked = [f"--{k}={v:g}" for k, v in extra.items()]
-    if axis.param.startswith(f"{SCHEDULE_KEY}."):
-        # jsonargparse rebuilds a dict-typed argument from scratch when a
-        # sub-key is set on the command line, so passing
-        # `--...loss_weight_schedule.gmean_temperature.T=100` would silently
-        # drop type/v0/vT. Send the whole schedule with the value substituted.
-        schedule = copy.deepcopy(_config_value(train_cfg, SCHEDULE_KEY))
-        *path, leaf = axis.param[len(SCHEDULE_KEY) + 1 :].split(".")
-        node = schedule
-        for part in path:
-            node = node[part]
-        if leaf == "T" and axis.cast(value) == 0:
-            # T = 0 is the limit of the exponential decay: the scheduled value
-            # is 0 from step 0 on (v0 * (vT/v0)**(step/T) -> 0 as T -> 0+), and
-            # gmean's divisor becomes 1, i.e. the exact precondition product
-            # instead of a relaxation. Expressed as a constant schedule because
-            # the exponential form would divide by T.
-            node.clear()
-            node.update({"type": "linear", "keypoints": {0: 0.0}})
-        else:
-            node[leaf] = axis.cast(value)
-        # YAML flow style, not JSON: `keypoints` is keyed by int step, and JSON
-        # would stringify those keys (LossWeightSchedule then compares int to str).
-        dumped = yaml.safe_dump(schedule, default_flow_style=True, width=10**9)
-        return [f"--{SCHEDULE_KEY}={dumped.strip()}", *linked]
     return [f"--{axis.param}={value:g}", *linked]
 
 
@@ -324,12 +298,6 @@ def _check_sweep_config(
     # parameters (the noise overlay replaces the whole schedule, for instance).
     for path in paths + overlays:
         cfg = _load_yaml(path) or {}
-        in_schedule = axis.param.startswith(f"{SCHEDULE_KEY}.")
-        if in_schedule and _config_value(cfg, SCHEDULE_KEY):
-            raise SystemExit(
-                f"--sweep {axis_name}: {path} overrides {SCHEDULE_KEY}, which "
-                "the sweep replaces wholesale"
-            )
         if reuse_default and _config_value(cfg, axis.param) is not None:
             raise SystemExit(
                 f"--reuse-default: {path} overrides {axis.param}, so "
@@ -780,7 +748,7 @@ def main() -> int:
             points.append(
                 (
                     name,
-                    extra + _sweep_override_args(axis, v, train_cfg),
+                    extra + _sweep_override_args(axis, v),
                     name == args.reuse_default,
                 )
             )

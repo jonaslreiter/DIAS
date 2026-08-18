@@ -62,16 +62,16 @@ def save(directory: Path, model, model_hparams: dict, model_id: str = "run0") ->
     """Write `model` where the validators expect to find a finished run."""
     checkpoints = directory / "dias" / model_id / "checkpoints"
     checkpoints.mkdir(parents=True)
-    torch.save(
-        {
-            "state_dict": model.state_dict(),
-            "hyper_parameters": model_hparams,
-            "datamodule_hyper_parameters": datamodule_hparams(),
-            "pytorch-lightning_version": "2.6.1",
-            "epoch": 1,
-            "global_step": 10,
-        },
-        checkpoints / "best-epoch=1-step=10.ckpt",
-    )
+    checkpoint = {
+        "state_dict": model.state_dict(),
+        "hyper_parameters": dict(model.hparams),
+        "datamodule_hyper_parameters": datamodule_hparams(),
+        "pytorch-lightning_version": "2.6.1",
+        "epoch": 1,
+        "global_step": 10,
+    }
+    # Stamped the way Lightning would, so it is not mistaken for a v1 file.
+    model.on_save_checkpoint(checkpoint)
+    torch.save(checkpoint, checkpoints / "best-epoch=1-step=10.ckpt")
     model.teardown("build")
     return model_id
