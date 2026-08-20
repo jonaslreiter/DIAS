@@ -4,6 +4,10 @@ import logging
 import random
 from collections import deque
 
+import torch
+
+from dias.schema.domain import tensor_relations
+
 logger = logging.getLogger(__name__)
 
 
@@ -18,47 +22,6 @@ def state_to_dict(state, include_statics=False):
             [t.get_index() for t in atom.get_terms()]
         )
     return result
-
-
-def get_metadata(domain, problem):
-    """Domain / problem metadata used downstream."""
-    objects = {str(o.get_index()): o.get_name() for o in problem.get_objects()}
-    object_name_to_idx = {o.get_name(): o.get_index() for o in problem.get_objects()}
-    predicates = sorted(
-        (
-            {"name": p.get_name(), "arity": p.get_arity(), "static": p.is_static()}
-            for p in domain.get_predicates()
-        ),
-        key=lambda p: p["name"],
-    )
-    actions = [
-        {"name": a.get_name(), "arity": a.get_arity()} for a in domain.get_actions()
-    ]
-    return {
-        "domain_name": domain.get_name(),
-        "objects": objects,
-        "object_name_to_idx": object_name_to_idx,
-        "num_objects": len(objects),
-        "predicates": predicates,
-        "actions": actions,
-    }
-
-
-def filter_predicates_for_tensor_relations(
-    predicates, *, include_statics=False, default_statics=None
-):
-    """Predicates kept as tensor relation channels (arity <= 2, static filter)."""
-    default_statics = default_statics or ["number", "object"]
-    keep = []
-    for p in predicates:
-        if p["arity"] > 2:
-            continue
-        if not include_statics and p["static"]:
-            continue
-        if include_statics and p["static"] and p["name"] in default_statics:
-            continue
-        keep.append(p)
-    return keep
 
 
 def _applicable_map(actions):
@@ -190,9 +153,7 @@ def samples_to_tensors(
     default_statics: list[str] = ["number", "object"],
 ):
     """Convert samples to adjacency-matrix tensors of shape [N, R, O, O]."""
-    import torch
-
-    relation_info = filter_predicates_for_tensor_relations(
+    relation_info = tensor_relations(
         metadata["predicates"],
         include_statics=include_statics,
         default_statics=default_statics,

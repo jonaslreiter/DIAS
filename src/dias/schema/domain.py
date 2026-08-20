@@ -58,10 +58,8 @@ class DomainSchema:
         default_statics: Sequence[str] | None = None,
         action_arg_positions: Sequence[Sequence[int]] | None = None,
     ) -> "DomainSchema":
-        """Build from the raw dict `generate_samples.get_metadata` returns."""
-        from dias.data.generate_samples import filter_predicates_for_tensor_relations
-
-        relations = filter_predicates_for_tensor_relations(
+        """Build from the raw dict `read_metadata` returns."""
+        relations = tensor_relations(
             metadata["predicates"],
             include_statics=include_statics,
             default_statics=list(default_statics or DEFAULT_STATICS),
@@ -93,16 +91,14 @@ class DomainSchema:
     ) -> "DomainSchema":
         import pymimir
 
-        from dias.data.generate_samples import get_metadata
-
         domain = pymimir.Domain(Path(domain_path))
         problem = pymimir.Problem(domain, Path(problem_path))
-        metadata = get_metadata(domain, problem)
+        metadata = read_metadata(domain, problem)
         return cls.from_metadata(
             metadata,
             include_statics=include_statics,
             default_statics=default_statics,
-            action_arg_positions=_argument_positions(
+            action_arg_positions=argument_positions(
                 metadata["actions"],
                 domain_path=domain_path,
                 action_arguments=action_arguments,
@@ -124,7 +120,7 @@ class DomainSchema:
         )
 
 
-def _argument_positions(
+def argument_positions(
     actions: Sequence[Mapping],
     *,
     domain_path: str | Path,
@@ -135,8 +131,70 @@ def _argument_positions(
     if not action_arguments:
         return [() for _ in actions]
     if strips_plus_actions:
-        from dias.data.datamodule import PddlGraphDataModule
-
-        free = PddlGraphDataModule._load_strips_plus_yaml(domain_path)
+        free = strips_plus_arguments(domain_path)
         return [tuple(sorted(free.get(a["name"], []))) for a in actions]
     return [tuple(range(a["arity"])) for a in actions]
+
+
+def read_metadata(domain, problem) -> dict:
+    """The raw lists a pymimir domain and problem describe themselves with."""
+    objects = {str(o.get_index()): o.get_name() for o in problem.get_objects()}
+    object_name_to_idx = {o.get_name(): o.get_index() for o in problem.get_objects()}
+    predicates = sorted(
+        (
+            {"name": p.get_name(), "arity": p.get_arity(), "static": p.is_static()}
+            for p in domain.get_predicates()
+        ),
+        key=lambda p: p["name"],
+    )
+    actions = [
+        {"name": a.get_name(), "arity": a.get_arity()} for a in domain.get_actions()
+    ]
+    return {
+        "domain_name": domain.get_name(),
+        "objects": objects,
+        "object_name_to_idx": object_name_to_idx,
+        "num_objects": len(objects),
+        "predicates": predicates,
+        "actions": actions,
+    }
+
+
+def tensor_relations(
+    predicates: Sequence[Mapping],
+    *,
+    include_statics: bool = False,
+    default_statics: Sequence[str] | None = None,
+) -> list[Mapping]:
+    """The predicates that become channels of the adjacency tensor.
+
+    Arity above two has no dense representation, and a static predicate is a
+    property of the instance rather than of its state -- except when statics
+    are asked for, where the ones every domain declares are dropped anyway.
+    """
+    default_statics = default_statics or DEFAULT_STATICS
+    keep = []
+    for p in predicates:
+        if p["arity"] > 2:
+            continue
+        if not include_statics and p["static"]:
+            continue
+        if include_statics and p["static"] and p["name"] in default_statics:
+            continue
+        keep.append(p)
+    return keep
+
+
+def strips_plus_arguments(domain_path: str | Path) -> dict[str, list[int]]:
+    """Per action, which argument positions a STRIPS+ domain leaves free."""
+    import yaml
+
+    yaml_path = Path(domain_path).parent / "strips+.yaml"
+    if not yaml_path.exists():
+        raise FileNotFoundError(
+            f"No strips+.yaml file found in {Path(domain_path).parent}. "
+            f"Required when strips_plus_actions=True."
+        )
+    with open(yaml_path) as f:
+        yaml_data = yaml.safe_load(f) or {}
+    return {name: (lst[0] if lst else []) for name, lst in yaml_data.items()}

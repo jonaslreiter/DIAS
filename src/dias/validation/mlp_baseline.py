@@ -11,7 +11,6 @@ from pymimir.advanced.formalism import FluentGroundAtomList, ObjectList
 from pymimir.wrapper_formalism import State
 from tqdm import tqdm
 
-from dias.data.datamodule import PddlGraphDataModule
 from dias.pddl import text as pddl_text
 from dias.pddl.transpiler import PDDLTranspiler
 from dias.pddl.untype import (
@@ -188,9 +187,7 @@ class ModelValidation:
             )
 
         free_pos_map = (
-            PddlGraphDataModule._load_strips_plus_yaml(
-                datamodule_hparams["domain_path"]
-            )
+            strips_plus_arguments(datamodule_hparams["domain_path"])
             if datamodule_hparams.get("strips_plus_actions", False)
             else {}
         )

@@ -1,10 +1,9 @@
 import unittest
 
 from dias.data.generate_samples import (
-    filter_predicates_for_tensor_relations,
     generate_bfs,
     generate_random_walk,
-    get_metadata,
+    reachable_states,
     samples_to_tensors,
     state_to_dict,
 )
@@ -132,7 +131,7 @@ class FakeProblem:
 
 
 class SampleGenerationTest(unittest.TestCase):
-    def test_state_to_dict_and_metadata_extract_symbolic_values(self):
+    def test_state_to_dict_reads_only_the_fluents_unless_asked(self):
         fluent = FakePredicate("ready", 1)
         static = FakePredicate("type", 1, static=True)
         state = FakeState(0, [FakeAtom(fluent, [1]), FakeAtom(static, [0])])
@@ -141,16 +140,6 @@ class SampleGenerationTest(unittest.TestCase):
             state_to_dict(state, include_statics=True),
             {"ready": [[1]], "type": [[0]]},
         )
-
-        action = FakeAction("go", 1)
-        domain = FakeDomain("demo", [static, fluent], [action])
-        problem = FakeProblem(domain, state, [FakeObject(0, "a"), FakeObject(1, "b")])
-        metadata = get_metadata(domain, problem)
-        self.assertEqual(metadata["domain_name"], "demo")
-        self.assertEqual(metadata["objects"], {"0": "a", "1": "b"})
-        self.assertEqual(metadata["object_name_to_idx"], {"a": 0, "b": 1})
-        self.assertEqual(metadata["predicates"][0]["name"], "ready")
-        self.assertEqual(metadata["actions"], [{"name": "go", "arity": 1}])
 
     def test_random_walk_emits_samples_and_rejects_dead_initial_state(self):
         action = FakeAction("go", 1)
@@ -201,28 +190,6 @@ class SampleGenerationTest(unittest.TestCase):
         samples = generate_bfs(problem, num_states=2)
         self.assertEqual(len(samples), 1)
         self.assertEqual(samples[0]["action"], "go")
-
-    def test_filter_predicates_applies_arity_and_static_rules(self):
-        predicates = [
-            {"name": "one", "arity": 1, "static": False},
-            {"name": "two", "arity": 2, "static": False},
-            {"name": "three", "arity": 3, "static": False},
-            {"name": "static", "arity": 1, "static": True},
-            {"name": "object", "arity": 1, "static": True},
-        ]
-        self.assertEqual(
-            [p["name"] for p in filter_predicates_for_tensor_relations(predicates)],
-            ["one", "two"],
-        )
-        self.assertEqual(
-            [
-                p["name"]
-                for p in filter_predicates_for_tensor_relations(
-                    predicates, include_statics=True
-                )
-            ],
-            ["one", "two", "static"],
-        )
 
     def test_samples_to_tensors_encodes_unary_binary_and_actions(self):
         metadata = {

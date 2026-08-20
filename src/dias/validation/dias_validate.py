@@ -4,7 +4,6 @@ from pathlib import Path
 
 import pymimir
 
-from dias.data.datamodule import PddlGraphDataModule
 from dias.pddl import text as pddl_text
 from dias.pddl.transpiler import PDDLTranspiler
 from dias.pddl.untype import (
@@ -13,6 +12,7 @@ from dias.pddl.untype import (
     strip_problem_types,
     untype_action,
 )
+from dias.schema.domain import strips_plus_arguments
 
 from .artifacts import PddlWorkspace
 from .checkpoint import load_run
@@ -78,7 +78,7 @@ class ModelValidation:
             action_arguments=hparams.get("action_arguments", False),
             strips_plus_actions=hparams.get("strips_plus_actions", False),
             free_pos_map=(
-                PddlGraphDataModule._load_strips_plus_yaml(run.domain_path)
+                strips_plus_arguments(run.domain_path)
                 if hparams.get("strips_plus_actions", False)
                 else {}
             ),

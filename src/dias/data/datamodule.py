@@ -22,9 +22,13 @@ from dias.data.splitting import (
 )
 from dias.hparams import from_mapping, to_mapping
 from dias.schema import DomainSchema
+from dias.schema.domain import (
+    argument_positions,
+    read_metadata,
+    strips_plus_arguments,
+)
 
-from ..schema.domain import _argument_positions
-from .generate_samples import generate_random_walk, get_metadata, samples_to_tensors
+from .generate_samples import generate_random_walk, samples_to_tensors
 
 logger = logging.getLogger(__name__)
 
@@ -106,12 +110,12 @@ class PddlGraphDataModule(L.LightningDataModule):
         logger.info("Loading domain %s, problem %s", domain_path, problem_path)
         self.domain = pymimir.Domain(Path(domain_path))
         self.problem = pymimir.Problem(self.domain, Path(problem_path))
-        self.metadata = get_metadata(self.domain, self.problem)
+        self.metadata = read_metadata(self.domain, self.problem)
         self.schema = DomainSchema.from_metadata(
             self.metadata,
             include_statics=self.include_statics,
             default_statics=self.default_statics,
-            action_arg_positions=_argument_positions(
+            action_arg_positions=argument_positions(
                 self.metadata["actions"],
                 domain_path=domain_path,
                 action_arguments=self.action_arguments,
@@ -339,7 +343,7 @@ class PddlGraphDataModule(L.LightningDataModule):
 
     def _postprocess_action_args(self, samples: list[dict]) -> None:
         if self.action_arguments and self.strips_plus_actions:
-            free = self._load_strips_plus_yaml(self.domain_path)
+            free = strips_plus_arguments(self.domain_path)
             for s in samples:
                 allowed = free.get(s["action"], [])
                 s["action_args"] = [
@@ -433,18 +437,3 @@ class PddlGraphDataModule(L.LightningDataModule):
 
     def val_dataloader(self):
         return self._make_loader(self._valid_ds, shuffle=False)
-
-    @staticmethod
-    def _load_strips_plus_yaml(domain_path) -> dict[str, list[int]]:
-        """Action name -> list of argument positions free to vary."""
-        import yaml
-
-        yaml_path = Path(domain_path).parent / "strips+.yaml"
-        if not yaml_path.exists():
-            raise FileNotFoundError(
-                f"No strips+.yaml file found in {Path(domain_path).parent}. "
-                f"Required when strips_plus_actions=True."
-            )
-        with open(yaml_path) as f:
-            yaml_data = yaml.safe_load(f) or {}
-        return {name: (lst[0] if lst else []) for name, lst in yaml_data.items()}
