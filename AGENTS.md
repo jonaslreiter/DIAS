@@ -56,7 +56,9 @@ When working on data generation or dataset code, preserve these assumptions unle
 ## Core Code Map
 
 - `src/dias/main.py`: Lightning CLI entry point for training.
-- `src/dias/data/datamodule.py`: PDDL loading, metadata extraction, sampling constraints, dataset construction, batching strategy, and optional adjacency noise (`data.init_args.noise`, one of `noise.Ratio` / `noise.ExpectedCount`).
+- `src/dias/data/datamodule.py`: the Lightning datamodule — PDDL loading, metadata extraction, sampling constraints, and the dataloaders. It composes the modules below rather than implementing them.
+- `src/dias/data/datasets.py`: `PddlTransitionDataset` (the sampled transitions as dense tensors) and the two views onto it — `PddlGraphDataset` (an index list) and `StratifiedActionIterableDataset` (an endless action-balanced stream). `_build_sample` is the one place a transition becomes the pair of PyG graphs a step consumes, and attaches the noise flip counts when the sample was corrupted.
+- `src/dias/data/splitting.py`: `cap_per_label`, `stratified_split` and `check_every_action_survives` — the action-stratified train/validation division, as functions of the action index tensor.
 - `src/dias/data/generate_samples.py`: symbolic sample generation utilities.
 - `src/dias/models/dias.py`: the LightningModule — wiring, hooks, losses, and the two supported ways to read a trained model: `schema_logits()` (the lifted schema, arity-masked) and `effect_logits(adjacency, selection, y_action)` (the state-dependent effects the MLP baseline needs). Nothing outside `models/` touches `graph_edit`.
 - `src/dias/models/encoder.py`: `RelationalEncoder` (was `gnn.GNNModule`) — the relational convolutions, in `ModuleList`s, plus `initial_features` (where an object starts before message passing, and the `random_node_embeddings` ablation).

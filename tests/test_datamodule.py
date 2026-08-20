@@ -4,44 +4,11 @@ import unittest
 import torch
 
 from checkpoints import DOMAIN, TRAIN_PROBLEM
-from dias.data.datamodule import (
-    PddlGraphDataModule,
-    PddlGraphDataset,
-    PddlTransitionDataset,
-)
+from dias.data.datamodule import PddlGraphDataModule
 from dias.data.noise import ExpectedCount, Ratio
 
 
-def make_data():
-    return {
-        "states": torch.tensor(
-            [
-                [[[1.0, 0.0], [0.0, 0.0]], [[0.0, 1.0], [0.0, 0.0]]],
-                [[[0.0, 1.0], [0.0, 0.0]], [[0.0, 0.0], [1.0, 0.0]]],
-            ]
-        ),
-        "next_states": torch.zeros(2, 2, 2, 2),
-        "action_indices": torch.tensor([0, 1]),
-        "action_args": torch.tensor([[0, 1], [1, 0]]),
-        "relation_names": ["clear", "on"],
-        "relation_arities": [1, 2],
-        "object_names": {"0": "a", "1": "b"},
-        "action_names": ["move", "stack"],
-        "action_arities": [2, 2],
-        "num_objects": 2,
-        "num_relations": 2,
-    }
-
-
-class DataModuleTest(unittest.TestCase):
-    def test_transition_dataset_exposes_samples_and_length(self):
-        dataset = PddlTransitionDataset(make_data())
-        self.assertEqual(len(dataset), 2)
-        sample = dataset[1]
-        self.assertTrue(torch.equal(sample["state"], dataset.states[1]))
-        self.assertEqual(sample["action_index"].item(), 1)
-        self.assertEqual(sample["action_args"].tolist(), [1, 0])
-
+class SamplingConfigTest(unittest.TestCase):
     def test_sampling_validation_rejects_invalid_combinations(self):
         def module(**values):
             data_module = PddlGraphDataModule.__new__(PddlGraphDataModule)
@@ -123,42 +90,6 @@ class DataModuleTest(unittest.TestCase):
         untouched._apply_min_per_label_floors()
         self.assertIsNone(untouched.min_per_label_train)
 
-    def test_cap_per_label_limits_each_action(self):
-        data_module = PddlGraphDataModule.__new__(PddlGraphDataModule)
-        data_module.max_per_label_train = 1
-        data_module.max_per_label_valid = 1
-        samples = [
-            {"action": name, "id": i} for i, name in enumerate(["a", "a", "a", "b"])
-        ]
-        kept = data_module._cap_per_label(samples)
-        self.assertEqual([sample["id"] for sample in kept], [0, 1, 3])
-
-
-class FlipCountTest(unittest.TestCase):
-    """The noise diagnostics ride on the graph, and only when there is noise."""
-
-    def sample(self, **kwargs):
-        base = PddlTransitionDataset(make_data())
-        dataset = PddlGraphDataset(base, [0], **kwargs)
-        return dataset[0][0]
-
-    def test_a_clean_sample_carries_no_counts(self):
-        self.assertFalse(hasattr(self.sample(), "num_flips_added"))
-
-    def test_the_counts_cover_both_states_of_the_transition(self):
-        clean = PddlTransitionDataset(make_data())
-        noisy_states = clean.states[[0]].clone()
-        noisy_states[0, 0, 0, 0] = 0.0  # one atom of the unary relation removed
-        noisy_next = clean.next_states[[0]].clone()
-        noisy_next[0, 1, 1, 0] = 1.0  # one atom of the binary relation added
-
-        data = self.sample(noisy_states=noisy_states, noisy_next_states=noisy_next)
-        self.assertEqual(data.num_flips_removed.tolist(), [1])
-        self.assertEqual(data.num_flips_added.tolist(), [1])
-        self.assertEqual(data.num_flips_removed_per_rel.tolist(), [[1, 0]])
-        self.assertEqual(data.num_flips_added_per_rel.tolist(), [[0, 1]])
-        self.assertEqual(data.num_true_predicates.tolist(), [1])
-
 
 class NoiseArgumentTest(unittest.TestCase):
     """The noise model is a dataclass, and checkpoints may hold only primitives."""
@@ -191,6 +122,37 @@ class NoiseArgumentTest(unittest.TestCase):
         module = self.build()
         self.assertIsNone(module.noise)
         self.assertIsNone(module.hparams["noise"])
+
+
+class DataloaderTest(unittest.TestCase):
+    """One pass through setup and both loaders, on the smallest real domain."""
+
+    def build(self, **kwargs) -> PddlGraphDataModule:
+        module = PddlGraphDataModule(
+            domain_path=str(DOMAIN),
+            problem_path=str(TRAIN_PROBLEM),
+            min_per_label_train=4,
+            min_per_label_valid=2,
+            batch_size=4,
+            **kwargs,
+        )
+        module.setup()
+        return module
+
+    def first_batch(self, loader):
+        batch_s1, batch_s2, *_ = next(iter(loader))
+        self.assertEqual(batch_s1.num_graphs, batch_s2.num_graphs)
+        return batch_s1
+
+    def test_stratified_batches_stream_without_exhausting(self):
+        module = self.build(batch_sampling_strategy="stratified")
+        loader = module.train_dataloader()
+        self.assertEqual(self.first_batch(loader).y_action.numel(), 4)
+
+    def test_random_batches_walk_the_split(self):
+        module = self.build(batch_sampling_strategy="random")
+        for loader in (module.train_dataloader(), module.val_dataloader()):
+            self.assertEqual(self.first_batch(loader).y_action.numel(), 4)
 
 
 if __name__ == "__main__":

@@ -6,11 +6,20 @@ from typing import Optional
 import lightning as L
 import pymimir
 import torch
-from torch.utils.data import Dataset, IterableDataset
+from torch.utils.data import IterableDataset
 from torch_geometric.loader import DataLoader as PyGDataLoader
 
-from dias.adjacency import adj_to_pyg_data
+from dias.data.datasets import (
+    PddlGraphDataset,
+    PddlTransitionDataset,
+    StratifiedActionIterableDataset,
+)
 from dias.data.noise import ExpectedCount, NoiseModel, Ratio, RelationStats
+from dias.data.splitting import (
+    cap_per_label,
+    check_every_action_survives,
+    stratified_split,
+)
 from dias.hparams import from_mapping, to_mapping
 from dias.schema import DomainSchema
 
@@ -18,178 +27,6 @@ from ..schema.domain import _argument_positions
 from .generate_samples import generate_random_walk, get_metadata, samples_to_tensors
 
 logger = logging.getLogger(__name__)
-
-
-def _attach_flip_counts(data, transition, clean, num_relations: int) -> None:
-    """Record what the noise changed, for the training-time diagnostics.
-
-    These ride on the graph as plain tensors because that is what PyG collates
-    across a batch; `DIAS._log_noise` reads them back per step. A clean sample
-    gets none of them, and nothing to log.
-    """
-    added = torch.zeros(num_relations, dtype=torch.long)
-    removed = torch.zeros_like(added)
-    for noisy, original in zip(transition, clean):
-        difference = noisy - original
-        added += (difference > 0).sum(dim=(1, 2))
-        removed += (difference < 0).sum(dim=(1, 2))
-
-    data.num_flips_added_per_rel = added[None, :]
-    data.num_flips_removed_per_rel = removed[None, :]
-    data.num_flips_added = added.sum().reshape(1)
-    data.num_flips_removed = removed.sum().reshape(1)
-    # The count the flips are to be read against.
-    data.num_true_predicates = transition[0].sum().long().reshape(1)
-
-
-def _build_sample(
-    base: "PddlTransitionDataset",
-    real_idx: int,
-    noisy_state: Optional[torch.Tensor],
-    noisy_next: Optional[torch.Tensor],
-    idx_tensor: torch.Tensor,
-):
-    sample = base[real_idx]
-    clean = (sample["state"], sample["next_state"])
-    transition = (
-        clean[0] if noisy_state is None else noisy_state,
-        clean[1] if noisy_next is None else noisy_next,
-    )
-
-    data_s1, data_s2 = [
-        adj_to_pyg_data(state, base.num_objects) for state in transition
-    ]
-    data_s1.y_action = sample["action_index"]
-    data_s1.y_action_args = sample["action_args"].unsqueeze(0)
-    if noisy_state is not None or noisy_next is not None:
-        _attach_flip_counts(data_s1, transition, clean, base.num_relations)
-
-    return (
-        data_s1,
-        data_s2,
-        idx_tensor,
-        *transition,
-        sample["action_index"],
-        sample["action_args"],
-    )
-
-
-class StratifiedActionIterableDataset(IterableDataset):
-    """Infinite stream of action-stratified samples drawn with replacement."""
-
-    def __init__(
-        self,
-        base: "PddlTransitionDataset",
-        indices: list[int],
-        batch_size: int,
-        seed: int = 0,
-        noisy_states: Optional[torch.Tensor] = None,
-        noisy_next_states: Optional[torch.Tensor] = None,
-    ):
-        super().__init__()
-        if not indices:
-            raise ValueError("StratifiedActionIterableDataset: empty data pool.")
-        self.base = base
-        self.indices = list(indices)
-        self.batch_size = int(batch_size)
-        self.seed = int(seed)
-        self.noisy_states = noisy_states
-        self.noisy_next_states = noisy_next_states
-
-        labels = base.action_indices[torch.tensor(self.indices)].tolist()
-        self.per_action: dict[int, list[int]] = {}
-        for pos, a in enumerate(labels):
-            self.per_action.setdefault(a, []).append(pos)
-        self.actions = sorted(self.per_action.keys())
-
-    def __iter__(self):
-        info = torch.utils.data.get_worker_info()
-        worker_id = info.id if info is not None else 0
-        gen = torch.Generator().manual_seed(self.seed + worker_id + 1)
-        K = len(self.actions)
-        base_cnt, remainder = divmod(self.batch_size, K)
-
-        while True:
-            order = [self.actions[i] for i in torch.randperm(K, generator=gen).tolist()]
-            for i, a in enumerate(order):
-                n = base_cnt + (1 if i < remainder else 0)
-                if n == 0:
-                    continue
-                pool = self.per_action[a]
-                picks = torch.randint(len(pool), (n,), generator=gen).tolist()
-                for p in picks:
-                    yield _build_sample(
-                        self.base,
-                        self.indices[pool[p]],
-                        (
-                            self.noisy_states[pool[p]]
-                            if self.noisy_states is not None
-                            else None
-                        ),
-                        (
-                            self.noisy_next_states[pool[p]]
-                            if self.noisy_next_states is not None
-                            else None
-                        ),
-                        torch.tensor(self.indices[pool[p]]),
-                    )
-
-
-class PddlTransitionDataset(Dataset):
-    """Pre-computed adjacency tensors as a map-style Dataset."""
-
-    def __init__(self, data: dict):
-        self.states: torch.Tensor = data["states"]
-        self.next_states: torch.Tensor = data["next_states"]
-        self.action_indices: torch.Tensor = data["action_indices"]
-        self.action_args: torch.Tensor = data["action_args"]
-        self.relation_names: list[str] = data["relation_names"]
-        self.relation_arities: list[int] = data["relation_arities"]
-        self.object_names: dict = data["object_names"]
-        self.action_names: list[str] = data["action_names"]
-        self.action_arities: list[int] = data["action_arities"]
-        self.num_objects: int = data["num_objects"]
-        self.num_relations: int = data["num_relations"]
-
-    def __len__(self) -> int:
-        return self.states.shape[0]
-
-    def __getitem__(self, idx: int) -> dict:
-        return {
-            "state": self.states[idx],
-            "next_state": self.next_states[idx],
-            "action_index": self.action_indices[idx],
-            "action_args": self.action_args[idx],
-        }
-
-
-class PddlGraphDataset(Dataset):
-    """Map-style dataset returning PyG ``Data`` tuples."""
-
-    def __init__(
-        self,
-        base_dataset: PddlTransitionDataset,
-        indices: list[int],
-        noisy_states: Optional[torch.Tensor] = None,
-        noisy_next_states: Optional[torch.Tensor] = None,
-    ):
-        self.base = base_dataset
-        self.indices = indices
-        self.noisy_states = noisy_states
-        self.noisy_next_states = noisy_next_states
-
-    def __len__(self) -> int:
-        return len(self.indices)
-
-    def __getitem__(self, idx: int):
-        real_idx = self.indices[idx]
-        return _build_sample(
-            self.base,
-            real_idx,
-            self.noisy_states[idx] if self.noisy_states is not None else None,
-            self.noisy_next_states[idx] if self.noisy_next_states is not None else None,
-            torch.tensor([real_idx]),
-        )
 
 
 class PddlGraphDataModule(L.LightningDataModule):
@@ -438,7 +275,12 @@ class PddlGraphDataModule(L.LightningDataModule):
         self._base = PddlTransitionDataset(data)
 
         total = len(self._base)
-        self._train_idx, self._valid_idx = self._make_split(total)
+        self._train_idx, self._valid_idx = stratified_split(
+            self._base.action_indices,
+            self.num_train if self._has_num else self.min_per_label_train,
+            self.num_valid if self._has_num else self.min_per_label_valid,
+            self.seed,
+        )
         self.relation_stats = self._measure_relations()
         if total > 0:
             self._log_action_distribution()
@@ -446,7 +288,11 @@ class PddlGraphDataModule(L.LightningDataModule):
         train_noisy_s, train_noisy_ns = self._build_train_noise(self._train_idx)
 
         if self.batch_sampling_strategy == "stratified":
-            self._check_coverage()
+            check_every_action_survives(
+                self._base.action_indices,
+                self._base.action_names,
+                {"train": self._train_idx, "valid": self._valid_idx},
+            )
             self._train_ds = self._make_stratified(
                 self._train_idx, 2, train_noisy_s, train_noisy_ns
             )
@@ -486,31 +332,10 @@ class PddlGraphDataModule(L.LightningDataModule):
             include_statics=self.include_statics,
         )
         if self._has_max:
-            samples = self._cap_per_label(samples)
-        return samples
-
-    def _cap_per_label(self, samples: list[dict]) -> list[dict]:
-        cap = self.max_per_label_train + self.max_per_label_valid
-        kept_count: dict[str, int] = {}
-        dropped: dict[str, int] = {}
-        kept: list[dict] = []
-        for s in samples:
-            a = s["action"]
-            if kept_count.get(a, 0) < cap:
-                kept.append(s)
-                kept_count[a] = kept_count.get(a, 0) + 1
-            else:
-                dropped[a] = dropped.get(a, 0) + 1
-        if dropped:
-            logger.info(
-                "Capped per-label samples to %d (train=%s + valid=%s); "
-                "dropped per action: %s",
-                cap,
-                self.max_per_label_train,
-                self.max_per_label_valid,
-                dropped,
+            samples = cap_per_label(
+                samples, self.max_per_label_train + self.max_per_label_valid
             )
-        return kept
+        return samples
 
     def _postprocess_action_args(self, samples: list[dict]) -> None:
         if self.action_arguments and self.strips_plus_actions:
@@ -523,66 +348,6 @@ class PddlGraphDataModule(L.LightningDataModule):
         elif not self.action_arguments:
             for s in samples:
                 s["action_args"] = [-1] * len(s["action_args"])
-
-    def _make_split(self, total: int) -> tuple[list[int], list[int]]:
-        if total == 0:
-            return [], []
-        train_w = self.num_train if self._has_num else self.min_per_label_train
-        valid_w = self.num_valid if self._has_num else self.min_per_label_valid
-        n_train_target = int(round(total * train_w / (train_w + valid_w)))
-        n_train_target = max(1, min(total - 1, n_train_target))
-
-        g = torch.Generator().manual_seed(self.seed)
-        assert self._base is not None
-        by_action: dict[int, list[int]] = {}
-        for i, a in enumerate(self._base.action_indices.tolist()):
-            by_action.setdefault(a, []).append(i)
-
-        train_idx, valid_idx, pool, singletons = [], [], [], []
-        for idxs in by_action.values():
-            perm = torch.randperm(len(idxs), generator=g).tolist()
-            shuffled = [idxs[p] for p in perm]
-            if len(shuffled) >= 2:
-                train_idx.append(shuffled[0])
-                valid_idx.append(shuffled[1])
-                pool.extend(shuffled[2:])
-            else:
-                singletons.extend(shuffled)
-        train_idx.extend(singletons)
-
-        n_extra = min(max(0, n_train_target - len(train_idx)), len(pool))
-        perm = torch.randperm(len(pool), generator=g).tolist()
-        train_idx.extend(pool[p] for p in perm[:n_extra])
-        valid_idx.extend(pool[p] for p in perm[n_extra:])
-
-        logger.info(
-            "Split %d samples into train=%d, valid=%d at ratio %d:%d, "
-            "reserving one per action per split where there are at least two.",
-            total,
-            len(train_idx),
-            len(valid_idx),
-            train_w,
-            valid_w,
-        )
-        return train_idx, valid_idx
-
-    def _check_coverage(self) -> None:
-        assert self._base is not None
-        pool_actions = set(self._base.action_indices.tolist())
-        names = self._base.action_names
-        for split_name, idxs in (
-            ("train", self._train_idx),
-            ("valid", self._valid_idx),
-        ):
-            if not idxs:
-                continue
-            missing = pool_actions - set(self._base.action_indices[idxs].tolist())
-            if missing:
-                raise ValueError(
-                    f"Stratified '{split_name}' split is missing action(s) "
-                    f"{[names[m] for m in sorted(missing)]} that appear in the full pool. "
-                    f"Increase min_per_label_* / num_* or relax the train:valid ratio."
-                )
 
     def _build_train_noise(
         self, train_idx: list[int]
@@ -653,11 +418,12 @@ class PddlGraphDataModule(L.LightningDataModule):
             noisy_next_states=noisy_next_states,
         )
 
-    def _make_loader(self, ds, shuffle: bool):
+    def _make_loader(self, dataset, shuffle: bool):
         return PyGDataLoader(
-            ds,
+            dataset,
             batch_size=self.batch_size,
-            shuffle=shuffle and not isinstance(ds, IterableDataset),
+            # A stream decides its own order; the loader may not shuffle it.
+            shuffle=shuffle and not isinstance(dataset, IterableDataset),
             num_workers=self.num_workers,
             drop_last=False,
         )
