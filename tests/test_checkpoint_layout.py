@@ -235,6 +235,16 @@ class CheckpointLayoutTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Retrain"):
             DIAS.load_from_checkpoint(path, map_location="cpu")
 
+    def test_a_checkpoint_from_a_newer_dias_is_refused(self):
+        """Loading it as-is would mean guessing what its keys mean."""
+        directory = self.enterContext(tempfile.TemporaryDirectory())
+        path = Path(directory) / "future.ckpt"
+        checkpoint = build_v1_checkpoint()
+        checkpoint[VERSION_KEY] = CHECKPOINT_VERSION + 1
+        torch.save(checkpoint, path)
+        with self.assertRaisesRegex(ValueError, "newer version of dias"):
+            DIAS.load_from_checkpoint(path, map_location="cpu")
+
     def test_a_v1_checkpoint_missing_a_renamed_key_still_loads(self):
         """Not every old checkpoint contains everything a later version renamed."""
         directory = self.enterContext(tempfile.TemporaryDirectory())

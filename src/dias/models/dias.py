@@ -140,8 +140,8 @@ class DIAS(L.LightningModule):
         """
         checkpoint = torch.load(checkpoint_path, map_location="cpu")
         version = checkpoint.get(VERSION_KEY, 1)
-        if version < CHECKPOINT_VERSION:
-            logger.info("Migrating checkpoint from version %d.", version)
+        if version != CHECKPOINT_VERSION:
+            logger.info("Reading a checkpoint written in format %d.", version)
             checkpoint = migrate(checkpoint)
         buffer = io.BytesIO()
         torch.save(checkpoint, buffer)
