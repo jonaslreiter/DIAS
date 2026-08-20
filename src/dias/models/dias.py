@@ -1,6 +1,5 @@
 import io
 import logging
-import sys
 from typing import Mapping, Optional
 
 import lightning as L
@@ -18,6 +17,7 @@ from .objectives import DiasObjective, Losses
 from .outputs import SchemaLogits
 from .pcgrad import gradient_combiner
 from .prediction import PredictionModule
+from .selection import resolve_num_slots
 
 logger = logging.getLogger(__name__)
 
@@ -61,83 +61,51 @@ class DIAS(L.LightningModule):
         # which would make the whole checkpoint unloadable.
         self.hparams["gmean_temperature"] = schedule_config(self.gmean_temperature)
 
+        # Everything else is handed to the module that owns it; what is kept
+        # here is what something reads back later -- the losses, the optimizer,
+        # the plotting callback, and the validators.
         self.num_objects = num_objects
-        self.arity_relations = arity_relations
         self.num_actions = num_actions
-        self.object_dim = object_dim
+        self.num_relations = len(arity_relations)
+        self.num_slots = resolve_num_slots(
+            num_slots,
+            num_objects=num_objects,
+            action_arities=action_arities,
+            per_action_slots=per_action_slots,
+        )
+        self.force_action_args = force_action_args
         self.learning_rate = learning_rate
         self.aux_loss_weight = aux_loss_weight
         self.parameter_plotting = parameter_plotting
-        self.force_action_args = force_action_args
-        self.per_action_slots = per_action_slots
-        self.learn_preconditions = learn_preconditions
-        self.action_arities = action_arities
-        self.pcgrad_dyn_clip = pcgrad_dyn_clip
-        self.state_dependent_effects = state_dependent_effects
-        self.use_slot_weights = use_slot_weights
-        self.use_precondition_loss = use_precondition_loss
-        self.use_effect_loss = use_effect_loss
-        self.use_pcgrad = use_pcgrad
-
-        if self.per_action_slots:
-            assert (
-                action_arities is not None
-            ), "action_arities must be provided when per_action_slots=True"
-            self.num_slots = max(action_arities)
-        else:
-            assert (
-                num_slots is not None
-            ), "num_slots must be set explicitly when per_action_slots=False"
-            if action_arities is not None:
-                assert num_slots >= max(action_arities), (
-                    f"num_slots ({num_slots}) must be >= max action arity "
-                    f"({max(action_arities)})"
-                )
-            if num_slots > self.num_objects:
-                print(
-                    f"[graph_learner] clamping num_slots {num_slots} → "
-                    f"{self.num_objects} (num_objects in this instance).",
-                    file=sys.stderr,
-                )
-                num_slots = self.num_objects
-                if action_arities is not None:
-                    assert num_slots >= max(action_arities), (
-                        f"Clamped num_slots ({num_slots}) is smaller than max "
-                        f"action arity ({max(action_arities)}); problem instance "
-                        f"has too few objects for this domain."
-                    )
-            self.num_slots = num_slots
-
-        self.num_relations = len(arity_relations)
 
         self.graph_edit = PredictionModule(
-            arity_relations=self.arity_relations,
-            num_actions=self.num_actions,
+            arity_relations=arity_relations,
+            num_actions=num_actions,
             num_slots=self.num_slots,
-            object_dim=self.object_dim,
-            force_action_args=self.force_action_args,
-            per_action_slots=self.per_action_slots,
-            learn_preconditions=self.learn_preconditions,
-            action_arities=self.action_arities,
-            state_dependent_effects=self.state_dependent_effects,
-            use_slot_weights=self.use_slot_weights,
+            object_dim=object_dim,
+            force_action_args=force_action_args,
+            per_action_slots=per_action_slots,
+            learn_preconditions=learn_preconditions,
+            action_arities=action_arities,
+            state_dependent_effects=state_dependent_effects,
+            use_slot_weights=use_slot_weights,
         )
 
         self.edges = EdgeTypeLayout(
             num_relations=self.num_relations,
-            num_actions=self.num_actions,
+            num_actions=num_actions,
             action_arg_positions=action_arg_positions,
             successor_relations=successor_relations,
         )
         self.state_encoder = RelationalEncoder(
-            self.object_dim,
+            object_dim,
             self.edges.num_edge_types,
             hidden_dims=encoder_hidden_dims or DEFAULT_HIDDEN_DIMS,
             random_node_embeddings=random_node_embeddings,
         )
 
         self.objective = DiasObjective(
-            arity_relations=self.arity_relations,
+            arity_relations=arity_relations,
             num_slots=self.num_slots,
             use_effect_loss=use_effect_loss,
             use_precondition_loss=use_precondition_loss,

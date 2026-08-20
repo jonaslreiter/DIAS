@@ -2,11 +2,55 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Sequence
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+logger = logging.getLogger(__name__)
+
+
+def resolve_num_slots(
+    num_slots: int | None,
+    num_objects: int,
+    action_arities: Sequence[int] | None = None,
+    per_action_slots: bool = False,
+) -> int:
+    """How many slots every action gets, given what the instance supports.
+
+    With `per_action_slots` each action uses exactly as many slots as its own
+    arity, so the widest action sizes the tensors. Otherwise the count is
+    configured, but capped at the number of objects: a slot that no object can
+    bind to is dead weight in every tensor indexed by it.
+    """
+    if per_action_slots:
+        assert (
+            action_arities is not None
+        ), "action_arities must be provided when per_action_slots=True"
+        return max(action_arities)
+
+    assert (
+        num_slots is not None
+    ), "num_slots must be set explicitly when per_action_slots=False"
+    widest_action = max(action_arities) if action_arities is not None else 0
+    assert (
+        num_slots >= widest_action
+    ), f"num_slots ({num_slots}) must be >= max action arity ({widest_action})"
+    if num_slots <= num_objects:
+        return num_slots
+
+    logger.warning(
+        "Clamping num_slots %d to %d, the number of objects in this instance.",
+        num_slots,
+        num_objects,
+    )
+    assert num_objects >= widest_action, (
+        f"Clamped num_slots ({num_objects}) is smaller than max action arity "
+        f"({widest_action}); problem instance has too few objects for this domain."
+    )
+    return num_objects
 
 
 class SlotSelector(nn.Module):

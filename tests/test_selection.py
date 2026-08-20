@@ -2,7 +2,11 @@ import unittest
 
 import torch
 
-from dias.models.selection import SlotSelector, batched_sinkhorn_d1d2
+from dias.models.selection import (
+    SlotSelector,
+    batched_sinkhorn_d1d2,
+    resolve_num_slots,
+)
 
 
 class SinkhornTest(unittest.TestCase):
@@ -15,6 +19,40 @@ class SinkhornTest(unittest.TestCase):
             logits, max_iter=20, row_mask=torch.tensor([[False, True, False]])
         )
         self.assertTrue(torch.equal(masked[:, 1], torch.zeros(1, 2)))
+
+
+class ResolveNumSlotsTest(unittest.TestCase):
+    def test_per_action_slots_takes_the_widest_action(self):
+        self.assertEqual(
+            resolve_num_slots(
+                None, num_objects=9, action_arities=[1, 3, 2], per_action_slots=True
+            ),
+            3,
+        )
+
+    def test_a_configured_count_the_instance_supports_is_kept(self):
+        self.assertEqual(resolve_num_slots(5, num_objects=9, action_arities=[1, 2]), 5)
+
+    def test_more_slots_than_objects_are_clamped_with_a_warning(self):
+        """A slot no object can bind to is dead weight in every tensor."""
+        with self.assertLogs("dias.models.selection", level="WARNING") as logs:
+            resolved = resolve_num_slots(9, num_objects=4, action_arities=[1, 2])
+        self.assertEqual(resolved, 4)
+        self.assertIn("Clamping num_slots 9 to 4", logs.output[0])
+
+    def test_a_count_below_the_widest_action_is_refused(self):
+        with self.assertRaisesRegex(AssertionError, "must be >= max action arity"):
+            resolve_num_slots(2, num_objects=9, action_arities=[1, 3])
+
+    def test_an_instance_too_small_for_the_widest_action_is_refused(self):
+        with self.assertRaisesRegex(AssertionError, "too few objects"):
+            resolve_num_slots(5, num_objects=2, action_arities=[3])
+
+    def test_the_two_ways_of_saying_nothing_are_refused(self):
+        with self.assertRaisesRegex(AssertionError, "num_slots must be set"):
+            resolve_num_slots(None, num_objects=9, action_arities=[1])
+        with self.assertRaisesRegex(AssertionError, "action_arities"):
+            resolve_num_slots(5, num_objects=9, per_action_slots=True)
 
 
 class SlotWeightsTest(unittest.TestCase):
