@@ -1,14 +1,12 @@
 import io
 import logging
-from typing import Mapping, Optional
+from typing import Mapping
 
 import lightning as L
 import torch
 
 from dias.adjacency import dense_from_edges
 from dias.hparams import to_mapping
-from dias.reporting.labels import resolve_label_names
-from dias.reporting.plotting import PlotWorker, queue_validation_heatmaps
 from dias.schedules import Schedule, as_schedule
 
 from .checkpoints import CHECKPOINT_VERSION, VERSION_KEY, migrate
@@ -41,10 +39,6 @@ class DIAS(L.LightningModule):
         action_arg_positions: list[list[int]] | None = None,
         successor_relations: bool = False,
         random_node_embeddings: bool = True,
-        parameter_plotting: Optional[dict[str, bool]] = {
-            "effect_and_precondition": False,
-            "selection": False,
-        },
         gmean_temperature: Schedule | Mapping | None = None,
         pcgrad_dyn_clip: bool = True,
         state_dependent_effects: bool = False,
@@ -64,7 +58,7 @@ class DIAS(L.LightningModule):
 
         # Everything else is handed to the module that owns it; what is kept
         # here is what something reads back later -- the losses, the optimizer,
-        # the plotting callback, and the validators.
+        # the reporting callback, and the validators.
         self.num_objects = num_objects
         self.num_actions = num_actions
         self.num_relations = len(arity_relations)
@@ -77,7 +71,6 @@ class DIAS(L.LightningModule):
         self.force_action_args = force_action_args
         self.learning_rate = learning_rate
         self.aux_loss_weight = aux_loss_weight
-        self.parameter_plotting = parameter_plotting
 
         self.graph_edit = PredictionModule(
             arity_relations=arity_relations,
@@ -123,10 +116,6 @@ class DIAS(L.LightningModule):
 
         self.automatic_optimization = False
 
-        self._plot_worker = PlotWorker()
-        self._last_plot_step_submitted: int | None = None
-        self._label_names: tuple[list[str], list[str], list[str]] | None = None
-
     def on_save_checkpoint(self, checkpoint: dict) -> None:
         checkpoint[VERSION_KEY] = CHECKPOINT_VERSION
 
@@ -149,10 +138,6 @@ class DIAS(L.LightningModule):
         buffer.seek(0)
         return super().load_from_checkpoint(buffer, *args, **kwargs)
 
-    def teardown(self, stage: str) -> None:
-        if hasattr(self, "_plot_worker"):
-            self._plot_worker.shutdown()
-
     def configure_optimizers(self):
         return torch.optim.AdamW(self.trainable_parameters(), lr=self.learning_rate)
 
@@ -171,9 +156,6 @@ class DIAS(L.LightningModule):
             y_action_args=batch_s1.y_action_args,
             gmean_temperature=self.gmean_temperature(self.global_step),
         )
-
-        self._last_selection = self.graph_edit._last_selection
-        self._last_y_action = self.graph_edit._last_y_action
         return prediction
 
     def schema_logits(self) -> SchemaLogits:
@@ -275,22 +257,6 @@ class DIAS(L.LightningModule):
 
     def test_step(self, batch, batch_idx):
         return self._eval_step("test", batch)
-
-    def on_validation_epoch_end(self):
-        if self.parameter_plotting:
-            queue_validation_heatmaps(self)
-
-    @property
-    def label_names(self):
-        """Cached (action, relation, object) display names; resolved on first access."""
-        if self._label_names is None:
-            self._label_names = resolve_label_names(
-                getattr(self.trainer, "datamodule", None),
-                self.num_actions,
-                self.num_relations,
-                self.num_objects,
-            )
-        return self._label_names
 
     def log_results(self, prefix: str, results: Mapping[str, torch.Tensor | int]):
         is_train = prefix == "train"

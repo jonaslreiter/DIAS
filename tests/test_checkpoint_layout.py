@@ -79,7 +79,7 @@ V1_ENCODER_KEYS = tuple(
 # Hyper-parameters v1 had that the current constructor no longer takes. Each
 # refactor step that renames or regroups one adds it here and a rule to
 # dias.models.checkpoints, which is what keeps archived runs loadable.
-V1_ONLY_HPARAMS = {"loss_weight_schedule", "gmean_offset"}
+V1_ONLY_HPARAMS = {"loss_weight_schedule", "gmean_offset", "parameter_plotting"}
 
 # What v1 becomes after migration.
 CURRENT_HPARAMS = {
@@ -114,7 +114,6 @@ def build_v1_checkpoint(marker: float = 0.125) -> dict:
         pre_split_name(key): value.clone()
         for key, value in reference.state_dict().items()
     }
-    reference.teardown("build")
     state_dict["graph_edit.action_arities_t"] = torch.tensor(
         V1_HPARAMS["action_arities"]
     )
@@ -145,7 +144,6 @@ class CheckpointLayoutTest(unittest.TestCase):
     def test_the_current_key_set_is_the_v1_one_renamed(self):
         """Nothing derived from a constructor argument is checkpointed."""
         model = DIAS(**constructor_args())
-        self.addCleanup(model.teardown, "test")
         self.assertEqual(
             {pre_split_name(key) for key in model.state_dict()},
             set(V1_SCHEMA_KEYS + V1_ENCODER_KEYS),
@@ -154,7 +152,6 @@ class CheckpointLayoutTest(unittest.TestCase):
     def test_v1_checkpoint_loads_and_preserves_schema_values(self):
         path = self.write_v1_checkpoint(marker=0.125)
         model = DIAS.load_from_checkpoint(path, map_location="cpu")
-        self.addCleanup(model.teardown, "test")
 
         loaded = model.state_dict()
         for key in (k for k in loaded if pre_split_name(k) in V1_SCHEMA_KEYS):
@@ -172,15 +169,13 @@ class CheckpointLayoutTest(unittest.TestCase):
     def test_v1_hparams_migrate_to_the_current_layout(self):
         path = self.write_v1_checkpoint()
         model = DIAS.load_from_checkpoint(path, map_location="cpu")
-        self.addCleanup(model.teardown, "test")
         self.assertEqual(dict(model.hparams), CURRENT_HPARAMS)
 
     def test_a_current_checkpoint_loads_without_migrating(self):
         """The stock loader must handle it; migration is the fallback only."""
         directory = self.enterContext(tempfile.TemporaryDirectory())
-        path = Path(directory) / "v2.ckpt"
+        path = Path(directory) / "current.ckpt"
         model = DIAS(**constructor_args())
-        self.addCleanup(model.teardown, "test")
         checkpoint = {
             "state_dict": model.state_dict(),
             "hyper_parameters": dict(model.hparams),
@@ -196,7 +191,6 @@ class CheckpointLayoutTest(unittest.TestCase):
             "dias.models.dias.migrate", side_effect=AssertionError("migrated")
         ):
             reloaded = DIAS.load_from_checkpoint(path, map_location="cpu")
-        self.addCleanup(reloaded.teardown, "test")
         self.assertEqual(dict(reloaded.hparams), dict(model.hparams))
 
     def test_a_v1_offset_becomes_the_schedules_floor(self):
@@ -215,7 +209,6 @@ class CheckpointLayoutTest(unittest.TestCase):
         }
         torch.save(checkpoint, path)
         model = DIAS.load_from_checkpoint(path, map_location="cpu")
-        self.addCleanup(model.teardown, "test")
 
         def v1_tau(step):
             return 0.9 * (0.09 / 0.9) ** (step / 500) + 0.1
@@ -254,7 +247,6 @@ class CheckpointLayoutTest(unittest.TestCase):
         del checkpoint["hyper_parameters"]["loss_weight_schedule"]
         torch.save(checkpoint, path)
         model = DIAS.load_from_checkpoint(path, map_location="cpu")
-        self.addCleanup(model.teardown, "test")
         self.assertEqual(model.gmean_temperature, Constant(1.0))
 
 

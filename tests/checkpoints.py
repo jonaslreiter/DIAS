@@ -72,7 +72,6 @@ def build_model(**overrides):
         "action_arities": list(schema.action_arities),
         "action_arg_positions": [list(p) for p in schema.action_arg_positions],
         "successor_relations": True,
-        "parameter_plotting": None,
         "batch_size": 2,
         "encoder_hidden_dims": [4, 8, 8],
         **overrides,

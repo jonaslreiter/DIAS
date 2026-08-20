@@ -1,8 +1,8 @@
 """Reading checkpoints written before the models/ split.
 
-There are two layouts, not a chain of them. Version 1 is what the paper's runs
-are -- everything written before the refactor, which stamped nothing -- and
-version 2 is everything since. The intermediate numbers the refactor passed
+Version 1 is what the paper's runs are: everything written before the models/
+split, which stamped nothing. Later versions each retire something a
+constructor no longer accepts. The intermediate numbers the refactor passed
 through never left the branch that produced them, so there is nothing to
 migrate from and no rule for them.
 
@@ -20,7 +20,7 @@ from __future__ import annotations
 import re
 from typing import Callable
 
-CHECKPOINT_VERSION = 2
+CHECKPOINT_VERSION = 3
 VERSION_KEY = "dias_checkpoint_version"
 
 EXPONENTIAL = "dias.schedules.Exponential"
@@ -117,8 +117,14 @@ def _from_v1(checkpoint: dict) -> None:
         _migrate_tau_schedule(checkpoint["hyper_parameters"])
 
 
+def _from_v2(checkpoint: dict) -> None:
+    """Drop the plotting switches; reporting is a callback's business now."""
+    (checkpoint.get("hyper_parameters") or {}).pop("parameter_plotting", None)
+
+
 MIGRATIONS: tuple[tuple[int, str, Callable[[dict], None]], ...] = (
     (2, "the models/ split: one module per part of the schema", _from_v1),
+    (3, "plotting left the model for a callback", _from_v2),
 )
 
 

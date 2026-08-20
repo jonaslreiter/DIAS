@@ -29,14 +29,6 @@ data:
     batch_size: 200
     num_workers: 0
 
-model:
-  init_args:
-    # Heatmap plotting only fires on validation epochs (disabled below); off
-    # here so no plotting work can land inside a timed window.
-    parameter_plotting:
-      effect_and_precondition: false
-      selection: false
-
 trainer:
   # No validation, no logging, no checkpointing inside the measured window: this
   # run produces timings, not a model.

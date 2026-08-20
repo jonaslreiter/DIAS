@@ -65,9 +65,6 @@ class PredictionModule(nn.Module):
         )
         self.effects = effect_source(num_actions, arity_relations, num_slots)
 
-        self._last_selection = None
-        self._last_y_action = None
-
     def forward(
         self,
         node_embeddings: torch.Tensor,
@@ -84,10 +81,6 @@ class PredictionModule(nn.Module):
         selection, selection_logits = self.selector(
             node_embeddings.view(batch, num_objects, -1), y_action, y_action_args
         )
-        if self.training:
-            self._last_selection = selection.detach().cpu()
-            self._last_y_action = y_action.detach().cpu()
-
         preconditions = Channels.from_logits(self.preconditions(y_action))
         effects = Channels.from_logits(self.effects(y_action, adjacency, selection))
 

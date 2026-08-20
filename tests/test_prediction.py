@@ -26,8 +26,7 @@ class PredictionModuleTest(unittest.TestCase):
         )
         self.assertEqual(tuple(output.adjacency.shape), (1, 2, 2, 2))
         self.assertTrue(torch.isfinite(output.adjacency).all())
-        self.assertEqual(module._last_y_action.tolist(), [0])
-        self.assertEqual(tuple(module._last_selection.shape), (1, 2, 2))
+        self.assertEqual(tuple(output.selection.shape), (1, 2, 2))
         self.assertEqual(output.selection_logits[0, 0, 1].item(), 0.0)
         self.assertTrue(torch.isneginf(output.selection_logits).any())
 

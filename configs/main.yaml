@@ -16,9 +16,6 @@ model:
     learn_preconditions: true
     successor_relations: true
     random_node_embeddings: true
-    parameter_plotting:
-      effect_and_precondition: true
-      selection: true
     pcgrad_dyn_clip: true
     learning_rate: 0.005
     aux_loss_weight: 0.2
@@ -66,6 +63,14 @@ data:
     num_workers: 0
 
 trainer:
+  # The learned schema, logged as W&B custom charts rather than as images.
+  # Raise log_every_n_validations to log fewer of them; the final schema is
+  # logged when training ends either way.
+  callbacks:
+    - class_path: dias.reporting.callback.SchemaChartCallback
+      init_args:
+        log_every_n_validations: 20
+
   max_steps: 10000
   val_check_interval: 50
   limit_val_batches: 10
