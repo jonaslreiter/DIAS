@@ -69,10 +69,11 @@ class ModelValidation:
         the predicate names and arities the merged domain has to declare.
         """
         hparams = run.datamodule_hparams
+        schema = self.model.schema_logits()
         add_eff, del_eff, pos_prec, neg_prec, _ = process_model_logits(
-            effect_logits=self.model.graph_edit.effects.detach().cpu(),
-            precondition_logits=self.model.graph_edit.preconditions.detach().cpu(),
-            slot_weight_logits=self.model.graph_edit.slot_weight_logits.detach().cpu(),
+            effect_logits=schema.effects,
+            precondition_logits=schema.preconditions,
+            slot_weight_logits=schema.slot_weight_logits,
             force_action_args=self.model.force_action_args,
             action_arguments=hparams.get("action_arguments", False),
             strips_plus_actions=hparams.get("strips_plus_actions", False),

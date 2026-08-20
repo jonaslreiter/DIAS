@@ -14,10 +14,11 @@ from dias.schedules import Schedule, as_schedule, schedule_config
 
 from .checkpoints import CHECKPOINT_VERSION, VERSION_KEY, migrate
 from .gnn import DEFAULT_HIDDEN_DIMS, GNNModule
+from .outputs import SchemaLogits
 from .prediction import PredictionModule
+from .utils import build_relation_change_edges
 
 logger = logging.getLogger(__name__)
-from .utils import build_relation_change_edges
 
 
 class DIAS(L.LightningModule):
@@ -111,7 +112,6 @@ class DIAS(L.LightningModule):
         self.num_relations = len(arity_relations)
 
         self.graph_edit = PredictionModule(
-            num_objects=self.num_objects,
             arity_relations=self.arity_relations,
             num_actions=self.num_actions,
             num_slots=self.num_slots,
@@ -282,6 +282,37 @@ class DIAS(L.LightningModule):
         self._last_y_action = self.graph_edit._last_y_action
         return prediction
 
+    def schema_logits(self) -> SchemaLogits:
+        """The learned schema as the model would apply it, on the CPU.
+
+        The supported way to read a schema off a trained model. The arity mask
+        is applied here, so the raw parameters are not a faithful record of what
+        the model can express -- reading them directly finds effects on cells
+        the model never uses.
+        """
+        with torch.no_grad():
+            preconditions = self.graph_edit.preconditions.action_logits()
+            effects = self.graph_edit.effects.action_logits()
+            slot_weights = self.graph_edit.selector.slot_weight_logits
+            return SchemaLogits(
+                preconditions=preconditions.detach().cpu(),
+                effects=None if effects is None else effects.detach().cpu(),
+                slot_weight_logits=slot_weights.detach().cpu(),
+            )
+
+    def effect_logits(
+        self,
+        adjacency: torch.Tensor,
+        selection: torch.Tensor,
+        y_action: torch.Tensor,
+    ) -> torch.Tensor:
+        """The effects of `y_action` on `adjacency` under a given slot binding.
+
+        For a model whose effects depend on the state, this is the only way to
+        obtain them; `schema_logits` reports None for it.
+        """
+        return self.graph_edit.effects(y_action, adjacency, selection)
+
     def step(self, batch):
         batch_s1, batch_s2, *_ = batch
         prediction = self.forward(batch_s1, batch_s2)
@@ -318,16 +349,8 @@ class DIAS(L.LightningModule):
             )
 
             # Weight preconditions by slot weights so maximising preconditions
-            # also requires slot activation. With use_slot_weights=False the
-            # weights are forced to 1 (all slots active).
-            if self.use_slot_weights:
-                slot_w = torch.sigmoid(
-                    self.graph_edit.slot_weight_logits[batch_s1.y_action]
-                )
-            else:
-                slot_w = torch.ones_like(
-                    self.graph_edit.slot_weight_logits[batch_s1.y_action]
-                )
+            # also requires slot activation.
+            slot_w = self.graph_edit.selector.slot_weights(batch_s1.y_action)
             sw_matrix = slot_w[:, None, :, None] * slot_w[:, None, None, :]
             one_minus_ip_w = ((1 - ignore_precond) * sw_matrix).clamp(eps, 1 - eps)
 

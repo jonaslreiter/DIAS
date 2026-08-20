@@ -9,8 +9,9 @@ import lightning as L
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import torch.nn.functional as F
 import wandb
+
+from dias.models.outputs import Channels
 
 
 class PlotWorker:
@@ -225,32 +226,32 @@ def queue_validation_heatmaps(model) -> None:
         "object_names": object_names,
     }
 
+    schema = model.schema_logits()
+
     if plot_effects:
-        with torch.no_grad():
-            precond_probs = F.softmax(model.graph_edit.preconditions.detach(), dim=-1)
-            effect_probs = F.softmax(model.graph_edit.effects.detach(), dim=-1)
-            payload["components"] = [
-                (
-                    effect_probs[..., 1].cpu().numpy(),
-                    "Add Effects",
-                    "add_effects_heatmap",
-                ),
-                (
-                    effect_probs[..., -1].cpu().numpy(),
-                    "Delete Effects",
-                    "delete_effects_heatmap",
-                ),
-                (
-                    precond_probs[..., 1].cpu().numpy(),
-                    "Positive Preconditions",
-                    "positive_preconditions_heatmap",
-                ),
-                (
-                    precond_probs[..., -1].cpu().numpy(),
-                    "Negative Preconditions",
-                    "negative_preconditions_heatmap",
-                ),
+        components = []
+        # A model whose effects come from the state has no lifted effects to
+        # show; its precondition panels are still meaningful.
+        if schema.effects is not None:
+            effects = Channels.from_logits(schema.effects)
+            components += [
+                (effects.positive.numpy(), "Add Effects", "add_effects_heatmap"),
+                (effects.negative.numpy(), "Delete Effects", "delete_effects_heatmap"),
             ]
+        preconditions = Channels.from_logits(schema.preconditions)
+        components += [
+            (
+                preconditions.positive.numpy(),
+                "Positive Preconditions",
+                "positive_preconditions_heatmap",
+            ),
+            (
+                preconditions.negative.numpy(),
+                "Negative Preconditions",
+                "negative_preconditions_heatmap",
+            ),
+        ]
+        payload["components"] = components
 
     if (
         plot_selection
@@ -264,12 +265,7 @@ def queue_validation_heatmaps(model) -> None:
             a = int(y_action[idx])
             samples.setdefault(a, selection[idx].copy())
         if samples:
-            with torch.no_grad():
-                all_sw = (
-                    torch.sigmoid(model.graph_edit.slot_weight_logits.detach())
-                    .cpu()
-                    .numpy()
-                )
+            all_sw = torch.sigmoid(schema.slot_weight_logits).numpy()
             payload["selection_samples"] = samples
             payload["selection_slot_weights"] = {a: all_sw[a] for a in samples}
 

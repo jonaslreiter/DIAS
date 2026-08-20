@@ -7,12 +7,12 @@ from pathlib import Path
 import numpy as np
 import pymimir
 import torch
-import torch.nn.functional as F
 from pymimir.advanced.formalism import FluentGroundAtomList, ObjectList
 from pymimir.wrapper_formalism import State
 from tqdm import tqdm
 
 from dias.data.datamodule import PddlGraphDataModule
+from dias.models.outputs import Channels
 from dias.pddl import text as pddl_text
 from dias.pddl.transpiler import PDDLTranspiler
 from dias.pddl.untype import (
@@ -180,7 +180,8 @@ class ModelValidation:
         self.model = run.model
         datamodule_hparams = run.datamodule_hparams
 
-        if not getattr(self.model.graph_edit, "state_dependent_effects", False):
+        schema = self.model.schema_logits()
+        if schema.effects is not None:
             raise ValueError(
                 "validate_mlp_baseline expects a model with "
                 "state_dependent_effects=True. Use validate.py for the "
@@ -197,17 +198,14 @@ class ModelValidation:
         action_arguments = datamodule_hparams.get("action_arguments", False)
         strips_plus_actions = datamodule_hparams.get("strips_plus_actions", False)
 
-        precondition_logits = self.model.graph_edit.preconditions.detach().cpu()
-        slot_weights = self.model.graph_edit.slot_weight_logits.detach().cpu()
-
         # This baseline predicts its effects from the state at validation time,
         # so it has no static effect tensor to decode -- only the preconditions
         # and the slot activations are read off here. Zeros stand in for the
         # effects, whose decoded arrays are discarded.
         _, _, pos_prec, neg_prec, active_slots = process_model_logits(
-            effect_logits=torch.zeros_like(precondition_logits),
-            precondition_logits=precondition_logits,
-            slot_weight_logits=slot_weights,
+            effect_logits=torch.zeros_like(schema.preconditions),
+            precondition_logits=schema.preconditions,
+            slot_weight_logits=schema.slot_weight_logits,
             force_action_args=self.model.force_action_args,
             action_arguments=action_arguments,
             strips_plus_actions=strips_plus_actions,
@@ -340,7 +338,6 @@ class ModelValidation:
 
         self.num_objects = len(self.original_problem.get_objects())
         self.model.num_objects = len(self.original_problem.get_objects())
-        self.model.graph_edit.num_objects = len(self.original_problem.get_objects())
         self.model.eval()
 
         # Object name → adjacency-tensor index.  Built from the original
@@ -563,15 +560,11 @@ class ModelValidation:
                     selection = torch.zeros(B, K, N, dtype=torch.float32, device=device)
                     selection[b_idx[valid], slots_chunk[valid], bind_chunk[valid]] = 1.0
 
-                    adj_selection = torch.einsum(
-                        "bai,brij,bcj->brac", selection, adj_batch, selection
+                    effects = Channels.from_logits(
+                        self.model.effect_logits(adj_batch, selection, a_chunk)
                     )
-                    effects_logits = self.model.graph_edit.effects_mlp(adj_selection)
-                    effects = F.softmax(effects_logits, dim=-1)
-                    effects = effects[torch.arange(B, device=device), a_chunk]
-
-                    add_effects = effects[..., 1]
-                    del_effects = effects[..., -1]
+                    add_effects = effects.positive
+                    del_effects = effects.negative
 
                     add_proj = torch.einsum(
                         "bai,brac,bcj->brij", selection, add_effects, selection
@@ -581,8 +574,7 @@ class ModelValidation:
                     )
                     delta = (1.0 - adj_batch) * add_proj - adj_batch * del_proj
                     adj_out = (adj_batch + delta).clamp(0.0, 1.0)
-                    adj_bin = (adj_out > 0.5).to(torch.uint8)
-                    adj_bin = self._canonicalize_adj(adj_bin)  # (B,R,N,N)
+                    adj_bin = (adj_out > 0.5).to(torch.uint8)  # (B,R,N,N)
 
                     if keep_channels is not None:
                         adj_bin = adj_bin.index_select(1, keep_channels)
@@ -615,42 +607,6 @@ class ModelValidation:
             "fp": fp_total,
             "fn": fn_total,
         }
-
-    def _canonicalize_adj(self, adj: torch.Tensor) -> torch.Tensor:
-        """Zero out off-diagonal cells for arity-1 channels and any
-        non-(0,0) cells for arity-0, so predicted and ground-truth adj
-        share the same encoding before signature.
-        """
-        if adj.dim() == 3:
-            out = adj.clone()
-            N = out.shape[-1]
-            eye_idx = torch.arange(N, device=out.device)
-            for r, ar in enumerate(self.relation_arities[0 : adj.shape[1]]):
-                if ar == 1:
-                    diag = out[r, eye_idx, eye_idx].clone()
-                    out[r] = 0
-                    out[r, eye_idx, eye_idx] = diag
-                elif ar == 0:
-                    v = out[r, 0, 0].clone()
-                    out[r] = 0
-                    out[r, 0, 0] = v
-            return out
-        elif adj.dim() == 4:  # (B, R, N, N)
-            out = adj.clone()
-            N = out.shape[-1]
-            eye_idx = torch.arange(N, device=out.device)
-            for r, ar in enumerate(self.relation_arities[0 : adj.shape[1]]):
-                if ar == 1:
-                    diag = out[:, r, eye_idx, eye_idx].clone()  # (B, N)
-                    out[:, r] = 0
-                    out[:, r, eye_idx, eye_idx] = diag
-                elif ar == 0:
-                    v = out[:, r, 0, 0].clone()  # (B,)
-                    out[:, r] = 0
-                    out[:, r, 0, 0] = v
-            return out
-        else:
-            raise ValueError(f"Unexpected adj rank: {adj.shape}")
 
     @staticmethod
     def _format_learned_action(schema, slot_indices: list[int]) -> str:

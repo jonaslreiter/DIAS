@@ -61,3 +61,16 @@ class SchemaPrediction:
 
     precondition_product: torch.Tensor
     """The unrelaxed product, detached: a diagnostic, never a training signal."""
+
+
+@dataclass(frozen=True)
+class SchemaLogits:
+    """A trained model's lifted schema, masked and detached, ready to read off.
+
+    `effects` is None for a model whose effects are predicted from the state:
+    it has no lifted effects to report, only preconditions and slot weights.
+    """
+
+    preconditions: torch.Tensor
+    effects: torch.Tensor | None
+    slot_weight_logits: torch.Tensor

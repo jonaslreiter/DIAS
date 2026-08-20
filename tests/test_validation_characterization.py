@@ -48,16 +48,17 @@ def build_checkpoint(directory: Path) -> str:
 
     stack = action["stack"]
     with torch.no_grad():
-        effects = model.graph_edit.effects
-        preconditions = model.graph_edit.preconditions
+        effects = model.graph_edit.effects.logits
+        preconditions = model.graph_edit.preconditions.logits
         for tensor in (effects, preconditions):
             tensor[..., 0] = OFF
             tensor[..., 1] = 0.0
             tensor[..., 2] = 0.0
 
-        model.graph_edit.slot_weight_logits.fill_(-ON)
-        model.graph_edit.slot_weight_logits[stack, 0] = ON
-        model.graph_edit.slot_weight_logits[stack, 1] = ON
+        slot_weights = model.graph_edit.selector.slot_weight_logits
+        slot_weights.fill_(-ON)
+        slot_weights[stack, 0] = ON
+        slot_weights[stack, 1] = ON
 
         def enable(tensor, name, row, column, channel):
             tensor[stack, relation[name], row, column, 0] = 0.0

@@ -49,17 +49,21 @@ V1_HPARAMS = {
     },
 }
 
-# The schema parameters live under `graph_edit.*` and the encoder under
-# `dynamics_model.conv{1..6}` / `ln{1..5}`. `_action_rel_lookup` and
-# `graph_edit.action_arities_t` are derived from constructor arguments yet are
-# persisted, which is why renaming them needs a migration entry today.
-V1_SCHEMA_KEYS = (
-    "graph_edit.slot_encodings",
-    "graph_edit.slot_weight_logits",
-    "graph_edit.preconditions",
-    "graph_edit.effects",
-)
+# v1 kept the schema flat on the prediction module; each part has its own
+# module now. Stated here independently of the migration, so a rename that
+# forgets one of them fails this test rather than an archived run.
+SCHEMA_KEYS = {
+    "graph_edit.slot_encodings": "graph_edit.selector.slot_encodings",
+    "graph_edit.slot_weight_logits": "graph_edit.selector.slot_weight_logits",
+    "graph_edit.preconditions": "graph_edit.preconditions.logits",
+    "graph_edit.effects": "graph_edit.effects.logits",
+}
+V1_SCHEMA_KEYS = tuple(SCHEMA_KEYS)
+
+# Both are derived from constructor arguments yet v1 persisted them.
+# `action_arities_t` is rebuilt on load now, so the migration drops it.
 V1_DERIVED_KEYS = ("_action_rel_lookup", "graph_edit.action_arities_t")
+CURRENT_DERIVED_KEYS = ("_action_rel_lookup",)
 V1_ENCODER_KEYS = tuple(
     f"dynamics_model.conv{i}.{suffix}"
     for i in range(1, 7)
@@ -99,10 +103,21 @@ def constructor_args() -> dict:
 
 
 def build_v1_checkpoint(marker: float = 0.125) -> dict:
-    """A v1 checkpoint whose schema parameters are all set to `marker`."""
+    """A v1 checkpoint whose schema parameters are all set to `marker`.
+
+    Only the names differ between versions -- the tensors are the same shapes --
+    so the current model supplies them and they are renamed back.
+    """
     reference = DIAS(**constructor_args())
-    state_dict = {k: v.clone() for k, v in reference.state_dict().items()}
+    v1_name = {new: old for old, new in SCHEMA_KEYS.items()}
+    state_dict = {
+        v1_name.get(key, key): value.clone()
+        for key, value in reference.state_dict().items()
+    }
     reference.teardown("build")
+    state_dict["graph_edit.action_arities_t"] = torch.tensor(
+        V1_HPARAMS["action_arities"]
+    )
     for key in V1_SCHEMA_KEYS:
         state_dict[key] = torch.full_like(state_dict[key], marker)
     return {
@@ -122,9 +137,16 @@ class CheckpointLayoutTest(unittest.TestCase):
         return str(path)
 
     def test_v1_key_set_is_exactly_as_recorded(self):
+        state_dict = build_v1_checkpoint()["state_dict"]
+        expected = set(V1_SCHEMA_KEYS + V1_DERIVED_KEYS + V1_ENCODER_KEYS)
+        self.assertEqual(set(state_dict), expected)
+
+    def test_the_current_key_set_is_the_v1_one_renamed(self):
         model = DIAS(**constructor_args())
         self.addCleanup(model.teardown, "test")
-        expected = set(V1_SCHEMA_KEYS + V1_DERIVED_KEYS + V1_ENCODER_KEYS)
+        expected = set(SCHEMA_KEYS.values()) | set(
+            CURRENT_DERIVED_KEYS + V1_ENCODER_KEYS
+        )
         self.assertEqual(set(model.state_dict()), expected)
 
     def test_v1_checkpoint_loads_and_preserves_schema_values(self):
@@ -133,8 +155,9 @@ class CheckpointLayoutTest(unittest.TestCase):
         self.addCleanup(model.teardown, "test")
 
         loaded = model.state_dict()
-        for key in V1_SCHEMA_KEYS:
-            # -inf entries are the unary off-diagonal mask, applied at construction.
+        for key in SCHEMA_KEYS.values():
+            # v1 stored the unary off-diagonal mask in the parameter itself, so
+            # those cells are -inf; the mask is applied in the forward pass now.
             finite = torch.isfinite(loaded[key])
             self.assertTrue(finite.any(), f"{key} is entirely masked")
             torch.testing.assert_close(
@@ -199,6 +222,17 @@ class CheckpointLayoutTest(unittest.TestCase):
             self.assertAlmostEqual(
                 model.gmean_temperature(step), v1_tau(step), places=12
             )
+
+    def test_a_v1_mlp_checkpoint_is_refused(self):
+        """Its effect MLP had no activations, so its weights cannot be reused."""
+        directory = self.enterContext(tempfile.TemporaryDirectory())
+        path = Path(directory) / "mlp.ckpt"
+        checkpoint = build_v1_checkpoint()
+        del checkpoint["state_dict"]["graph_edit.effects"]
+        checkpoint["state_dict"]["graph_edit.effects_mlp.1.weight"] = torch.zeros(2, 2)
+        torch.save(checkpoint, path)
+        with self.assertRaisesRegex(ValueError, "Retrain"):
+            DIAS.load_from_checkpoint(path, map_location="cpu")
 
     def test_a_v1_checkpoint_missing_a_renamed_key_still_loads(self):
         """Not every old checkpoint contains everything a later version renamed."""

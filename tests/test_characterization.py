@@ -165,6 +165,37 @@ class ForwardCharacterizationTest(unittest.TestCase):
                     GOLDEN.check(self, f"step/{name}/{key}", losses[key])
 
 
+# The fixture predates the split of the prediction module, so it stores the
+# parameters under their former names.
+GOLDEN_PARAMETER_NAMES = {
+    "graph_edit.selector.slot_encodings": "graph_edit.slot_encodings",
+    "graph_edit.selector.slot_weight_logits": "graph_edit.slot_weight_logits",
+    "graph_edit.preconditions.logits": "graph_edit.preconditions",
+    "graph_edit.effects.logits": "graph_edit.effects",
+}
+
+
+def trained_values(model: DIAS) -> dict[str, torch.Tensor]:
+    """Every parameter, under the name the fixture stored it as.
+
+    The two schema tensors are compared as the model applies them. The arity
+    mask moved out of the parameters and into the forward pass, so the raw
+    parameters now hold untouched noise at cells no schema can express, where
+    the fixture holds the mask itself -- and the masked logits it produced then
+    are exactly the ones it produces now.
+    """
+    schema = model.schema_logits()
+    masked = {
+        "graph_edit.preconditions": schema.preconditions,
+        "graph_edit.effects": schema.effects,
+    }
+    values = {}
+    for name, parameter in model.named_parameters():
+        key = GOLDEN_PARAMETER_NAMES.get(name, name)
+        values[key] = masked.get(key, parameter)
+    return values
+
+
 class TrainingTrajectoryTest(unittest.TestCase):
     """Three real training_steps, then every parameter compared to the fixture.
 
@@ -200,8 +231,8 @@ class TrainingTrajectoryTest(unittest.TestCase):
             with self.subTest(case=name):
                 flags = {} if name == "full" else {"use_pcgrad": False}
                 model = self.run_steps(**flags)
-                for param_name, param in sorted(model.named_parameters()):
-                    GOLDEN.check(self, f"train/{name}/{param_name}", param)
+                for param_name, value in sorted(trained_values(model).items()):
+                    GOLDEN.check(self, f"train/{name}/{param_name}", value)
 
 
 if __name__ == "__main__":

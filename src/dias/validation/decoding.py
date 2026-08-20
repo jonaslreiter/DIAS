@@ -4,6 +4,8 @@ import numpy as np
 import torch
 from torch.nn import functional as F
 
+from dias.models.outputs import Channels
+
 
 def process_model_logits(
     effect_logits: torch.tensor,
@@ -27,13 +29,13 @@ def process_model_logits(
     both more effects and more preconditions; raising it yields fewer of each.
     0.5 is the default the paper's numbers use.
     """
-    effect_probs = F.softmax(effect_logits, dim=-1)
-    add_effects_probs = effect_probs[..., 1]
-    del_effects_probs = effect_probs[..., -1]
+    effects = Channels.from_logits(effect_logits)
+    add_effects_probs = effects.positive
+    del_effects_probs = effects.negative
 
-    precond_probs = F.softmax(precondition_logits, dim=-1)
-    pos_precond_probs = precond_probs[..., 1]
-    neg_precond_probs = precond_probs[..., -1]
+    preconditions = Channels.from_logits(precondition_logits)
+    pos_precond_probs = preconditions.positive
+    neg_precond_probs = preconditions.negative
 
     slot_probs = F.sigmoid(slot_weight_logits)
 

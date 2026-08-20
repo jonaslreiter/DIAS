@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-CHECKPOINT_VERSION = 4
+CHECKPOINT_VERSION = 5
 VERSION_KEY = "dias_checkpoint_version"
 
 EXPONENTIAL = "dias.schedules.Exponential"
@@ -104,10 +104,47 @@ def _to_v4(checkpoint: dict) -> bool:
     return True
 
 
+# v4 kept the schema tensors and the slot parameters flat on the prediction
+# module; v5 gives each its own module.
+_V5_RENAMES = {
+    "graph_edit.slot_encodings": "graph_edit.selector.slot_encodings",
+    "graph_edit.slot_weight_logits": "graph_edit.selector.slot_weight_logits",
+    "graph_edit.preconditions": "graph_edit.preconditions.logits",
+    "graph_edit.effects": "graph_edit.effects.logits",
+}
+
+# Derived from the constructor arguments, so it is rebuilt on load instead of
+# being carried in the file.
+_V5_DROPPED = ("graph_edit.action_arities_t",)
+
+
+def _to_v5(checkpoint: dict) -> bool:
+    """v5 moved each part of the schema into a module of its own."""
+    state = checkpoint.get("state_dict")
+    if state is None:
+        return False
+    if any(key.startswith("graph_edit.effects_mlp.") for key in state):
+        raise ValueError(
+            "This MLP-baseline checkpoint predates the activations between the "
+            "effect MLP's linear layers, which makes its weights mean something "
+            "different than they do now; there is nothing to migrate them to. "
+            "Retrain the run."
+        )
+    changed = False
+    for old, new in _V5_RENAMES.items():
+        if old in state:
+            state[new] = state.pop(old)
+            changed = True
+    for key in _V5_DROPPED:
+        changed = state.pop(key, None) is not None or changed
+    return changed
+
+
 MIGRATIONS: tuple[tuple[int, str, Callable[[dict], bool]], ...] = (
     (2, "one typed tau schedule instead of a dict of named schedules", _to_v2),
     (3, "the tau offset folded into the schedule as its floor", _to_v3),
     (4, "the tau decay stated as a rate rather than a value at step T", _to_v4),
+    (5, "one module per part of the schema", _to_v5),
 )
 
 

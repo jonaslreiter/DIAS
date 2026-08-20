@@ -9,7 +9,6 @@ class PredictionModuleTest(unittest.TestCase):
     def test_dense_forward_handles_forced_arguments_and_tracks_training_state(self):
         torch.manual_seed(4)
         module = PredictionModule(
-            num_objects=2,
             arity_relations=[1, 2],
             num_actions=1,
             num_slots=2,
@@ -35,7 +34,6 @@ class PredictionModuleTest(unittest.TestCase):
     def test_per_action_slots_masks_unused_slots_and_supports_graph_input(self):
         torch.manual_seed(7)
         module = PredictionModule(
-            num_objects=2,
             arity_relations=[1, 2],
             num_actions=2,
             num_slots=2,
@@ -61,10 +59,10 @@ class PredictionModuleTest(unittest.TestCase):
     def test_forward_without_preconditions_does_not_gate_delta(self):
         torch.manual_seed(9)
         gated = PredictionModule(
-            2, [2], 1, 1, 2, learn_preconditions=True, action_arities=[1]
+            [2], 1, 1, 2, learn_preconditions=True, action_arities=[1]
         )
         ungated = PredictionModule(
-            2, [2], 1, 1, 2, learn_preconditions=False, action_arities=[1]
+            [2], 1, 1, 2, learn_preconditions=False, action_arities=[1]
         )
         ungated.load_state_dict(gated.state_dict())
         kwargs = {
@@ -81,7 +79,7 @@ class PredictionModuleTest(unittest.TestCase):
     def test_the_temperature_reaches_the_precondition_gate(self):
         """Tau arrives as a plain value; the floor is the schedule's business."""
         torch.manual_seed(11)
-        module = PredictionModule(2, [2], 1, 1, 2, action_arities=[1])
+        module = PredictionModule([2], 1, 1, 2, action_arities=[1])
         kwargs = {
             "y_action": torch.tensor([0]),
             "y_action_args": torch.tensor([[-1]]),
