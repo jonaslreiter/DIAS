@@ -224,40 +224,6 @@ class DIASModelTest(unittest.TestCase):
         self.assertEqual(labels, (["go"], ["clear", "on"], ["a", "b"]))
         self.assertIs(model.label_names, labels)
 
-    def test_a_noisy_batch_logs_its_flips_per_relation(self):
-        model = self.with_labels()
-        model.log_dict = Mock()
-        model._log_noise(
-            Data(
-                num_flips_added=torch.tensor([1]),
-                num_flips_removed=torch.tensor([2]),
-                num_flips_added_per_rel=torch.tensor([[1, 0]]),
-                num_flips_removed_per_rel=torch.tensor([[0, 1]]),
-                num_true_predicates=torch.tensor([3]),
-            )
-        )
-        logged = model.log_dict.call_args.args[0]
-        self.assertEqual(
-            set(logged),
-            {
-                "noise/num_flips_added",
-                "noise/num_flips_removed",
-                "noise/num_true_predicates",
-                "noise/clear/added",
-                "noise/clear/removed",
-                "noise/on/added",
-                "noise/on/removed",
-            },
-        )
-        self.assertEqual(logged["noise/clear/added"].item(), 1.0)
-        self.assertEqual(logged["noise/on/removed"].item(), 1.0)
-
-    def test_a_clean_batch_logs_no_noise_metrics_at_all(self):
-        model = self.with_labels()
-        model.log_dict = Mock()
-        model._log_noise(Data(y_action=torch.tensor([0])))
-        model.log_dict.assert_not_called()
-
     def test_log_results_skips_nan_and_handles_train_prefix(self):
         model = self.make_model()
         model.log = Mock()

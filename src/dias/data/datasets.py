@@ -44,28 +44,6 @@ class PddlTransitionDataset(Dataset):
         }
 
 
-def _attach_flip_counts(data, transition, clean, num_relations: int) -> None:
-    """Record what the noise changed, for the training-time diagnostics.
-
-    These ride on the graph as plain tensors because that is what PyG collates
-    across a batch; `DIAS._log_noise` reads them back per step. A clean sample
-    gets none of them, and nothing to log.
-    """
-    added = torch.zeros(num_relations, dtype=torch.long)
-    removed = torch.zeros_like(added)
-    for noisy, original in zip(transition, clean):
-        difference = noisy - original
-        added += (difference > 0).sum(dim=(1, 2))
-        removed += (difference < 0).sum(dim=(1, 2))
-
-    data.num_flips_added_per_rel = added[None, :]
-    data.num_flips_removed_per_rel = removed[None, :]
-    data.num_flips_added = added.sum().reshape(1)
-    data.num_flips_removed = removed.sum().reshape(1)
-    # The count the flips are to be read against.
-    data.num_true_predicates = transition[0].sum().long().reshape(1)
-
-
 def _build_sample(
     base: PddlTransitionDataset,
     real_idx: int,
@@ -74,10 +52,9 @@ def _build_sample(
     idx_tensor: torch.Tensor,
 ):
     sample = base[real_idx]
-    clean = (sample["state"], sample["next_state"])
     transition = (
-        clean[0] if noisy_state is None else noisy_state,
-        clean[1] if noisy_next is None else noisy_next,
+        sample["state"] if noisy_state is None else noisy_state,
+        sample["next_state"] if noisy_next is None else noisy_next,
     )
 
     data_s1, data_s2 = [
@@ -85,8 +62,6 @@ def _build_sample(
     ]
     data_s1.y_action = sample["action_index"]
     data_s1.y_action_args = sample["action_args"].unsqueeze(0)
-    if noisy_state is not None or noisy_next is not None:
-        _attach_flip_counts(data_s1, transition, clean, base.num_relations)
 
     return (
         data_s1,

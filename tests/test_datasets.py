@@ -42,30 +42,26 @@ class TransitionDatasetTest(unittest.TestCase):
         self.assertEqual(sample["action_args"].tolist(), [1, 0])
 
 
-class FlipCountTest(unittest.TestCase):
-    """The noise diagnostics ride on the graph, and only when there is noise."""
+class GraphDatasetTest(unittest.TestCase):
+    """A sample is built from the noisy transition where there is one."""
 
     def sample(self, **kwargs):
         base = PddlTransitionDataset(make_data())
-        dataset = PddlGraphDataset(base, [0], **kwargs)
-        return dataset[0][0]
+        return PddlGraphDataset(base, [0], **kwargs)[0]
 
-    def test_a_clean_sample_carries_no_counts(self):
-        self.assertFalse(hasattr(self.sample(), "num_flips_added"))
+    def test_a_clean_sample_encodes_the_stored_transition(self):
+        _, _, _, state, _, _, _ = self.sample()
+        self.assertTrue(
+            torch.equal(state, PddlTransitionDataset(make_data()).states[0])
+        )
 
-    def test_the_counts_cover_both_states_of_the_transition(self):
-        clean = PddlTransitionDataset(make_data())
-        noisy_states = clean.states[[0]].clone()
-        noisy_states[0, 0, 0, 0] = 0.0  # one atom of the unary relation removed
-        noisy_next = clean.next_states[[0]].clone()
-        noisy_next[0, 1, 1, 0] = 1.0  # one atom of the binary relation added
+    def test_noisy_states_replace_the_clean_ones_in_the_graph(self):
+        noisy_states = PddlTransitionDataset(make_data()).states[[0]].clone()
+        noisy_states[0, 1, 1, 0] = 1.0  # one atom of the binary relation added
 
-        data = self.sample(noisy_states=noisy_states, noisy_next_states=noisy_next)
-        self.assertEqual(data.num_flips_removed.tolist(), [1])
-        self.assertEqual(data.num_flips_added.tolist(), [1])
-        self.assertEqual(data.num_flips_removed_per_rel.tolist(), [[1, 0]])
-        self.assertEqual(data.num_flips_added_per_rel.tolist(), [[0, 1]])
-        self.assertEqual(data.num_true_predicates.tolist(), [1])
+        data_s1, _, _, state, _, _, _ = self.sample(noisy_states=noisy_states)
+        self.assertTrue(torch.equal(state, noisy_states[0]))
+        self.assertEqual(data_s1.edge_index.size(1), int(noisy_states[0].sum()))
 
 
 class StratifiedStreamTest(unittest.TestCase):

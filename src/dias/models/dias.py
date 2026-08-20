@@ -248,42 +248,12 @@ class DIAS(L.LightningModule):
             "scheduled_w/gmean_temperature", self.gmean_temperature(self.global_step)
         )
 
-    def _log_noise(self, batch_s1) -> None:
-        """What the input noise changed this step, when there is any.
-
-        A clean run attaches no counts, so it logs no noise metrics rather than
-        a constant zero per relation per step.
-        """
-        if not hasattr(batch_s1, "num_flips_added"):
-            return
-
-        _, relation_names, _ = self.label_names
-        added = batch_s1.num_flips_added_per_rel.float().mean(dim=0)
-        removed = batch_s1.num_flips_removed_per_rel.float().mean(dim=0)
-        self.log_dict(
-            {
-                "noise/num_flips_added": batch_s1.num_flips_added.float().mean(),
-                "noise/num_flips_removed": batch_s1.num_flips_removed.float().mean(),
-                "noise/num_true_predicates": (
-                    batch_s1.num_true_predicates.float().mean()
-                ),
-            }
-            | {f"noise/{name}/added": added[r] for r, name in enumerate(relation_names)}
-            | {
-                f"noise/{name}/removed": removed[r]
-                for r, name in enumerate(relation_names)
-            },
-            on_step=True,
-            on_epoch=False,
-        )
-
     def trainable_parameters(self):
         return [p for p in self.parameters() if p.requires_grad]
 
     def training_step(self, batch, batch_idx):
         optimizer = self.optimizers()
         optimizer.zero_grad()
-        self._log_noise(batch[0])
 
         losses = self.step(batch)
         self.gradients.backward(
