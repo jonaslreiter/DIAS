@@ -1,5 +1,5 @@
+import logging
 import random
-import sys
 from pathlib import Path
 from typing import Optional
 
@@ -15,6 +15,8 @@ from dias.schema import DomainSchema
 
 from ..schema.domain import _argument_positions
 from .generate_samples import generate_random_walk, get_metadata, samples_to_tensors
+
+logger = logging.getLogger(__name__)
 
 
 def _flip_stats(state: torch.Tensor, clean: torch.Tensor):
@@ -285,8 +287,7 @@ class PddlGraphDataModule(L.LightningDataModule):
         self._apply_min_per_label_floors()
         self._validate_sampling_config()
 
-        print(f"Loading domain:  {domain_path}", file=sys.stderr)
-        print(f"Loading problem: {problem_path}", file=sys.stderr)
+        logger.info("Loading domain %s, problem %s", domain_path, problem_path)
         self.domain = pymimir.Domain(Path(domain_path))
         self.problem = pymimir.Problem(self.domain, Path(problem_path))
         self.metadata = get_metadata(self.domain, self.problem)
@@ -325,9 +326,7 @@ class PddlGraphDataModule(L.LightningDataModule):
             current = getattr(self, name)
             if floor is None or current is None or current >= floor:
                 continue
-            print(
-                f"[info] Raising {name} {current} → {floor} (floor).", file=sys.stderr
-            )
+            logger.info("Raising %s from %s to its floor of %s.", name, current, floor)
             setattr(self, name, floor)
 
     @property
@@ -499,20 +498,21 @@ class PddlGraphDataModule(L.LightningDataModule):
             )
             self._valid_ds = PddlGraphDataset(self._base, self._valid_idx)
 
-        print(
-            f"PddlGraphDataModule: {total} total samples → "
-            f"train={len(self._train_idx)}, valid={len(self._valid_idx)} "
-            f"(batch_sampling_strategy={self.batch_sampling_strategy})",
-            file=sys.stderr,
+        logger.info(
+            "%d samples: train=%d, valid=%d, batched %s.",
+            total,
+            len(self._train_idx),
+            len(self._valid_idx),
+            self.batch_sampling_strategy,
         )
 
     def _sample_transitions(self) -> list[dict]:
         random.seed(self.seed)
-        print(
-            f"Domain: {self.metadata['domain_name']},  "
-            f"Objects: {self.metadata['num_objects']},  "
-            f"Actions: {[a['name'] for a in self.metadata['actions']]}",
-            file=sys.stderr,
+        logger.info(
+            "Domain %s: %d objects, actions %s.",
+            self.metadata["domain_name"],
+            self.metadata["num_objects"],
+            [a["name"] for a in self.metadata["actions"]],
         )
         min_total = (
             self.min_per_label_train + self.min_per_label_valid if self._has_min else 0
@@ -543,11 +543,13 @@ class PddlGraphDataModule(L.LightningDataModule):
             else:
                 dropped[a] = dropped.get(a, 0) + 1
         if dropped:
-            print(
-                f"[info] Capped per-label samples to {cap} "
-                f"(train={self.max_per_label_train} + valid={self.max_per_label_valid}); "
-                f"dropped per action: {dropped}",
-                file=sys.stderr,
+            logger.info(
+                "Capped per-label samples to %d (train=%s + valid=%s); "
+                "dropped per action: %s",
+                cap,
+                self.max_per_label_train,
+                self.max_per_label_valid,
+                dropped,
             )
         return kept
 
@@ -594,11 +596,14 @@ class PddlGraphDataModule(L.LightningDataModule):
         train_idx.extend(pool[p] for p in perm[:n_extra])
         valid_idx.extend(pool[p] for p in perm[n_extra:])
 
-        print(
-            f"Split: {total} samples → train={len(train_idx)}, "
-            f"valid={len(valid_idx)} (ratio {train_w}:{valid_w}, "
-            f"stratified: 1 reserved per action per split when ≥2 samples).",
-            file=sys.stderr,
+        logger.info(
+            "Split %d samples into train=%d, valid=%d at ratio %d:%d, "
+            "reserving one per action per split where there are at least two.",
+            total,
+            len(train_idx),
+            len(valid_idx),
+            train_w,
+            valid_w,
         )
         return train_idx, valid_idx
 
@@ -648,11 +653,12 @@ class PddlGraphDataModule(L.LightningDataModule):
         self, train_idx: list[int], gen: torch.Generator
     ) -> tuple[torch.Tensor, torch.Tensor]:
         add_ratio_per_rel = [self.edge_add_ratio * r for r in self.relation_true_ratio]
-        print(
-            f"Applying ratio edge noise to train split "
-            f"(remove={self.edge_remove_ratio}, add={self.edge_add_ratio}, "
-            f"scaled add per rel={[f'{x:.4g}' for x in add_ratio_per_rel]})",
-            file=sys.stderr,
+        logger.info(
+            "Ratio edge noise on the train split: remove=%s, add=%s, "
+            "scaled add per relation=%s",
+            self.edge_remove_ratio,
+            self.edge_add_ratio,
+            [f"{x:.4g}" for x in add_ratio_per_rel],
         )
 
         def noisy(src: torch.Tensor) -> torch.Tensor:
@@ -675,11 +681,11 @@ class PddlGraphDataModule(L.LightningDataModule):
         self, train_idx: list[int], gen: torch.Generator
     ) -> tuple[torch.Tensor, torch.Tensor]:
         relation_mask = self._enabled_relation_mask()
-        print(
-            f"Applying expected-count edge noise to train split "
-            f"(remove={self.expected_removed_atoms}, add={self.expected_added_atoms}, "
-            f"per adjacency tensor)",
-            file=sys.stderr,
+        logger.info(
+            "Expected-count edge noise on the train split: remove=%s, add=%s "
+            "atoms per adjacency tensor.",
+            self.expected_removed_atoms,
+            self.expected_added_atoms,
         )
 
         def noisy(src: torch.Tensor) -> torch.Tensor:
@@ -716,19 +722,27 @@ class PddlGraphDataModule(L.LightningDataModule):
             zeros = region.numel() - ones
             ratios.append(ones / zeros if zeros > 0 else 0.0)
 
-        print("Per-relation true/false ratios:", file=sys.stderr)
-        for name, ar, r in zip(ds.relation_names, self.arity_relations, ratios):
-            print(f"  {name} (arity {ar}): r={r:.4g}", file=sys.stderr)
+        logger.info(
+            "Per-relation true/false ratios: %s",
+            {
+                f"{name}/{arity}": f"{ratio:.4g}"
+                for name, arity, ratio in zip(
+                    ds.relation_names, self.arity_relations, ratios
+                )
+            },
+        )
         return ratios
 
     def _log_action_distribution(self) -> None:
         ds = self._base
         counts = torch.bincount(ds.action_indices, minlength=len(ds.action_names))
-        print("Action frequency distribution:", file=sys.stderr)
-        for name, count in zip(ds.action_names, counts.tolist()):
-            print(
-                f"  {name}: {count} ({100.0 * count / len(ds):.1f}%)", file=sys.stderr
-            )
+        logger.info(
+            "Action frequencies: %s",
+            {
+                name: f"{count} ({100.0 * count / len(ds):.1f}%)"
+                for name, count in zip(ds.action_names, counts.tolist())
+            },
+        )
 
     def _make_stratified(
         self,

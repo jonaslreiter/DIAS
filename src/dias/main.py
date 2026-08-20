@@ -1,3 +1,4 @@
+import logging
 import os
 import warnings
 from pathlib import Path
@@ -54,6 +55,9 @@ class SaveAndLogConfigCallback(SaveConfigCallback):
 
 
 def main():
+    # The library reports through `logging`, which discards INFO until someone
+    # configures a handler; the entry point is the one place that may.
+    logging.basicConfig(level=logging.INFO, format="%(name)s: %(message)s")
     torch.set_float32_matmul_precision("medium")
 
     CLI(

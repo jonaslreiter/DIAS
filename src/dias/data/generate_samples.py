@@ -1,8 +1,10 @@
 """Generate (state, action, next_state) samples from PDDL domains via pymimir."""
 
+import logging
 import random
-import sys
 from collections import deque
+
+logger = logging.getLogger(__name__)
 
 
 def state_to_dict(state, include_statics=False):
@@ -133,21 +135,22 @@ def generate_random_walk(
             for a in action_names
             if per_label.get(a, 0) < min_per_label
         }
-        print(
-            f"[warn] random walk hit max_steps={max_steps} before meeting quota. "
-            f"Missing per action: {missing}",
-            file=sys.stderr,
+        logger.warning(
+            "Random walk hit max_steps=%d before meeting its quota; "
+            "missing per action: %s",
+            max_steps,
+            missing,
         )
 
     if deadlocks:
-        print(
-            f"[info] Random walk restarted {deadlocks} time(s) from initial state.",
-            file=sys.stderr,
+        logger.info(
+            "Random walk restarted %d time(s) from the initial state.", deadlocks
         )
-    print(
-        f"[info] Random walk: {steps} steps, {len(samples)} samples, "
-        f"per-label: {per_label}",
-        file=sys.stderr,
+    logger.info(
+        "Random walk: %d steps, %d samples, per action: %s",
+        steps,
+        len(samples),
+        per_label,
     )
     return samples
 
@@ -166,7 +169,7 @@ def generate_bfs(problem, num_states: int, include_statics: bool = False):
                 queue.append(succ)
                 if len(visited) >= num_states:
                     break
-    print(f"  BFS explored {len(visited)} unique states.", file=sys.stderr)
+    logger.info("BFS explored %d unique states.", len(visited))
 
     samples = []
     for state in visited.values():
