@@ -12,7 +12,7 @@ from collections import defaultdict
 
 from tqdm import tqdm
 
-from dias.data.generate_samples import generate_bfs
+from dias.data.generate_samples import reachable_states
 from dias.pddl.states import state_fluents, transfer_state
 
 logger = logging.getLogger(__name__)
@@ -44,16 +44,7 @@ def sample_reachable_states(
         )
         num_samples = sample_population
 
-    seen: set[int] = set()
-    population: list = []
-    for sample in generate_bfs(problem, sample_population):
-        state = sample["_pymimir_state"]
-        if state.get_index() not in seen:
-            seen.add(state.get_index())
-            population.append(state)
-        if len(population) >= sample_population:
-            break
-
+    population = reachable_states(problem, sample_population)
     if num_samples > len(population):
         logger.warning(
             "num_samples (%d) exceeds the reachable states (%d), clamping.",

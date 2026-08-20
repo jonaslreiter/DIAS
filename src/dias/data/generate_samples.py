@@ -78,7 +78,6 @@ def _make_sample(state, ga, successor, include_statics):
         "action_args": [o.get_index() for o in ga.get_objects()],
         "next_state": state_to_dict(successor, include_statics),
         "applicable_actions": _applicable_map(state.generate_applicable_actions()),
-        "_pymimir_state": state,
     }
 
 
@@ -155,27 +154,33 @@ def generate_random_walk(
     return samples
 
 
-def generate_bfs(problem, num_states: int, include_statics: bool = False):
-    """BFS up to ``num_states`` states; emit one sample per applicable action."""
+def reachable_states(problem, limit: int) -> list:
+    """Up to `limit` distinct states reachable from the initial one, breadth first."""
     initial = problem.get_initial_state()
     visited = {initial.get_index(): initial}
     queue = deque([initial])
-    while queue and len(visited) < num_states:
+    while queue and len(visited) < limit:
         current = queue.popleft()
-        for ga in current.generate_applicable_actions():
-            succ = ga.apply(current)
-            if succ.get_index() not in visited:
-                visited[succ.get_index()] = succ
-                queue.append(succ)
-                if len(visited) >= num_states:
-                    break
-    logger.info("BFS explored %d unique states.", len(visited))
+        for action in current.generate_applicable_actions():
+            successor = action.apply(current)
+            if successor.get_index() in visited:
+                continue
+            visited[successor.get_index()] = successor
+            queue.append(successor)
+            if len(visited) >= limit:
+                break
 
-    samples = []
-    for state in visited.values():
-        for ga in state.generate_applicable_actions():
-            samples.append(_make_sample(state, ga, ga.apply(state), include_statics))
-    return samples
+    logger.info("BFS reached %d distinct states.", len(visited))
+    return list(visited.values())
+
+
+def generate_bfs(problem, num_states: int, include_statics: bool = False):
+    """One sample per applicable action of each state a BFS reaches."""
+    return [
+        _make_sample(state, action, action.apply(state), include_statics)
+        for state in reachable_states(problem, num_states)
+        for action in state.generate_applicable_actions()
+    ]
 
 
 def samples_to_tensors(
