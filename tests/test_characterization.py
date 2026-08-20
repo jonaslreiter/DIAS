@@ -141,15 +141,15 @@ class ForwardCharacterizationTest(unittest.TestCase):
                 torch.manual_seed(29)
                 prediction = model(*make_batch())
 
-                # Positional indices into the 11-tuple; these become named
-                # SchemaPrediction fields in Phase 4.
-                for label, index in (
-                    ("adjacency_out", 0),
-                    ("ignore_effects", 2),
-                    ("ignore_precond", 5),
-                    ("delta", -1),
+                # The golden keys predate SchemaPrediction, so they are kept as
+                # they were: the stored values must still be what is compared.
+                for label, value in (
+                    ("adjacency_out", prediction.adjacency),
+                    ("ignore_effects", prediction.effects.ignore),
+                    ("ignore_precond", prediction.preconditions.ignore),
+                    ("delta", prediction.delta),
                 ):
-                    GOLDEN.check(self, f"forward/{name}/{label}", prediction[index])
+                    GOLDEN.check(self, f"forward/{name}/{label}", value)
 
     def test_step_losses_match_golden(self):
         for name, flags in FLAG_CASES.items():

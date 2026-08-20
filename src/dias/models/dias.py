@@ -284,19 +284,10 @@ class DIAS(L.LightningModule):
 
     def step(self, batch):
         batch_s1, batch_s2, *_ = batch
-        (
-            adj_out_probs,
-            _adj_s1,
-            ignore_effects,
-            _add_effects,
-            _del_effects,
-            ignore_precond,
-            _pos_precond,
-            _neg_precond,
-            _selection,
-            _logits,
-            _delta,
-        ) = self.forward(batch_s1, batch_s2)
+        prediction = self.forward(batch_s1, batch_s2)
+        adj_out_probs = prediction.adjacency
+        ignore_effects = prediction.effects.ignore
+        ignore_precond = prediction.preconditions.ignore
 
         target_adj = torch.stack(
             [
@@ -361,8 +352,8 @@ class DIAS(L.LightningModule):
             "loss_adjacency": loss_adjacency,
             "loss_aux": loss_aux,
             "loss_mse": loss_mse,
-            "pre_mean": self.graph_edit._last_pre_mean,
-            "pre_prod_mean": self.graph_edit._last_pre_prod_mean,
+            "pre_mean": prediction.precondition_satisfaction.mean().detach(),
+            "pre_prod_mean": prediction.precondition_product.mean(),
         }
 
     def on_train_batch_start(self, batch, batch_idx):

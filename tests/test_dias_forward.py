@@ -43,14 +43,14 @@ class DIASForwardTest(unittest.TestCase):
             Batch.from_data_list([state]), Batch.from_data_list([next_state])
         )
 
-        self.assertEqual(prediction[0].shape, (1, 2, 2, 2))
+        self.assertEqual(prediction.adjacency.shape, (1, 2, 2, 2))
         # float32 sums, so the tolerance has to sit above the accumulation error;
         # pinning more digits than this fails on any BLAS or torch version change.
         torch.testing.assert_close(
-            prediction[0].sum(), torch.tensor(2.2219810), rtol=0, atol=1e-6
+            prediction.adjacency.sum(), torch.tensor(2.2219810), rtol=0, atol=1e-6
         )
         torch.testing.assert_close(
-            prediction[-1].sum(), torch.tensor(0.2367774), rtol=0, atol=1e-6
+            prediction.delta.sum(), torch.tensor(0.2367774), rtol=0, atol=1e-6
         )
 
 

@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from dias.models.outputs import Channels, SchemaPrediction
 from dias.models.preconditions import soft_conjunction
 from dias.models.utils import batched_sinkhorn_d1d2
 
@@ -206,43 +207,33 @@ class PredictionModule(nn.Module):
             self._last_selection = selection.detach().cpu()
             self._last_y_action = y_action.detach().cpu()
 
-        preconditions = F.softmax(self.preconditions[y_action], dim=-1)
+        preconditions = Channels.from_logits(self.preconditions[y_action])
         if self.state_dependent_effects:
             # Predict per-action effects from the current state, then pick this
             # batch's actions: (B, A, R, k, k, 3) -> (B, R, k, k, 3).
             adj_selection = torch.einsum(
                 "bai,brij,bcj->brac", selection, adj_batch, selection
             )
-            effects = F.softmax(self.effects_mlp(adj_selection), dim=-1)
-            effects = effects[torch.arange(B, device=y_action.device), y_action]
+            effect_logits = self.effects_mlp(adj_selection)
+            effect_logits = effect_logits[
+                torch.arange(B, device=y_action.device), y_action
+            ]
         else:
-            effects = F.softmax(self.effects[y_action], dim=-1)
-
-        ignore_effects, add_effects, del_effects = (
-            effects[..., 0],
-            effects[..., 1],
-            effects[..., -1],
-        )
-        ignore_precond, pos_precond, neg_precond = (
-            preconditions[..., 0],
-            preconditions[..., 1],
-            preconditions[..., -1],
-        )
+            effect_logits = self.effects[y_action]
+        effects = Channels.from_logits(effect_logits)
 
         def project(slots):
             return torch.einsum("bai,brac,bcj->brij", selection, slots, selection)
 
-        add_proj = project(add_effects)
-        del_proj = project(del_effects)
-        pos_proj = project(pos_precond)
-        neg_proj = project(neg_precond)
+        add_proj = project(effects.positive)
+        del_proj = project(effects.negative)
+        pos_proj = project(preconditions.positive)
+        neg_proj = project(preconditions.negative)
 
         precond_fulfilled = (
             (1 - pos_proj * (1 - adj_batch)) * (1 - neg_proj * adj_batch)
         ).flatten(start_dim=1)
         pre = soft_conjunction(precond_fulfilled, dim=-1, temperature=gmean_temperature)
-        self._last_pre_mean = pre.mean().detach()
-        self._last_pre_prod_mean = precond_fulfilled.prod(dim=-1).mean().detach()
 
         delta = (1 - adj_batch) * add_proj - adj_batch * del_proj
         if self.learn_preconditions:
@@ -250,16 +241,14 @@ class PredictionModule(nn.Module):
         else:
             adj_out_probs = adj_batch + delta
 
-        return (
-            adj_out_probs,
-            adj_batch,
-            ignore_effects,
-            add_effects,
-            del_effects,
-            ignore_precond,
-            pos_precond,
-            neg_precond,
-            selection,
-            logits_ext,
-            delta,
+        return SchemaPrediction(
+            adjacency=adj_out_probs,
+            input_adjacency=adj_batch,
+            delta=delta,
+            effects=effects,
+            preconditions=preconditions,
+            selection=selection,
+            selection_logits=logits_ext,
+            precondition_satisfaction=pre,
+            precondition_product=precond_fulfilled.prod(dim=-1).detach(),
         )

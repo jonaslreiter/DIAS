@@ -121,23 +121,23 @@ class DIASModelTest(unittest.TestCase):
         short_s1 = batch_s1.clone()
         short_s1.y_action_args = torch.tensor([[-1]])
         short_output = model(short_s1, batch_s2)
-        self.assertEqual(short_output[0].shape, (1, 2, 2, 2))
+        self.assertEqual(short_output.adjacency.shape, (1, 2, 2, 2))
 
         long_model = self.make_model(force_action_args=False)
         long_model.eval()
         long_s1 = batch_s1.clone()
         long_s1.y_action_args = torch.tensor([[0, 1, 0]])
         long_output = long_model(long_s1, batch_s2)
-        self.assertEqual(long_output[0].shape, (1, 2, 2, 2))
-        self.assertTrue(torch.isfinite(long_output[0]).all())
+        self.assertEqual(long_output.adjacency.shape, (1, 2, 2, 2))
+        self.assertTrue(torch.isfinite(long_output.adjacency).all())
 
     def test_forward_without_successor_batch_uses_reverse_edges_only(self):
         model = self.make_model(successor_relations=False, random_node_embeddings=False)
         model.eval()
         batch_s1, _ = make_batch(action_args=(-1, -1))
         output = model(batch_s1)
-        self.assertEqual(output[0].shape, (1, 2, 2, 2))
-        self.assertTrue(torch.isfinite(output[0]).all())
+        self.assertEqual(output.adjacency.shape, (1, 2, 2, 2))
+        self.assertTrue(torch.isfinite(output.adjacency).all())
 
     def test_step_and_eval_steps_return_losses(self):
         model = self.make_model(successor_relations=False)

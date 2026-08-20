@@ -25,12 +25,12 @@ class PredictionModuleTest(unittest.TestCase):
             y_action_args=torch.tensor([[1, -1]]),
             adj_dense=torch.zeros(1, 2, 2, 2),
         )
-        self.assertEqual(tuple(output[0].shape), (1, 2, 2, 2))
-        self.assertTrue(torch.isfinite(output[0]).all())
+        self.assertEqual(tuple(output.adjacency.shape), (1, 2, 2, 2))
+        self.assertTrue(torch.isfinite(output.adjacency).all())
         self.assertEqual(module._last_y_action.tolist(), [0])
         self.assertEqual(tuple(module._last_selection.shape), (1, 2, 2))
-        self.assertEqual(output[9][0, 0, 1].item(), 0.0)
-        self.assertTrue(torch.isneginf(output[9]).any())
+        self.assertEqual(output.selection_logits[0, 0, 1].item(), 0.0)
+        self.assertTrue(torch.isneginf(output.selection_logits).any())
 
     def test_per_action_slots_masks_unused_slots_and_supports_graph_input(self):
         torch.manual_seed(7)
@@ -54,9 +54,9 @@ class PredictionModuleTest(unittest.TestCase):
             y_action=torch.tensor([0]),
             y_action_args=torch.tensor([[-1, -1]]),
         )
-        self.assertTrue(torch.all(output[8][:, 1] == 0))
-        self.assertEqual(tuple(output[1].shape), (1, 2, 2, 2))
-        self.assertTrue(torch.isfinite(output[0]).all())
+        self.assertTrue(torch.all(output.selection[:, 1] == 0))
+        self.assertEqual(tuple(output.input_adjacency.shape), (1, 2, 2, 2))
+        self.assertTrue(torch.isfinite(output.adjacency).all())
 
     def test_forward_without_preconditions_does_not_gate_delta(self):
         torch.manual_seed(9)
@@ -75,8 +75,8 @@ class PredictionModuleTest(unittest.TestCase):
         node_embeddings = torch.randn(2, 2)
         gated_output = gated(node_embeddings, **kwargs)
         ungated_output = ungated(node_embeddings, **kwargs)
-        self.assertFalse(torch.equal(gated_output[0], ungated_output[0]))
-        self.assertTrue(torch.equal(gated_output[-1], ungated_output[-1]))
+        self.assertFalse(torch.equal(gated_output.adjacency, ungated_output.adjacency))
+        self.assertTrue(torch.equal(gated_output.delta, ungated_output.delta))
 
     def test_the_temperature_reaches_the_precondition_gate(self):
         """Tau arrives as a plain value; the floor is the schedule's business."""
@@ -90,10 +90,11 @@ class PredictionModuleTest(unittest.TestCase):
         node_embeddings = torch.randn(2, 2)
         relaxed = module(node_embeddings, gmean_temperature=0.5, **kwargs)
         stricter = module(node_embeddings, gmean_temperature=0.4, **kwargs)
-        self.assertFalse(torch.allclose(relaxed[0], stricter[0]))
+        self.assertFalse(torch.allclose(relaxed.adjacency, stricter.adjacency))
         self.assertTrue(
             torch.allclose(
-                relaxed[0], module(node_embeddings, gmean_temperature=0.5, **kwargs)[0]
+                relaxed.adjacency,
+                module(node_embeddings, gmean_temperature=0.5, **kwargs).adjacency,
             )
         )
 
