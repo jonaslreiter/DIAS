@@ -20,16 +20,26 @@ from .generate_samples import generate_random_walk, get_metadata, samples_to_ten
 logger = logging.getLogger(__name__)
 
 
-def _flip_stats(state: torch.Tensor, clean: torch.Tensor):
-    diff = state - clean
-    pos = diff > 0
-    neg = diff < 0
-    return (
-        int(pos.sum().item()),
-        int(neg.sum().item()),
-        pos.sum(dim=(1, 2)).long(),
-        neg.sum(dim=(1, 2)).long(),
-    )
+def _attach_flip_counts(data, transition, clean, num_relations: int) -> None:
+    """Record what the noise changed, for the training-time diagnostics.
+
+    These ride on the graph as plain tensors because that is what PyG collates
+    across a batch; `DIAS._log_noise` reads them back per step. A clean sample
+    gets none of them, and nothing to log.
+    """
+    added = torch.zeros(num_relations, dtype=torch.long)
+    removed = torch.zeros_like(added)
+    for noisy, original in zip(transition, clean):
+        difference = noisy - original
+        added += (difference > 0).sum(dim=(1, 2))
+        removed += (difference < 0).sum(dim=(1, 2))
+
+    data.num_flips_added_per_rel = added[None, :]
+    data.num_flips_removed_per_rel = removed[None, :]
+    data.num_flips_added = added.sum().reshape(1)
+    data.num_flips_removed = removed.sum().reshape(1)
+    # The count the flips are to be read against.
+    data.num_true_predicates = transition[0].sum().long().reshape(1)
 
 
 def _build_sample(
@@ -40,50 +50,28 @@ def _build_sample(
     idx_tensor: torch.Tensor,
 ):
     sample = base[real_idx]
-    clean_s, clean_ns = sample["state"], sample["next_state"]
-    R = clean_s.shape[0]
-    zeros = torch.zeros(R, dtype=torch.long)
+    clean = (sample["state"], sample["next_state"])
+    transition = (
+        clean[0] if noisy_state is None else noisy_state,
+        clean[1] if noisy_next is None else noisy_next,
+    )
 
-    if noisy_state is not None:
-        state = noisy_state
-        added_s, removed_s, added_s_pr, removed_s_pr = _flip_stats(state, clean_s)
-    else:
-        state, added_s, removed_s, added_s_pr, removed_s_pr = (
-            clean_s,
-            0,
-            0,
-            zeros,
-            zeros,
-        )
-    if noisy_next is not None:
-        next_state = noisy_next
-        added_ns, removed_ns, added_ns_pr, removed_ns_pr = _flip_stats(
-            next_state, clean_ns
-        )
-    else:
-        next_state, added_ns, removed_ns, added_ns_pr, removed_ns_pr = (
-            clean_ns,
-            0,
-            0,
-            zeros,
-            zeros,
-        )
+    data_s1, data_s2 = [
+        adj_to_pyg_data(state, base.num_objects) for state in transition
+    ]
+    data_s1.y_action = sample["action_index"]
+    data_s1.y_action_args = sample["action_args"].unsqueeze(0)
+    if noisy_state is not None or noisy_next is not None:
+        _attach_flip_counts(data_s1, transition, clean, base.num_relations)
 
-    action = sample["action_index"]
-    action_args = sample["action_args"]
-    data_s1 = adj_to_pyg_data(state, base.num_objects)
-    data_s2 = adj_to_pyg_data(next_state, base.num_objects)
-
-    data_s1.y_action = action
-    data_s1.y_action_args = action_args.unsqueeze(0)
-    data_s1.num_flips_added = torch.tensor([added_s + added_ns])
-    data_s1.num_flips_removed = torch.tensor([removed_s + removed_ns])
-    data_s1.num_flips_added_per_rel = (added_s_pr + added_ns_pr)[None, :]
-    data_s1.num_flips_removed_per_rel = (removed_s_pr + removed_ns_pr)[None, :]
-    data_s1.num_true_predicates = torch.tensor([int(state.sum().item())])
-    data_s2.num_true_predicates = torch.tensor([int(next_state.sum().item())])
-
-    return data_s1, data_s2, idx_tensor, state, next_state, action, action_args
+    return (
+        data_s1,
+        data_s2,
+        idx_tensor,
+        *transition,
+        sample["action_index"],
+        sample["action_args"],
+    )
 
 
 class StratifiedActionIterableDataset(IterableDataset):

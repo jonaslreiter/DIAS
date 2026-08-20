@@ -4,7 +4,11 @@ import unittest
 import torch
 
 from checkpoints import DOMAIN, TRAIN_PROBLEM
-from dias.data.datamodule import PddlGraphDataModule, PddlTransitionDataset
+from dias.data.datamodule import (
+    PddlGraphDataModule,
+    PddlGraphDataset,
+    PddlTransitionDataset,
+)
 from dias.data.noise import ExpectedCount, Ratio
 
 
@@ -128,6 +132,32 @@ class DataModuleTest(unittest.TestCase):
         ]
         kept = data_module._cap_per_label(samples)
         self.assertEqual([sample["id"] for sample in kept], [0, 1, 3])
+
+
+class FlipCountTest(unittest.TestCase):
+    """The noise diagnostics ride on the graph, and only when there is noise."""
+
+    def sample(self, **kwargs):
+        base = PddlTransitionDataset(make_data())
+        dataset = PddlGraphDataset(base, [0], **kwargs)
+        return dataset[0][0]
+
+    def test_a_clean_sample_carries_no_counts(self):
+        self.assertFalse(hasattr(self.sample(), "num_flips_added"))
+
+    def test_the_counts_cover_both_states_of_the_transition(self):
+        clean = PddlTransitionDataset(make_data())
+        noisy_states = clean.states[[0]].clone()
+        noisy_states[0, 0, 0, 0] = 0.0  # one atom of the unary relation removed
+        noisy_next = clean.next_states[[0]].clone()
+        noisy_next[0, 1, 1, 0] = 1.0  # one atom of the binary relation added
+
+        data = self.sample(noisy_states=noisy_states, noisy_next_states=noisy_next)
+        self.assertEqual(data.num_flips_removed.tolist(), [1])
+        self.assertEqual(data.num_flips_added.tolist(), [1])
+        self.assertEqual(data.num_flips_removed_per_rel.tolist(), [[1, 0]])
+        self.assertEqual(data.num_flips_added_per_rel.tolist(), [[0, 1]])
+        self.assertEqual(data.num_true_predicates.tolist(), [1])
 
 
 class NoiseArgumentTest(unittest.TestCase):
