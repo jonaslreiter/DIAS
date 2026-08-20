@@ -8,9 +8,9 @@ from dias.models.outputs import Channels
 
 
 def process_model_logits(
-    effect_logits: torch.tensor,
-    precondition_logits: torch.tensor,
-    slot_weight_logits: torch.tensor,
+    effect_logits: torch.Tensor | None,
+    precondition_logits: torch.Tensor,
+    slot_weight_logits: torch.Tensor,
     force_action_args: bool,
     action_arguments: bool,
     strips_plus_actions: bool,
@@ -28,10 +28,14 @@ def process_model_logits(
     tensors. Lowering it yields more active slots (higher learned arity) and
     both more effects and more preconditions; raising it yields fewer of each.
     0.5 is the default the paper's numbers use.
+
+    `effect_logits` is None for a model whose effects are predicted from the
+    state: there is no lifted effect tensor to read off, and the add and delete
+    arrays come back as None with it.
     """
-    effects = Channels.from_logits(effect_logits)
-    add_effects_probs = effects.positive
-    del_effects_probs = effects.negative
+    effects = None if effect_logits is None else Channels.from_logits(effect_logits)
+    add_effects_probs = None if effects is None else effects.positive
+    del_effects_probs = None if effects is None else effects.negative
 
     preconditions = Channels.from_logits(precondition_logits)
     pos_precond_probs = preconditions.positive
@@ -62,28 +66,35 @@ def process_model_logits(
     # (num_actions, num_slots)
     active_slots = slot_probs.detach().cpu().numpy() > threshold
 
-    # Zero out rows and columns for inactive slots in effects/preconditions
-    # Shapes: (num_actions, num_relations, num_slots, num_slots)
-    for a in range(active_slots.shape[0]):
-        inactive = ~active_slots[a]  # (num_slots,)
-        add_effects_probs[a, :, inactive, :] = 0
-        add_effects_probs[a, :, :, inactive] = 0
-        del_effects_probs[a, :, inactive, :] = 0
-        del_effects_probs[a, :, :, inactive] = 0
-        pos_precond_probs[a, :, inactive, :] = 0
-        pos_precond_probs[a, :, :, inactive] = 0
-        neg_precond_probs[a, :, inactive, :] = 0
-        neg_precond_probs[a, :, :, inactive] = 0
+    # An inactive slot is not a parameter of the learned action, so nothing may
+    # be asserted over it. Shapes: (actions, relations, slots, slots).
+    schema = [pos_precond_probs, neg_precond_probs]
+    if effects is not None:
+        schema += [add_effects_probs, del_effects_probs]
+    for action, active in enumerate(active_slots):
+        inactive = ~active  # (num_slots,)
+        for probabilities in schema:
+            probabilities[action, :, inactive, :] = 0
+            probabilities[action, :, :, inactive] = 0
 
     # Threshold after masking
-    add_eff = np.where(add_effects_probs > threshold, 1, 0)
-    del_eff = np.where(del_effects_probs > threshold, 1, 0)
-    pos_prec = np.where(pos_precond_probs > threshold, 1, 0)
-    neg_prec = np.where(neg_precond_probs > threshold, 1, 0)
+    add_eff = _binarize(add_effects_probs, threshold)
+    del_eff = _binarize(del_effects_probs, threshold)
+    pos_prec = _binarize(pos_precond_probs, threshold)
+    neg_prec = _binarize(neg_precond_probs, threshold)
 
     if random_flip:
         for arr in (add_eff, del_eff, pos_prec, neg_prec):
+            if arr is None:
+                continue
             idx = tuple(np.random.randint(0, s) for s in arr.shape)
             arr[idx] = 1 - arr[idx]
 
     return add_eff, del_eff, pos_prec, neg_prec, active_slots
+
+
+def _binarize(probabilities, threshold: float):
+    """0/1 array at `threshold`, or None for a schema part that does not exist."""
+    if probabilities is None:
+        return None
+    return np.where(probabilities > threshold, 1, 0)

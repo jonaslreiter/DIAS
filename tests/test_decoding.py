@@ -14,10 +14,12 @@ class ProcessModelLogitsTest(unittest.TestCase):
         precondition_logits[..., 1] = 10.0
         effect_logits[..., -1] = 10.0
         slot_logits = torch.tensor([[10.0, -10.0, -10.0], [-10.0, -10.0, -10.0]])
+        # By keyword: the two used to be passed the other way round, and the
+        # call sites cancelled the swap by passing them backwards too.
         result = process_model_logits(
-            precondition_logits,
-            effect_logits,
-            slot_logits,
+            effect_logits=effect_logits,
+            precondition_logits=precondition_logits,
+            slot_weight_logits=slot_logits,
             force_action_args=True,
             action_arguments=True,
             strips_plus_actions=False,
@@ -30,11 +32,13 @@ class ProcessModelLogitsTest(unittest.TestCase):
             result
         )
         self.assertEqual(active.tolist(), [[True, False, False], [True, True, False]])
-        self.assertEqual(add_effects[0, 0, 0, 0], 1)
-        self.assertEqual(add_effects[0, 0, 0, 1], 0)
-        self.assertEqual(delete_effects[0].sum(), 0)
-        self.assertEqual(pos_preconditions.sum(), 0)
-        self.assertEqual(neg_preconditions.sum(), 5)
+        # One active slot for the first action, two for the second: 1 + 4 cells.
+        self.assertEqual(delete_effects[0, 0, 0, 0], 1)
+        self.assertEqual(delete_effects[0, 0, 0, 1], 0)
+        self.assertEqual(delete_effects.sum(), 5)
+        self.assertEqual(pos_preconditions.sum(), 5)
+        self.assertEqual(add_effects.sum(), 0)
+        self.assertEqual(neg_preconditions.sum(), 0)
 
     def test_process_model_logits_uses_strips_plus_positions_and_random_flip(self):
         shape = (1, 1, 2, 2, 3)
@@ -44,7 +48,7 @@ class ProcessModelLogitsTest(unittest.TestCase):
         result = process_model_logits(
             logits,
             logits.clone(),
-            slot_logits,
+            slot_weight_logits=slot_logits,
             force_action_args=True,
             action_arguments=True,
             strips_plus_actions=True,
@@ -56,6 +60,29 @@ class ProcessModelLogitsTest(unittest.TestCase):
         )
         self.assertEqual(result[-1].tolist(), [[False, True]])
         self.assertEqual(sum(array.sum() for array in result[:4]), 4)
+
+    def test_a_model_without_lifted_effects_decodes_only_its_preconditions(self):
+        """The MLP baseline predicts effects from the state; there is no tensor."""
+        shape = (1, 1, 2, 2, 3)
+        precondition_logits = torch.zeros(shape)
+        precondition_logits[..., 1] = 10.0
+        add, delete, positive, negative, active = process_model_logits(
+            effect_logits=None,
+            precondition_logits=precondition_logits,
+            slot_weight_logits=torch.full((1, 2), 10.0),
+            force_action_args=False,
+            action_arguments=False,
+            strips_plus_actions=False,
+            free_pos_map={},
+            action_names=["action"],
+            action_arities=[2],
+            num_slots=2,
+        )
+        self.assertIsNone(add)
+        self.assertIsNone(delete)
+        self.assertEqual(positive.sum(), 4)
+        self.assertEqual(negative.sum(), 0)
+        self.assertEqual(active.tolist(), [[True, True]])
 
 
 if __name__ == "__main__":

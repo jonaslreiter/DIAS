@@ -13,6 +13,11 @@ from .preconditions import Preconditions, soft_conjunction
 from .selection import SlotSelector
 
 
+def project(lifted: torch.Tensor, selection: torch.Tensor) -> torch.Tensor:
+    """Read a tensor over slot pairs as one over object pairs."""
+    return torch.einsum("bai,brac,bcj->brij", selection, lifted, selection)
+
+
 class PredictionModule(nn.Module):
     """Slot-based graph-edit predictor.
 
@@ -96,24 +101,22 @@ class PredictionModule(nn.Module):
         preconditions = Channels.from_logits(self.preconditions(y_action))
         effects = Channels.from_logits(self.effects(y_action, adjacency, selection))
 
-        def project(lifted):
-            return torch.einsum("bai,brac,bcj->brij", selection, lifted, selection)
+        # Before the preconditions, because `selection` feeds all four
+        # projections and autograd sums their gradients in the order the
+        # forward pass built them -- which an archived seed reproduces.
+        delta = self.delta(adjacency, effects, selection)
 
-        add_proj = project(effects.positive)
-        del_proj = project(effects.negative)
-        pos_proj = project(preconditions.positive)
-        neg_proj = project(preconditions.negative)
-
+        required = project(preconditions.positive, selection)
+        forbidden = project(preconditions.negative, selection)
         # An atom satisfies the preconditions unless it is required and absent,
         # or forbidden and present.
         satisfaction = (
-            (1 - pos_proj * (1 - adjacency)) * (1 - neg_proj * adjacency)
+            (1 - required * (1 - adjacency)) * (1 - forbidden * adjacency)
         ).flatten(start_dim=1)
         fulfilled = soft_conjunction(
             satisfaction, dim=-1, temperature=gmean_temperature
         )
 
-        delta = (1 - adjacency) * add_proj - adjacency * del_proj
         if self.learn_preconditions:
             successor = adjacency + fulfilled[:, None, None, None] * delta
         else:
@@ -130,6 +133,33 @@ class PredictionModule(nn.Module):
             precondition_satisfaction=fulfilled,
             precondition_product=satisfaction.prod(dim=-1).detach(),
         )
+
+    def apply(
+        self,
+        adjacency: torch.Tensor,
+        selection: torch.Tensor,
+        y_action: torch.Tensor,
+    ) -> torch.Tensor:
+        """The successor state, for a caller that already knows the binding.
+
+        The preconditions are not consulted. A caller holding a binding got it
+        by grounding the learned schema through PDDL, which is where
+        applicability was decided; asking again here would decide it twice, by
+        two different means.
+        """
+        effects = Channels.from_logits(self.effects(y_action, adjacency, selection))
+        return adjacency + self.delta(adjacency, effects, selection)
+
+    def delta(
+        self,
+        adjacency: torch.Tensor,
+        effects: Channels,
+        selection: torch.Tensor,
+    ) -> torch.Tensor:
+        """What the action changes: add where absent, delete where present."""
+        added = project(effects.positive, selection)
+        deleted = project(effects.negative, selection)
+        return (1 - adjacency) * added - adjacency * deleted
 
     def _dense_adjacency(self, edge_index, edge_type, batch_idx, batch, num_objects):
         """One ``[R, O, O]`` slice per sample, from the batch's flat edge list."""

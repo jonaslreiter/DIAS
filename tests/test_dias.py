@@ -165,6 +165,30 @@ class DIASModelTest(unittest.TestCase):
         self.assertTrue(torch.isfinite(test_loss))
         self.assertEqual(model.log_results.call_count, 2)
 
+    def test_retarget_accepts_a_bigger_instance_and_refuses_a_smaller_one(self):
+        """A lifted schema transfers; the recorded instance size does not."""
+        model = self.make_model(num_objects=4, num_slots=2, action_arities=[2])
+        model.retarget(9)
+        self.assertEqual(model.num_objects, 9)
+        with self.assertRaisesRegex(ValueError, "fewer than the model's 2 slots"):
+            model.retarget(1)
+        self.assertEqual(model.num_objects, 9)
+
+    def test_apply_schema_changes_only_what_the_binding_reaches(self):
+        """Slots bind to objects 0 and 1, so object 2 cannot be touched."""
+        model = self.make_model(num_objects=3, num_slots=2, action_arities=[2])
+        model.eval()
+        adjacency = torch.zeros(1, 2, 3, 3)
+        selection = torch.zeros(1, 2, 3)
+        selection[0, 0, 0] = 1.0
+        selection[0, 1, 1] = 1.0
+        with torch.no_grad():
+            successor = model.apply_schema(adjacency, selection, torch.tensor([0]))
+        self.assertEqual(successor.shape, (1, 2, 3, 3))
+        self.assertTrue(torch.all(successor[0, :, 2, :] == 0))
+        self.assertTrue(torch.all(successor[0, :, :, 2] == 0))
+        self.assertTrue((successor[0, :, :2, :2] != 0).any())
+
     def test_optimizer_uses_the_configured_learning_rate(self):
         model = self.make_model()
         optimizer = model.configure_optimizers()

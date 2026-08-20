@@ -12,7 +12,6 @@ from pymimir.wrapper_formalism import State
 from tqdm import tqdm
 
 from dias.data.datamodule import PddlGraphDataModule
-from dias.models.outputs import Channels
 from dias.pddl import text as pddl_text
 from dias.pddl.transpiler import PDDLTranspiler
 from dias.pddl.untype import (
@@ -200,11 +199,10 @@ class ModelValidation:
         strips_plus_actions = datamodule_hparams.get("strips_plus_actions", False)
 
         # This baseline predicts its effects from the state at validation time,
-        # so it has no static effect tensor to decode -- only the preconditions
-        # and the slot activations are read off here. Zeros stand in for the
-        # effects, whose decoded arrays are discarded.
+        # so `schema.effects` is None and only the preconditions and the slot
+        # activations are read off here.
         _, _, pos_prec, neg_prec, active_slots = process_model_logits(
-            effect_logits=torch.zeros_like(schema.preconditions),
+            effect_logits=schema.effects,
             precondition_logits=schema.preconditions,
             slot_weight_logits=schema.slot_weight_logits,
             force_action_args=self.model.force_action_args,
@@ -338,7 +336,7 @@ class ModelValidation:
         )
 
         self.num_objects = len(self.original_problem.get_objects())
-        self.model.num_objects = len(self.original_problem.get_objects())
+        self.model.retarget(self.num_objects)
         self.model.eval()
 
         # Object name → adjacency-tensor index.  Built from the original
@@ -566,20 +564,10 @@ class ModelValidation:
                     selection = torch.zeros(B, K, N, dtype=torch.float32, device=device)
                     selection[b_idx[valid], slots_chunk[valid], bind_chunk[valid]] = 1.0
 
-                    effects = Channels.from_logits(
-                        self.model.effect_logits(adj_batch, selection, a_chunk)
-                    )
-                    add_effects = effects.positive
-                    del_effects = effects.negative
-
-                    add_proj = torch.einsum(
-                        "bai,brac,bcj->brij", selection, add_effects, selection
-                    )
-                    del_proj = torch.einsum(
-                        "bai,brac,bcj->brij", selection, del_effects, selection
-                    )
-                    delta = (1.0 - adj_batch) * add_proj - adj_batch * del_proj
-                    adj_out = (adj_batch + delta).clamp(0.0, 1.0)
+                    # The binding is already known -- pymimir grounded the
+                    # learned action to get it -- so the model is asked only
+                    # what the action changes, not whether it applies.
+                    adj_out = self.model.apply_schema(adj_batch, selection, a_chunk)
                     adj_bin = (adj_out > 0.5).to(torch.uint8)  # (B,R,N,N)
 
                     if keep_channels is not None:

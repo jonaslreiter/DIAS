@@ -195,18 +195,34 @@ class DIAS(L.LightningModule):
                 slot_weight_logits=slot_weights.detach().cpu(),
             )
 
-    def effect_logits(
+    def apply_schema(
         self,
         adjacency: torch.Tensor,
         selection: torch.Tensor,
         y_action: torch.Tensor,
     ) -> torch.Tensor:
-        """The effects of `y_action` on `adjacency` under a given slot binding.
+        """The successor state this model predicts for a known slot binding.
 
-        For a model whose effects depend on the state, this is the only way to
-        obtain them; `schema_logits` reports None for it.
+        For a model whose effects are predicted from the state, this is the
+        only way to see them: `schema_logits` reports None for it, because
+        there is no lifted effect tensor to report.
         """
-        return self.graph_edit.effects(y_action, adjacency, selection)
+        return self.graph_edit.apply(adjacency, selection, y_action)
+
+    def retarget(self, num_objects: int) -> None:
+        """Point the model at an instance with a different number of objects.
+
+        A learned schema is lifted, so it transfers; the recorded instance size
+        does not, and the losses and the target adjacency are built from it.
+        An instance with fewer objects than the model has slots cannot bind
+        them all, so it is refused rather than silently mis-scored.
+        """
+        if num_objects < self.num_slots:
+            raise ValueError(
+                f"This instance has {num_objects} objects, fewer than the "
+                f"model's {self.num_slots} slots; it cannot bind them all."
+            )
+        self.num_objects = num_objects
 
     def step(self, batch) -> Losses:
         batch_s1, batch_s2, *_ = batch
