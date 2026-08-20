@@ -71,25 +71,15 @@ class PredictionModule(nn.Module):
     def forward(
         self,
         node_embeddings: torch.Tensor,
-        edge_index: torch.Tensor | None = None,
-        edge_type: torch.Tensor | None = None,
-        batch_idx: torch.Tensor | None = None,
-        y_action: torch.Tensor = None,
+        adjacency: torch.Tensor,
+        y_action: torch.Tensor,
         y_action_args: torch.Tensor | None = None,
-        adj_dense: torch.Tensor | None = None,
         gmean_temperature: float = 1.0,
     ) -> SchemaPrediction:
         # Sinkhorn / log-space are float16-unsafe under AMP.
         node_embeddings = node_embeddings.float()
-        batch = y_action.size(0)
-        num_objects = node_embeddings.size(0) // batch
-
-        if adj_dense is not None:
-            adjacency = adj_dense.float()
-        else:
-            adjacency = self._dense_adjacency(
-                edge_index, edge_type, batch_idx, batch, num_objects
-            )
+        adjacency = adjacency.float()
+        batch, _, _, num_objects = adjacency.shape
 
         selection, selection_logits = self.selector(
             node_embeddings.view(batch, num_objects, -1), y_action, y_action_args
@@ -160,19 +150,3 @@ class PredictionModule(nn.Module):
         added = project(effects.positive, selection)
         deleted = project(effects.negative, selection)
         return (1 - adjacency) * added - adjacency * deleted
-
-    def _dense_adjacency(self, edge_index, edge_type, batch_idx, batch, num_objects):
-        """One ``[R, O, O]`` slice per sample, from the batch's flat edge list."""
-        adjacency = torch.zeros(
-            batch,
-            self.num_relations,
-            num_objects,
-            num_objects,
-            device=edge_index.device,
-            dtype=torch.float32,
-        )
-        graph_ids = batch_idx[edge_index[0]]
-        source = edge_index[0] - graph_ids * num_objects
-        target = edge_index[1] - graph_ids * num_objects
-        adjacency[graph_ids, edge_type, source, target] = 1.0
-        return adjacency

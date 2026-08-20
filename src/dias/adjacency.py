@@ -32,3 +32,30 @@ def adj_to_pyg_data(adj: torch.Tensor, num_objects: int) -> Data:
         edge_attr=relation,
         num_nodes=num_objects,
     )
+
+
+def dense_from_edges(
+    edge_index: torch.Tensor,
+    edge_type: torch.Tensor,
+    batch_index: torch.Tensor,
+    num_relations: int,
+    num_objects: int,
+) -> torch.Tensor:
+    """``[B, R, O, O]`` from one PyG batch's flat edge list.
+
+    Every graph in the batch describes the same instance, so a node's graph
+    and its position within that graph both follow from its global index.
+    """
+    adjacency = torch.zeros(
+        batch_index.size(0) // num_objects,
+        num_relations,
+        num_objects,
+        num_objects,
+        device=edge_index.device,
+        dtype=torch.float32,
+    )
+    graph = batch_index[edge_index[0]]
+    source = edge_index[0] - graph * num_objects
+    target = edge_index[1] - graph * num_objects
+    adjacency[graph, edge_type, source, target] = 1.0
+    return adjacency

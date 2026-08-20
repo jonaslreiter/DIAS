@@ -4,8 +4,8 @@ from typing import Mapping, Optional
 
 import lightning as L
 import torch
-from torch_geometric.utils import to_dense_adj
 
+from dias.adjacency import dense_from_edges
 from dias.reporting.labels import resolve_label_names
 from dias.reporting.plotting import PlotWorker, queue_validation_heatmaps
 from dias.schedules import Schedule, as_schedule, schedule_config
@@ -165,9 +165,7 @@ class DIAS(L.LightningModule):
 
         prediction = self.graph_edit(
             node_embeddings=node_embeddings,
-            edge_index=batch_s1.edge_index,
-            edge_type=batch_s1.edge_attr,
-            batch_idx=batch_s1.batch,
+            adjacency=self.dense(batch_s1),
             y_action=batch_s1.y_action,
             y_action_args=batch_s1.y_action_args,
             gmean_temperature=self.gmean_temperature(self.global_step),
@@ -224,23 +222,22 @@ class DIAS(L.LightningModule):
             )
         self.num_objects = num_objects
 
+    def dense(self, batch) -> torch.Tensor:
+        """One graph batch as the ``[B, R, O, O]`` tensor the schema acts on."""
+        return dense_from_edges(
+            batch.edge_index,
+            batch.edge_attr,
+            batch.batch,
+            self.num_relations,
+            self.num_objects,
+        )
+
     def step(self, batch) -> Losses:
         batch_s1, batch_s2, *_ = batch
         prediction = self.forward(batch_s1, batch_s2)
-        target = torch.stack(
-            [
-                to_dense_adj(
-                    batch_s2.edge_index[:, batch_s2.edge_attr == relation],
-                    batch_s2.batch,
-                    max_num_nodes=self.num_objects,
-                )
-                for relation in range(self.num_relations)
-            ],
-            dim=1,
-        )
         return self.objective(
             prediction,
-            target,
+            self.dense(batch_s2),
             self.graph_edit.selector.slot_weights(batch_s1.y_action),
         )
 

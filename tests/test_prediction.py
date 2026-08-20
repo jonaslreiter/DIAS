@@ -22,7 +22,7 @@ class PredictionModuleTest(unittest.TestCase):
             torch.randn(2, 3),
             y_action=torch.tensor([0]),
             y_action_args=torch.tensor([[1, -1]]),
-            adj_dense=torch.zeros(1, 2, 2, 2),
+            adjacency=torch.zeros(1, 2, 2, 2),
         )
         self.assertEqual(tuple(output.adjacency.shape), (1, 2, 2, 2))
         self.assertTrue(torch.isfinite(output.adjacency).all())
@@ -31,7 +31,7 @@ class PredictionModuleTest(unittest.TestCase):
         self.assertEqual(output.selection_logits[0, 0, 1].item(), 0.0)
         self.assertTrue(torch.isneginf(output.selection_logits).any())
 
-    def test_per_action_slots_masks_unused_slots_and_supports_graph_input(self):
+    def test_per_action_slots_masks_unused_slots(self):
         torch.manual_seed(7)
         module = PredictionModule(
             arity_relations=[1, 2],
@@ -42,13 +42,9 @@ class PredictionModuleTest(unittest.TestCase):
             action_arities=[1, 2],
         )
         module.eval()
-        edge_index = torch.tensor([[0, 1], [0, 1]])
-        edge_type = torch.tensor([0, 1])
         output = module(
             torch.randn(2, 3),
-            edge_index=edge_index,
-            edge_type=edge_type,
-            batch_idx=torch.zeros(2, dtype=torch.long),
+            adjacency=torch.eye(2).expand(1, 2, 2, 2),
             y_action=torch.tensor([0]),
             y_action_args=torch.tensor([[-1, -1]]),
         )
@@ -68,7 +64,7 @@ class PredictionModuleTest(unittest.TestCase):
         kwargs = {
             "y_action": torch.tensor([0]),
             "y_action_args": torch.tensor([[-1]]),
-            "adj_dense": torch.zeros(1, 1, 2, 2),
+            "adjacency": torch.zeros(1, 1, 2, 2),
         }
         node_embeddings = torch.randn(2, 2)
         gated_output = gated(node_embeddings, **kwargs)
@@ -83,7 +79,7 @@ class PredictionModuleTest(unittest.TestCase):
         kwargs = {
             "y_action": torch.tensor([0]),
             "y_action_args": torch.tensor([[-1]]),
-            "adj_dense": torch.zeros(1, 1, 2, 2),
+            "adjacency": torch.zeros(1, 1, 2, 2),
         }
         node_embeddings = torch.randn(2, 2)
         relaxed = module(node_embeddings, gmean_temperature=0.5, **kwargs)
