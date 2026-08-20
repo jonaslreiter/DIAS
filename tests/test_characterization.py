@@ -25,6 +25,7 @@ import torch
 from torch.utils.data import DataLoader
 from torch_geometric.data import Batch, Data
 
+from checkpoints import pre_split_name
 from dias.models.dias import DIAS
 
 FIXTURE = Path(__file__).parent / "fixtures" / "golden.pt"
@@ -165,16 +166,6 @@ class ForwardCharacterizationTest(unittest.TestCase):
                     GOLDEN.check(self, f"step/{name}/{key}", losses[key])
 
 
-# The fixture predates the split of the prediction module, so it stores the
-# parameters under their former names.
-GOLDEN_PARAMETER_NAMES = {
-    "graph_edit.selector.slot_encodings": "graph_edit.slot_encodings",
-    "graph_edit.selector.slot_weight_logits": "graph_edit.slot_weight_logits",
-    "graph_edit.preconditions.logits": "graph_edit.preconditions",
-    "graph_edit.effects.logits": "graph_edit.effects",
-}
-
-
 def trained_values(model: DIAS) -> dict[str, torch.Tensor]:
     """Every parameter, under the name the fixture stored it as.
 
@@ -191,7 +182,7 @@ def trained_values(model: DIAS) -> dict[str, torch.Tensor]:
     }
     values = {}
     for name, parameter in model.named_parameters():
-        key = GOLDEN_PARAMETER_NAMES.get(name, name)
+        key = pre_split_name(name)
         values[key] = masked.get(key, parameter)
     return values
 

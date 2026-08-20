@@ -8,8 +8,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .utils import batched_sinkhorn_d1d2
-
 
 class SlotSelector(nn.Module):
     """A soft assignment of slots to objects, one per sample.
@@ -146,3 +144,40 @@ class SlotSelector(nn.Module):
         logits.masked_fill_(column_mask.unsqueeze(1), -torch.inf)
 
         logits[samples, slots, objects] = 0.0
+
+
+def batched_sinkhorn_d1d2(
+    log_A: torch.Tensor,
+    max_iter: int = 10000,
+    row_mask: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Batched Sinkhorn D1D2 in log-space (https://hal.science/hal-03768664)."""
+    tol = 1.0e-2
+    batch_size, np1, _ = log_A.shape
+    n = np1 - 1
+
+    log_x = torch.zeros(batch_size, np1, device=log_A.device, dtype=log_A.dtype)
+    log_y = torch.zeros(
+        batch_size, log_A.size(-1), device=log_A.device, dtype=log_A.dtype
+    )
+    if row_mask is not None:
+        log_x = log_x.masked_fill(row_mask, -torch.inf)
+
+    for _ in range(max_iter):
+        log_x_prev, log_y_prev = log_x, log_y
+        log_x = -torch.logsumexp(log_A + log_y.unsqueeze(-2), dim=-1)
+        log_x[:, n] = 0.0
+        if row_mask is not None:
+            log_x = log_x.masked_fill(row_mask, -torch.inf)
+        log_y = -torch.logsumexp(log_A + log_x.unsqueeze(-1), dim=-2)
+
+        if (
+            max(
+                (log_x - log_x_prev).abs().max(),
+                (log_y - log_y_prev).abs().max(),
+            )
+            < tol
+        ):
+            break
+
+    return torch.exp(log_x.unsqueeze(-1) + log_A + log_y.unsqueeze(-2))

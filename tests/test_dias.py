@@ -84,7 +84,7 @@ class DIASModelTest(unittest.TestCase):
 
     def test_constructor_defaults_the_argument_positions_to_none(self):
         model = self.make_model(action_arg_positions=None)
-        self.assertEqual(model.num_action_relations, 0)
+        self.assertEqual(model.edges.num_action_relations, 0)
 
     def test_the_tau_schedule_is_kept_as_given(self):
         model = self.make_model(

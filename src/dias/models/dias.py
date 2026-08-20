@@ -13,10 +13,10 @@ from dias.reporting.plotting import PlotWorker, queue_validation_heatmaps
 from dias.schedules import Schedule, as_schedule, schedule_config
 
 from .checkpoints import CHECKPOINT_VERSION, VERSION_KEY, migrate
-from .gnn import DEFAULT_HIDDEN_DIMS, GNNModule
+from .edges import EdgeTypeLayout
+from .encoder import DEFAULT_HIDDEN_DIMS, RelationalEncoder
 from .outputs import SchemaLogits
 from .prediction import PredictionModule
-from .utils import build_relation_change_edges
 
 logger = logging.getLogger(__name__)
 
@@ -71,8 +71,6 @@ class DIAS(L.LightningModule):
         self.per_action_slots = per_action_slots
         self.learn_preconditions = learn_preconditions
         self.action_arities = action_arities
-        self.successor_relations = successor_relations
-        self.random_node_embeddings = random_node_embeddings
         self.pcgrad_dyn_clip = pcgrad_dyn_clip
         self.state_dependent_effects = state_dependent_effects
         self.use_slot_weights = use_slot_weights
@@ -124,33 +122,17 @@ class DIAS(L.LightningModule):
             use_slot_weights=self.use_slot_weights,
         )
 
-        # Action self-loop relation types: one per (action, active-position) pair.
-        if action_arg_positions is None:
-            action_arg_positions = [[] for _ in range(self.num_actions)]
-
-        max_arity = max(
-            (max(pos) + 1 if pos else 0 for pos in action_arg_positions), default=0
+        self.edges = EdgeTypeLayout(
+            num_relations=self.num_relations,
+            num_actions=self.num_actions,
+            action_arg_positions=action_arg_positions,
+            successor_relations=successor_relations,
         )
-        lookup = torch.full((self.num_actions, max(max_arity, 1)), -1, dtype=torch.long)
-        idx = 0
-        for a, positions in enumerate(action_arg_positions):
-            for p in positions:
-                lookup[a, p] = idx
-                idx += 1
-        self.num_action_relations = idx
-        self.register_buffer("_action_rel_lookup", lookup)
-
-        # State-change relations (S→S'): delete+add, plus reverse counterparts.
-        self.num_successor_relations = (
-            self.num_relations * 4 if self.successor_relations else 0
-        )
-
-        self.dynamics_model = GNNModule(
+        self.state_encoder = RelationalEncoder(
             self.object_dim,
-            self.num_relations * 2
-            + self.num_action_relations
-            + self.num_successor_relations,
+            self.edges.num_edge_types,
             hidden_dims=encoder_hidden_dims or DEFAULT_HIDDEN_DIMS,
+            random_node_embeddings=random_node_embeddings,
         )
 
         self.automatic_optimization = False
@@ -191,90 +173,20 @@ class DIAS(L.LightningModule):
         )
 
     def forward(self, batch_s1, batch_s2=None):
-        edge_index = batch_s1.edge_index
-        edge_type = batch_s1.edge_attr
-        y_action = batch_s1.y_action
-        y_action_args = batch_s1.y_action_args  # (B, max_arity)
-        total_nodes = batch_s1.batch.size(0)
-
-        initial_node_embeddings = torch.zeros(
-            total_nodes,
-            self.object_dim,
-            device=self.device,
-            dtype=torch.float32,
-        )
-        if self.random_node_embeddings:
-            half = self.object_dim // 2
-            initial_node_embeddings[:, :half] = 0.1 * torch.randn(
-                total_nodes, half, device=self.device, dtype=torch.float32
-            )
-
-        # Reverse-edge relations are offset by num_relations.
-        reverse_edge_index = edge_index.flip(0)
-        reverse_edge_type = edge_type + self.num_relations
-
-        # Action self-loops: arg at position p of action a -> self-loop on object
-        # with relation type 2*num_relations + lookup[a, p].
-        batch_size = y_action.size(0)
-        action_arguments = y_action_args
-        lookup_arity = self._action_rel_lookup.size(1)
-        if action_arguments.size(1) < lookup_arity:
-            action_arguments = F.pad(
-                action_arguments,
-                (0, lookup_arity - action_arguments.size(1)),
-                value=-1,
-            )
-        elif action_arguments.size(1) > lookup_arity:
-            action_arguments = action_arguments[:, :lookup_arity]
-
-        batch_indices, argument_positions = (action_arguments >= 0).nonzero(
-            as_tuple=True
-        )
-        action_relation_indices = self._action_rel_lookup[
-            y_action[batch_indices], argument_positions
-        ]
-        used_positions = action_relation_indices >= 0
-        batch_indices = batch_indices[used_positions]
-        argument_positions = argument_positions[used_positions]
-        action_relation_indices = action_relation_indices[used_positions]
-
-        action_argument_nodes = (
-            torch.arange(batch_size, device=self.device)[batch_indices]
-            * self.num_objects
-            + action_arguments[batch_indices, argument_positions]
-        )
-        action_edge_index = torch.stack(
-            [action_argument_nodes, action_argument_nodes], dim=0
-        )
-        action_edge_type = 2 * self.num_relations + action_relation_indices
-
-        dynamics_edge_indices = [edge_index, reverse_edge_index, action_edge_index]
-        dynamics_edge_types = [edge_type, reverse_edge_type, action_edge_type]
-
-        if self.successor_relations and batch_s2 is not None:
-            ch_ei, ch_et = build_relation_change_edges(
-                batch_s1,
-                batch_s2,
-                num_relations=self.num_relations,
-                num_action_relations=self.num_action_relations,
-            )
-            if ch_et.numel() > 0:
-                dynamics_edge_indices.append(ch_ei)
-                dynamics_edge_types.append(ch_et)
-
-        encoded_node_embeddings = self.dynamics_model(
-            initial_node_embeddings,
-            torch.cat(dynamics_edge_indices, dim=1),
-            torch.cat(dynamics_edge_types, dim=0),
+        edge_index, edge_type = self.edges(batch_s1, batch_s2)
+        node_embeddings = self.state_encoder(
+            self.state_encoder.initial_features(batch_s1.batch.size(0), self.device),
+            edge_index,
+            edge_type,
         )
 
         prediction = self.graph_edit(
-            node_embeddings=encoded_node_embeddings,
-            edge_index=edge_index,
-            edge_type=edge_type,
+            node_embeddings=node_embeddings,
+            edge_index=batch_s1.edge_index,
+            edge_type=batch_s1.edge_attr,
             batch_idx=batch_s1.batch,
-            y_action=y_action,
-            y_action_args=y_action_args,
+            y_action=batch_s1.y_action,
+            y_action_args=batch_s1.y_action_args,
             gmean_temperature=self.gmean_temperature(self.global_step),
         )
 

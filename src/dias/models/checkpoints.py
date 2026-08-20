@@ -13,9 +13,10 @@ changed again, which is precisely the situation it exists to handle.
 
 from __future__ import annotations
 
+import re
 from typing import Callable
 
-CHECKPOINT_VERSION = 5
+CHECKPOINT_VERSION = 6
 VERSION_KEY = "dias_checkpoint_version"
 
 EXPONENTIAL = "dias.schedules.Exponential"
@@ -140,11 +141,38 @@ def _to_v5(checkpoint: dict) -> bool:
     return changed
 
 
+# v5 declared the encoder's layers one attribute at a time; v6 holds them in
+# ModuleLists, and the module says what it is rather than what it is for.
+_V6_ENCODER = re.compile(r"^dynamics_model\.(conv|ln)(\d+)\.")
+_V6_LISTS = {"conv": "convs", "ln": "norms"}
+
+# The action-argument lookup moved to the edge-type layout, which rebuilds it.
+_V6_DROPPED = ("_action_rel_lookup",)
+
+
+def _to_v6(checkpoint: dict) -> bool:
+    """v6 gave the encoder ModuleLists and the edge numbering its own module."""
+    state = checkpoint.get("state_dict")
+    if state is None:
+        return False
+    changed = False
+    for key in [k for k in state if _V6_ENCODER.match(k)]:
+        match = _V6_ENCODER.match(key)
+        kind, index = match.group(1), int(match.group(2))
+        renamed = f"state_encoder.{_V6_LISTS[kind]}.{index - 1}.{key[match.end():]}"
+        state[renamed] = state.pop(key)
+        changed = True
+    for key in _V6_DROPPED:
+        changed = state.pop(key, None) is not None or changed
+    return changed
+
+
 MIGRATIONS: tuple[tuple[int, str, Callable[[dict], bool]], ...] = (
     (2, "one typed tau schedule instead of a dict of named schedules", _to_v2),
     (3, "the tau offset folded into the schedule as its floor", _to_v3),
     (4, "the tau decay stated as a rate rather than a value at step T", _to_v4),
     (5, "one module per part of the schema", _to_v5),
+    (6, "the encoder's layers in ModuleLists", _to_v6),
 )
 
 

@@ -16,6 +16,7 @@ from pathlib import Path
 
 import torch
 
+from checkpoints import pre_split_name
 from dias.models.checkpoints import CHECKPOINT_VERSION, VERSION_KEY
 from dias.models.dias import DIAS
 from dias.schedules import Constant, Exponential, schedule_config
@@ -49,21 +50,20 @@ V1_HPARAMS = {
     },
 }
 
-# v1 kept the schema flat on the prediction module; each part has its own
-# module now. Stated here independently of the migration, so a rename that
-# forgets one of them fails this test rather than an archived run.
-SCHEMA_KEYS = {
-    "graph_edit.slot_encodings": "graph_edit.selector.slot_encodings",
-    "graph_edit.slot_weight_logits": "graph_edit.selector.slot_weight_logits",
-    "graph_edit.preconditions": "graph_edit.preconditions.logits",
-    "graph_edit.effects": "graph_edit.effects.logits",
-}
-V1_SCHEMA_KEYS = tuple(SCHEMA_KEYS)
+# v1 kept the schema flat on the prediction module and declared the encoder's
+# layers one attribute at a time. `checkpoints.pre_split_name` maps today's
+# names back; it is stated there independently of the migration, so a rename
+# that forgets a rule fails a test rather than an archived run.
+V1_SCHEMA_KEYS = (
+    "graph_edit.slot_encodings",
+    "graph_edit.slot_weight_logits",
+    "graph_edit.preconditions",
+    "graph_edit.effects",
+)
 
-# Both are derived from constructor arguments yet v1 persisted them.
-# `action_arities_t` is rebuilt on load now, so the migration drops it.
+# Derived from constructor arguments yet persisted by v1. Both are rebuilt on
+# load now, so the migration drops them and nothing derived is checkpointed.
 V1_DERIVED_KEYS = ("_action_rel_lookup", "graph_edit.action_arities_t")
-CURRENT_DERIVED_KEYS = ("_action_rel_lookup",)
 V1_ENCODER_KEYS = tuple(
     f"dynamics_model.conv{i}.{suffix}"
     for i in range(1, 7)
@@ -109,15 +109,15 @@ def build_v1_checkpoint(marker: float = 0.125) -> dict:
     so the current model supplies them and they are renamed back.
     """
     reference = DIAS(**constructor_args())
-    v1_name = {new: old for old, new in SCHEMA_KEYS.items()}
     state_dict = {
-        v1_name.get(key, key): value.clone()
+        pre_split_name(key): value.clone()
         for key, value in reference.state_dict().items()
     }
     reference.teardown("build")
     state_dict["graph_edit.action_arities_t"] = torch.tensor(
         V1_HPARAMS["action_arities"]
     )
+    state_dict["_action_rel_lookup"] = torch.tensor([[0, 1], [2, -1]])
     for key in V1_SCHEMA_KEYS:
         state_dict[key] = torch.full_like(state_dict[key], marker)
     return {
@@ -142,12 +142,13 @@ class CheckpointLayoutTest(unittest.TestCase):
         self.assertEqual(set(state_dict), expected)
 
     def test_the_current_key_set_is_the_v1_one_renamed(self):
+        """Nothing derived from a constructor argument is checkpointed."""
         model = DIAS(**constructor_args())
         self.addCleanup(model.teardown, "test")
-        expected = set(SCHEMA_KEYS.values()) | set(
-            CURRENT_DERIVED_KEYS + V1_ENCODER_KEYS
+        self.assertEqual(
+            {pre_split_name(key) for key in model.state_dict()},
+            set(V1_SCHEMA_KEYS + V1_ENCODER_KEYS),
         )
-        self.assertEqual(set(model.state_dict()), expected)
 
     def test_v1_checkpoint_loads_and_preserves_schema_values(self):
         path = self.write_v1_checkpoint(marker=0.125)
@@ -155,7 +156,7 @@ class CheckpointLayoutTest(unittest.TestCase):
         self.addCleanup(model.teardown, "test")
 
         loaded = model.state_dict()
-        for key in SCHEMA_KEYS.values():
+        for key in (k for k in loaded if pre_split_name(k) in V1_SCHEMA_KEYS):
             # v1 stored the unary off-diagonal mask in the parameter itself, so
             # those cells are -inf; the mask is applied in the forward pass now.
             finite = torch.isfinite(loaded[key])
