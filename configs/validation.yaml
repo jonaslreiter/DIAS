@@ -8,6 +8,11 @@
 num_samples: 250
 sample_population: 500
 
+# Which of the reachable states get sampled. Fixed so a run can be reproduced,
+# and so every domain's seeds are scored on the same states rather than each
+# on its own draw. Results produced before this was seeded are not reproducible.
+sample_seed: 0
+
 # Which problems (from the manifest's `problems` list) to validate on.
 num_problems: 3
 problem_offset: 1

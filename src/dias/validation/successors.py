@@ -21,9 +21,23 @@ logger = logging.getLogger(__name__)
 # which is the only thing telling the two apart when scoring.
 LEARNED_ACTION_PREFIX = "learned_"
 
+# Which states a problem is validated on is a choice, not an accident: every
+# run of every seed is scored on the same ones.
+DEFAULT_SAMPLE_SEED = 0
 
-def sample_reachable_states(problem, num_samples: int, sample_population: int) -> list:
-    """Draw `num_samples` distinct states from a BFS over `problem`."""
+
+def sample_reachable_states(
+    problem,
+    num_samples: int,
+    sample_population: int,
+    seed: int = DEFAULT_SAMPLE_SEED,
+) -> list:
+    """Draw `num_samples` distinct states from a BFS over `problem`.
+
+    The draw is seeded, and from a generator of its own rather than the global
+    one, so a result can be reproduced later and two validators asked to
+    compare see the same states.
+    """
     if num_samples > sample_population:
         logger.warning(
             "num_samples (%d) exceeds the population, clamping to %d.",
@@ -50,7 +64,7 @@ def sample_reachable_states(problem, num_samples: int, sample_population: int) -
         )
         num_samples = len(population)
 
-    return random.sample(population, num_samples)
+    return random.Random(seed).sample(population, num_samples)
 
 
 def transfer_states(states: list, target_problem, source_domain, target_domain) -> list:

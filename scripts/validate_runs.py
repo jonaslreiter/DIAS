@@ -99,6 +99,11 @@ def validate_run(
         )
     num_samples = int(val_cfg["num_samples"])
     sample_population = int(val_cfg["sample_population"])
+    # Imported here rather than at module scope, like the validator itself:
+    # dias.validation pulls in pymimir and torch, which --help should not need.
+    from dias.validation.successors import DEFAULT_SAMPLE_SEED
+
+    sample_seed = int(val_cfg.get("sample_seed", DEFAULT_SAMPLE_SEED))
     extra_kwargs = {} if experiment_type == "mlp" else {"threshold": threshold}
 
     per_problem: dict[str, dict[str, Any]] = {}
@@ -112,7 +117,11 @@ def validate_run(
                 problem_path=str((PROJECT_ROOT / problem).resolve()),
                 **extra_kwargs,
             )
-            v.setup(num_samples=num_samples, sample_population=sample_population)
+            v.setup(
+                num_samples=num_samples,
+                sample_population=sample_population,
+                seed=sample_seed,
+            )
             result = v.validate()
         except Exception as e:  # noqa: BLE001 - one bad problem shouldn't sink the rest
             traceback.print_exc()

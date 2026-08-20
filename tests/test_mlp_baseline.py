@@ -8,7 +8,6 @@ instead.
 """
 
 import os
-import random
 import tempfile
 import unittest
 from pathlib import Path
@@ -34,14 +33,17 @@ class MlpBaselineTest(unittest.TestCase):
         directory = Path(self.enterContext(tempfile.TemporaryDirectory()))
         model, hparams = build_model(state_dependent_effects=True)
         model_id = save(directory, model, hparams)
-        random.seed(SAMPLE_SEED)
         validation = ModelValidation(
             model_id,
             str(directory),
             problem_path=str(TEST_PROBLEM),
             **{"batch_size": 256, **kwargs},
         )
-        validation.setup(num_samples=NUM_SAMPLES, sample_population=SAMPLE_POPULATION)
+        validation.setup(
+            num_samples=NUM_SAMPLES,
+            sample_population=SAMPLE_POPULATION,
+            seed=SAMPLE_SEED,
+        )
         return validation.validate()
 
     def test_result_matches_the_shared_validation_contract(self):

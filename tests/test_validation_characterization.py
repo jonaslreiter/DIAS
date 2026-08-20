@@ -18,7 +18,6 @@ convention, the transpiler, domain untyping and merging, pymimir grounding, and
 the micro-averaged successor comparison.
 """
 
-import random
 import tempfile
 import unittest
 from pathlib import Path
@@ -82,12 +81,14 @@ class ValidationCharacterizationTest(unittest.TestCase):
     def validate(self) -> dict:
         directory = Path(self.enterContext(tempfile.TemporaryDirectory()))
         model_id = build_checkpoint(directory)
-        # setup() draws its states with the global `random` module.
-        random.seed(SAMPLE_SEED)
         validation = ModelValidation(
             model_id, str(directory), problem_path=str(TEST_PROBLEM)
         )
-        validation.setup(num_samples=NUM_SAMPLES, sample_population=SAMPLE_POPULATION)
+        validation.setup(
+            num_samples=NUM_SAMPLES,
+            sample_population=SAMPLE_POPULATION,
+            seed=SAMPLE_SEED,
+        )
         return validation.validate()
 
     def test_planted_schema_reproduces_pinned_metrics(self):
@@ -110,6 +111,7 @@ class ValidationCharacterizationTest(unittest.TestCase):
         self.assertEqual(stats["move"], {"tp": 0, "fp": 8, "fn": 110, "conflicts": 118})
 
     def test_repeated_validation_is_deterministic(self):
+        """Which states are drawn is seeded, so a result can be reproduced."""
         self.assertEqual(self.validate(), self.validate())
 
 
