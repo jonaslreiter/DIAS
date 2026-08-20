@@ -5,7 +5,6 @@ from typing import Mapping, Optional
 
 import lightning as L
 import torch
-import torch.nn.functional as F
 from torch_geometric.utils import to_dense_adj
 
 from dias.reporting.labels import resolve_label_names
@@ -15,7 +14,9 @@ from dias.schedules import Schedule, as_schedule, schedule_config
 from .checkpoints import CHECKPOINT_VERSION, VERSION_KEY, migrate
 from .edges import EdgeTypeLayout
 from .encoder import DEFAULT_HIDDEN_DIMS, RelationalEncoder
+from .objectives import DiasObjective, Losses
 from .outputs import SchemaLogits
+from .pcgrad import gradient_combiner
 from .prediction import PredictionModule
 
 logger = logging.getLogger(__name__)
@@ -135,6 +136,22 @@ class DIAS(L.LightningModule):
             random_node_embeddings=random_node_embeddings,
         )
 
+        self.objective = DiasObjective(
+            arity_relations=self.arity_relations,
+            num_slots=self.num_slots,
+            use_effect_loss=use_effect_loss,
+            use_precondition_loss=use_precondition_loss,
+        )
+        # Whether the auxiliary objective contributes any gradient is fixed at
+        # construction: alpha = 0, or both of its terms ablated away.
+        self.gradients = gradient_combiner(
+            use_pcgrad=use_pcgrad,
+            auxiliary_weight=aux_loss_weight,
+            auxiliary_active=aux_loss_weight != 0.0
+            and (use_effect_loss or use_precondition_loss),
+            dynamic_clip=pcgrad_dyn_clip,
+        )
+
         self.automatic_optimization = False
 
         self._plot_worker = PlotWorker()
@@ -168,9 +185,7 @@ class DIAS(L.LightningModule):
             self._plot_worker.shutdown()
 
     def configure_optimizers(self):
-        return torch.optim.AdamW(
-            [p for p in self.parameters() if p.requires_grad], lr=self.learning_rate
-        )
+        return torch.optim.AdamW(self.trainable_parameters(), lr=self.learning_rate)
 
     def forward(self, batch_s1, batch_s2=None):
         edge_index, edge_type = self.edges(batch_s1, batch_s2)
@@ -225,71 +240,25 @@ class DIAS(L.LightningModule):
         """
         return self.graph_edit.effects(y_action, adjacency, selection)
 
-    def step(self, batch):
+    def step(self, batch) -> Losses:
         batch_s1, batch_s2, *_ = batch
         prediction = self.forward(batch_s1, batch_s2)
-        adj_out_probs = prediction.adjacency
-        ignore_effects = prediction.effects.ignore
-        ignore_precond = prediction.preconditions.ignore
-
-        target_adj = torch.stack(
+        target = torch.stack(
             [
                 to_dense_adj(
-                    batch_s2.edge_index[:, batch_s2.edge_attr == r],
+                    batch_s2.edge_index[:, batch_s2.edge_attr == relation],
                     batch_s2.batch,
                     max_num_nodes=self.num_objects,
                 )
-                for r in range(self.num_relations)
+                for relation in range(self.num_relations)
             ],
             dim=1,
         )
-
-        with torch.amp.autocast(device_type=self.device.type, enabled=False):
-            eps = 1e-7
-            p_adj = adj_out_probs.float().clamp(eps, 1 - eps)
-            tgt = target_adj.float().clamp(0.0, 1.0)
-
-            total_numel = (
-                adj_out_probs.numel()
-                + (self.num_slots ** torch.tensor(self.arity_relations)).sum()
-                * len(batch_s1)
-                * 2
-            )
-
-            loss_adjacency = (
-                F.binary_cross_entropy(p_adj, tgt, reduction="sum") / total_numel
-            )
-
-            # Weight preconditions by slot weights so maximising preconditions
-            # also requires slot activation.
-            slot_w = self.graph_edit.selector.slot_weights(batch_s1.y_action)
-            sw_matrix = slot_w[:, None, :, None] * slot_w[:, None, None, :]
-            one_minus_ip_w = ((1 - ignore_precond) * sw_matrix).clamp(eps, 1 - eps)
-
-            # L_eff encourages minimal effects; L_pre encourages restrictive
-            # preconditions. Each term can be ablated independently.
-            loss_eff = F.binary_cross_entropy(
-                ignore_effects, torch.ones_like(ignore_effects), reduction="sum"
-            )
-            loss_pre = F.binary_cross_entropy(
-                one_minus_ip_w, torch.ones_like(one_minus_ip_w), reduction="sum"
-            )
-            aux_terms = torch.zeros((), device=p_adj.device, dtype=p_adj.dtype)
-            if self.use_effect_loss:
-                aux_terms = aux_terms + loss_eff
-            if self.use_precondition_loss:
-                aux_terms = aux_terms + loss_pre
-            loss_aux = aux_terms / total_numel
-
-        loss_mse = ((adj_out_probs > 0.5) ^ (target_adj > 0.5)).sum()
-
-        return {
-            "loss_adjacency": loss_adjacency,
-            "loss_aux": loss_aux,
-            "loss_mse": loss_mse,
-            "pre_mean": prediction.precondition_satisfaction.mean().detach(),
-            "pre_prod_mean": prediction.precondition_product.mean(),
-        }
+        return self.objective(
+            prediction,
+            target,
+            self.graph_edit.selector.slot_weights(batch_s1.y_action),
+        )
 
     def on_train_batch_start(self, batch, batch_idx):
         # Scheduled on global_step, not epoch, so it advances per optimizer step.
@@ -332,105 +301,28 @@ class DIAS(L.LightningModule):
                 on_epoch=False,
             )
 
-    def _aux_active(self) -> bool:
-        """Whether the auxiliary objective contributes any gradient this run."""
-        return (self.aux_loss_weight != 0.0) and (
-            self.use_effect_loss or self.use_precondition_loss
-        )
+    def trainable_parameters(self):
+        return [p for p in self.parameters() if p.requires_grad]
 
     def training_step(self, batch, batch_idx):
-        opt = self.optimizers()
-        opt.zero_grad()
+        optimizer = self.optimizers()
+        optimizer.zero_grad()
         self._log_noise(batch[0])
 
-        results = self.step(batch)
-        loss_adj = results["loss_adjacency"]
-        loss_aux = results["loss_aux"]
-        aux_w = self.aux_loss_weight
-
-        if not self._aux_active():
-            # Ablation: no auxiliary objective (alpha = 0 / L_pre and L_eff off).
-            loss_adj.backward()
-        elif not self.use_pcgrad:
-            # Ablation: plain weighted sum instead of PCGrad projection.
-            (loss_adj + aux_w * loss_aux).backward()
-        else:
-            # PCGrad-style projection: remove the component of loss_aux's gradient
-            # that conflicts with loss_adj's gradient.
-            trainable_params = [p for p in self.parameters() if p.requires_grad]
-            grads_adj = torch.autograd.grad(
-                loss_adj, trainable_params, retain_graph=True, allow_unused=True
-            )
-            grads_aux = torch.autograd.grad(
-                aux_w * loss_aux, trainable_params, retain_graph=True, allow_unused=True
-            )
-
-            for p, g_adj, g_aux in zip(trainable_params, grads_adj, grads_aux):
-                if g_adj is None and g_aux is None:
-                    continue
-                if g_adj is None:
-                    p.grad = g_aux.clone()
-                    continue
-                if g_aux is None:
-                    p.grad = g_adj.clone()
-                    continue
-
-                g_adj_flat = g_adj.reshape(-1)
-                g_aux_flat = g_aux.reshape(-1)
-                dot = torch.dot(g_adj_flat, g_aux_flat)
-                if dot < 0:
-                    g_adj_norm_sq = torch.dot(g_adj_flat, g_adj_flat)
-                    g_aux_final = (
-                        g_aux - (dot / g_adj_norm_sq) * g_adj
-                        if g_adj_norm_sq > 1e-12
-                        else g_aux
-                    )
-                else:
-                    g_aux_final = g_aux
-
-                if self.pcgrad_dyn_clip:
-                    norm_adj = torch.norm(g_adj)
-                    norm_aux = torch.norm(g_aux_final)
-                    if norm_aux > norm_adj and norm_aux > 1e-12:
-                        g_aux_final = g_aux_final * (norm_adj / norm_aux)
-
-                p.grad = (g_adj + g_aux_final).clone()
-
-        opt.step()
-
-        combined = loss_adj + aux_w * loss_aux
-        self.log_results(
-            "train",
-            {
-                "loss": combined.detach(),
-                "loss_adjacency": loss_adj.detach(),
-                "loss_aux": loss_aux.detach(),
-                "loss_mse": results["loss_mse"],
-                "pre_mean": results["pre_mean"],
-                "pre_prod_mean": results["pre_prod_mean"],
-            },
+        losses = self.step(batch)
+        self.gradients.backward(
+            losses.adjacency, losses.auxiliary, self.trainable_parameters()
         )
-        # Skip Lightning's auto backward — we set p.grad manually above.
-        self.manual_backward_done = True
+        optimizer.step()
+
+        self.log_results("train", losses.logged(self.aux_loss_weight))
+        # Lightning's automatic backward is off: `gradients` set p.grad itself.
         return None
 
     def _eval_step(self, prefix: str, batch) -> torch.Tensor:
-        results = self.step(batch)
-        combined = (
-            results["loss_adjacency"] + self.aux_loss_weight * results["loss_aux"]
-        )
-        self.log_results(
-            prefix,
-            {
-                "loss": combined,
-                "loss_adjacency": results["loss_adjacency"],
-                "loss_aux": results["loss_aux"],
-                "loss_mse": results["loss_mse"],
-                "pre_mean": results["pre_mean"],
-                "pre_prod_mean": results["pre_prod_mean"],
-            },
-        )
-        return combined
+        losses = self.step(batch)
+        self.log_results(prefix, losses.logged(self.aux_loss_weight))
+        return losses.total(self.aux_loss_weight)
 
     def validation_step(self, batch, batch_idx):
         return self._eval_step("valid", batch)

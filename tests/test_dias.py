@@ -143,12 +143,19 @@ class DIASModelTest(unittest.TestCase):
         model = self.make_model(successor_relations=False)
         model.eval()
         batch = (*make_batch(changed=True), torch.tensor([0]))
-        results = model.step(batch)
+        losses = model.step(batch)
         self.assertEqual(
-            set(results),
-            {"loss_adjacency", "loss_aux", "loss_mse", "pre_mean", "pre_prod_mean"},
+            set(losses.logged(model.aux_loss_weight)),
+            {
+                "loss",
+                "loss_adjacency",
+                "loss_aux",
+                "hamming_distance",
+                "pre_mean",
+                "pre_prod_mean",
+            },
         )
-        for value in results.values():
+        for value in losses.logged(model.aux_loss_weight).values():
             self.assertTrue(torch.isfinite(value.float()).all())
 
         model.log_results = Mock()

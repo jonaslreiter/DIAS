@@ -162,8 +162,14 @@ class ForwardCharacterizationTest(unittest.TestCase):
 
                 torch.manual_seed(29)
                 losses = model.step(make_batch())
-                for key in ("loss_adjacency", "loss_aux", "loss_mse"):
-                    GOLDEN.check(self, f"step/{name}/{key}", losses[key])
+                # The stored keys predate the Losses dataclass and the renaming
+                # of loss_mse, which was neither an MSE nor a loss.
+                for key, value in (
+                    ("loss_adjacency", losses.adjacency),
+                    ("loss_aux", losses.auxiliary),
+                    ("loss_mse", losses.hamming_distance),
+                ):
+                    GOLDEN.check(self, f"step/{name}/{key}", value)
 
 
 def trained_values(model: DIAS) -> dict[str, torch.Tensor]:
