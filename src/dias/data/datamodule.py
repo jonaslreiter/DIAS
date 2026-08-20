@@ -10,7 +10,8 @@ from torch.utils.data import Dataset, IterableDataset
 from torch_geometric.loader import DataLoader as PyGDataLoader
 
 from dias.adjacency import adj_to_pyg_data
-from dias.data.noise import add_adj_noise, add_adj_noise_expected_count
+from dias.data.noise import ExpectedCount, NoiseModel, Ratio, RelationStats
+from dias.hparams import from_mapping, to_mapping
 from dias.schema import DomainSchema
 
 from ..schema.domain import _argument_positions
@@ -237,12 +238,7 @@ class PddlGraphDataModule(L.LightningDataModule):
         batch_sampling_strategy: str = "random",
         shuffle_train: bool = True,
         num_workers: int = 0,
-        noise_model: str = "ratio",
-        edge_remove_ratio: float = 0.0,
-        edge_add_ratio: float = 0.0,
-        expected_removed_atoms: float = 0.0,
-        expected_added_atoms: float = 0.0,
-        noise_on_fluents_only: bool = True,
+        noise: NoiseModel | None = None,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -268,21 +264,16 @@ class PddlGraphDataModule(L.LightningDataModule):
         self.batch_sampling_strategy = batch_sampling_strategy
         self.shuffle_train = shuffle_train
         self.num_workers = num_workers
-        self.noise_model = noise_model
-        self.edge_remove_ratio = edge_remove_ratio
-        self.edge_add_ratio = edge_add_ratio
-        self.expected_removed_atoms = expected_removed_atoms
-        self.expected_added_atoms = expected_added_atoms
-        self.noise_on_fluents_only = noise_on_fluents_only
+        self.noise = (
+            None if noise is None else from_mapping(noise, (Ratio, ExpectedCount))
+        )
+        # Hyper-parameters must stay primitive; see dias.hparams.
+        self.hparams["noise"] = None if self.noise is None else to_mapping(self.noise)
 
         if batch_sampling_strategy not in ("random", "stratified"):
             raise ValueError(
                 f"batch_sampling_strategy must be 'random' or 'stratified', "
                 f"got {batch_sampling_strategy!r}."
-            )
-        if noise_model not in ("ratio", "expected_count"):
-            raise ValueError(
-                f"noise_model must be 'ratio' or 'expected_count', got {noise_model!r}."
             )
         self._apply_min_per_label_floors()
         self._validate_sampling_config()
@@ -398,26 +389,6 @@ class PddlGraphDataModule(L.LightningDataModule):
                 f"vs num_train:num_valid={self.num_train}:{self.num_valid}."
             )
 
-        # Each noise model owns its own knobs; the other pair must stay at 0.
-        if self.noise_model == "ratio":
-            if self.expected_removed_atoms != 0.0 or self.expected_added_atoms != 0.0:
-                raise ValueError(
-                    "expected_removed_atoms / expected_added_atoms must be 0.0 "
-                    "when noise_model='ratio'."
-                )
-            if self.edge_remove_ratio < 0.0 or self.edge_add_ratio < 0.0:
-                raise ValueError("edge_remove_ratio and edge_add_ratio must be >= 0.")
-        else:
-            if self.edge_remove_ratio != 0.0 or self.edge_add_ratio != 0.0:
-                raise ValueError(
-                    "edge_remove_ratio / edge_add_ratio must be 0.0 "
-                    "when noise_model='expected_count'."
-                )
-            if self.expected_removed_atoms < 0.0 or self.expected_added_atoms < 0.0:
-                raise ValueError(
-                    "expected_removed_atoms and expected_added_atoms must be >= 0."
-                )
-
     @property
     def base(self) -> PddlTransitionDataset:
         assert self._base is not None, "Call .setup() first."
@@ -480,7 +451,7 @@ class PddlGraphDataModule(L.LightningDataModule):
 
         total = len(self._base)
         self._train_idx, self._valid_idx = self._make_split(total)
-        self.relation_true_ratio = self._compute_relation_true_ratio()
+        self.relation_stats = self._measure_relations()
         if total > 0:
             self._log_action_distribution()
 
@@ -628,110 +599,42 @@ class PddlGraphDataModule(L.LightningDataModule):
     def _build_train_noise(
         self, train_idx: list[int]
     ) -> tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
-        if not self._noise_is_enabled() or not train_idx:
+        """Noisy copies of the train split's states, or None for a clean run."""
+        if self.noise is None or not self.noise.enabled or not train_idx:
             return None, None
-        gen = torch.Generator().manual_seed(self.seed + 1)
-        if self.noise_model == "expected_count":
-            return self._build_expected_count_train_noise(train_idx, gen)
-        return self._build_ratio_train_noise(train_idx, gen)
+        logger.info("Train split gets %s", self.noise.describe(self.relation_stats))
 
-    def _noise_is_enabled(self) -> bool:
-        if self.noise_model == "expected_count":
-            return self.expected_removed_atoms > 0.0 or self.expected_added_atoms > 0.0
-        return self.edge_remove_ratio > 0.0 or self.edge_add_ratio > 0.0
-
-    def _enabled_relation_mask(self) -> list[bool]:
-        """Per-relation True/False; statics are disabled when noise_on_fluents_only."""
-        static_relations = set()
-        if self.noise_on_fluents_only:
-            static_relations = {
-                p["name"] for p in self.metadata["predicates"] if p["static"]
-            }
-        return [name not in static_relations for name in self.base.relation_names]
-
-    def _build_ratio_train_noise(
-        self, train_idx: list[int], gen: torch.Generator
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        add_ratio_per_rel = [self.edge_add_ratio * r for r in self.relation_true_ratio]
-        logger.info(
-            "Ratio edge noise on the train split: remove=%s, add=%s, "
-            "scaled add per relation=%s",
-            self.edge_remove_ratio,
-            self.edge_add_ratio,
-            [f"{x:.4g}" for x in add_ratio_per_rel],
+        generator = torch.Generator().manual_seed(self.seed + 1)
+        return tuple(
+            self.noise.corrupt(source[train_idx], self.relation_stats, generator)
+            for source in (self._base.states, self._base.next_states)
         )
 
-        def noisy(src: torch.Tensor) -> torch.Tensor:
-            return torch.stack(
-                [
-                    add_adj_noise(
-                        src[i],
-                        self.arity_relations,
-                        self.edge_remove_ratio,
-                        add_ratio_per_rel,
-                        gen,
-                    )
-                    for i in train_idx
-                ]
+    def _measure_relations(self) -> RelationStats:
+        """How often each relation holds, and which of them an action can change."""
+        base = self._base
+        static_names = {p["name"] for p in self.metadata["predicates"] if p["static"]}
+        is_fluent = [name not in static_names for name in base.relation_names]
+        if len(base) == 0:
+            return RelationStats(
+                self.arity_relations, [0.0] * len(base.relation_names), is_fluent
             )
 
-        return noisy(self._base.states), noisy(self._base.next_states)
-
-    def _build_expected_count_train_noise(
-        self, train_idx: list[int], gen: torch.Generator
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        relation_mask = self._enabled_relation_mask()
-        logger.info(
-            "Expected-count edge noise on the train split: remove=%s, add=%s "
-            "atoms per adjacency tensor.",
-            self.expected_removed_atoms,
-            self.expected_added_atoms,
+        stats = RelationStats.measure(
+            torch.cat([base.states, base.next_states], dim=0),
+            self.arity_relations,
+            is_fluent,
         )
-
-        def noisy(src: torch.Tensor) -> torch.Tensor:
-            return torch.stack(
-                [
-                    add_adj_noise_expected_count(
-                        src[i],
-                        self.arity_relations,
-                        expected_remove_count=self.expected_removed_atoms,
-                        expected_add_count=self.expected_added_atoms,
-                        generator=gen,
-                        relation_mask=relation_mask,
-                    )
-                    for i in train_idx
-                ]
-            )
-
-        return noisy(self._base.states), noisy(self._base.next_states)
-
-    def _compute_relation_true_ratio(self) -> list[float]:
-        ds = self._base
-        if ds is None or len(ds) == 0:
-            return [0.0 for _ in self.arity_relations]
-        all_adj = torch.cat([ds.states, ds.next_states], dim=0)
-        ratios: list[float] = []
-        for r, ar in enumerate(self.arity_relations):
-            if ar == 2:
-                region = all_adj[:, r].reshape(-1)
-            elif ar == 1:
-                region = all_adj[:, r].diagonal(dim1=-2, dim2=-1).reshape(-1)
-            else:
-                raise ValueError(f"Arity should be 1 or 2. Got {ar}.")
-            ones = int(region.sum().item())
-            zeros = region.numel() - ones
-            ratios.append(ones / zeros if zeros > 0 else 0.0)
-
         logger.info(
             "Per-relation true/false ratios: %s",
             {
                 f"{name}/{arity}": f"{ratio:.4g}"
                 for name, arity, ratio in zip(
-                    ds.relation_names, self.arity_relations, ratios
+                    base.relation_names, stats.arities, stats.true_ratio
                 )
             },
         )
-        return ratios
+        return stats
 
     def _log_action_distribution(self) -> None:
         ds = self._base

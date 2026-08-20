@@ -1,8 +1,7 @@
 # DIAS base training config for single-domain runs.
 #
 # Switch domains by editing `data.init_args.{domain_path, problem_path}`.
-# To reproduce the noise ablation, set `edge_add_ratio` / `edge_remove_ratio`
-# in the data section to a non-zero value (paper sweeps 0.0–0.5).
+# For the noise ablation, compose configs/experiments/noise.yaml on top.
 
 seed_everything: 43
 experiment: "dias"
@@ -43,12 +42,6 @@ data:
     # ── Domain / problem ────────────────────────────────────────────────
     domain_path: pddl/satellite/domain.pddl
     problem_path: pddl/satellite/train.pddl
-
-    # ── Noise ablation ──────────────────────────────────────────────────
-    # Fraction of edges to randomly remove / add to the input adjacency
-    # before training. Set both to 0.0 for the clean setup.
-    edge_remove_ratio: 0.0
-    edge_add_ratio: 0.0
 
     # ── Sampling ────────────────────────────────────────────────────────
     min_per_label_train: 100

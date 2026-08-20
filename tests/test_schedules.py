@@ -8,13 +8,8 @@ function of the step, and these pin that.
 
 import unittest
 
-from dias.schedules import (
-    Constant,
-    Exponential,
-    PiecewiseLinear,
-    as_schedule,
-    schedule_config,
-)
+from dias.hparams import to_mapping
+from dias.schedules import Constant, Exponential, PiecewiseLinear, as_schedule
 
 
 class ScheduleValuesTest(unittest.TestCase):
@@ -73,12 +68,12 @@ class ScheduleConfigTest(unittest.TestCase):
     def test_config_round_trip_is_lossless(self):
         for schedule in self.SCHEDULES:
             with self.subTest(schedule=schedule):
-                self.assertEqual(as_schedule(schedule_config(schedule)), schedule)
+                self.assertEqual(as_schedule(to_mapping(schedule)), schedule)
 
     def test_config_holds_only_primitives(self):
         """A dataclass in the checkpoint would make torch.load refuse the file."""
         for schedule in self.SCHEDULES:
-            config = schedule_config(schedule)
+            config = to_mapping(schedule)
             self.assertEqual(set(config), {"class_path", "init_args"})
             self.assertIsInstance(config["class_path"], str)
             for value in config["init_args"].values():
@@ -86,15 +81,15 @@ class ScheduleConfigTest(unittest.TestCase):
 
     def test_int_keyed_keypoints_survive(self):
         """JSON would stringify them; the config form must not."""
-        config = schedule_config(PiecewiseLinear({0: 1.0, 500: 0.1}))
+        config = to_mapping(PiecewiseLinear({0: 1.0, 500: 0.1}))
         self.assertEqual(list(config["init_args"]["keypoints"]), [0, 500])
 
     def test_a_schedule_passes_through_unchanged(self):
         schedule = Constant(0.5)
         self.assertIs(as_schedule(schedule), schedule)
 
-    def test_an_unknown_class_path_is_rejected(self):
-        with self.assertRaisesRegex(ValueError, "Unknown schedule"):
+    def test_an_unknown_class_path_is_rejected_by_name(self):
+        with self.assertRaisesRegex(ValueError, "Exponential.*dias.schedules.Nope"):
             as_schedule({"class_path": "dias.schedules.Nope", "init_args": {}})
 
 

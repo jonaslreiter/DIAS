@@ -46,8 +46,8 @@ Examples
 
     # Noise sweep point (expected 2 added / 2 removed atoms):
     python scripts/launch.py --experiment-type noise --experiment noise-a2r2 \
-        --set data.init_args.expected_added_atoms=2 \
-        --set data.init_args.expected_removed_atoms=2
+        --set data.init_args.noise.added_atoms=2 \
+        --set data.init_args.noise.removed_atoms=2
 
     # Ablation (no PCGrad) on the default DIAS model:
     python scripts/launch.py --ablation no-pcgrad --experiment abl-no-pcgrad
@@ -69,8 +69,8 @@ Examples
     python scripts/launch.py --experiment datasize-noise --sweep dataset-size \
         --experiment-type noise --num-runs 3 \
         --domains blocks-3 delivery gripper hanoi logistics miconic \
-        --set data.init_args.expected_removed_atoms=0.5 \
-        --set data.init_args.expected_added_atoms=0.5
+        --set data.init_args.noise.removed_atoms=0.5 \
+        --set data.init_args.noise.added_atoms=0.5
 
     # Re-run just the seeds that failed, into the same experiment/group:
     python scripts/launch.py --experiment paper-main --domains gripper --seeds 3 7-8

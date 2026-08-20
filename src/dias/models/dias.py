@@ -6,9 +6,10 @@ import lightning as L
 import torch
 
 from dias.adjacency import dense_from_edges
+from dias.hparams import to_mapping
 from dias.reporting.labels import resolve_label_names
 from dias.reporting.plotting import PlotWorker, queue_validation_heatmaps
-from dias.schedules import Schedule, as_schedule, schedule_config
+from dias.schedules import Schedule, as_schedule
 
 from .checkpoints import CHECKPOINT_VERSION, VERSION_KEY, migrate
 from .edges import EdgeTypeLayout
@@ -59,7 +60,7 @@ class DIAS(L.LightningModule):
         # Hyperparameters must stay primitive: torch.load defaults to
         # weights_only=True since 2.6 and refuses to unpickle a dataclass,
         # which would make the whole checkpoint unloadable.
-        self.hparams["gmean_temperature"] = schedule_config(self.gmean_temperature)
+        self.hparams["gmean_temperature"] = to_mapping(self.gmean_temperature)
 
         # Everything else is handed to the module that owns it; what is kept
         # here is what something reads back later -- the losses, the optimizer,

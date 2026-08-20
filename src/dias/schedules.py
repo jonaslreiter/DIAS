@@ -7,8 +7,10 @@ first.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from typing import Mapping
+
+from dias.hparams import from_mapping
 
 
 @dataclass(frozen=True)
@@ -81,9 +83,6 @@ class PiecewiseLinear:
 Schedule = Constant | Exponential | PiecewiseLinear
 
 
-_BY_NAME = {cls.__name__: cls for cls in (Constant, Exponential, PiecewiseLinear)}
-
-
 def as_schedule(value: "Schedule | Mapping[str, object] | None") -> Schedule:
     """Accept a schedule, the mapping a checkpoint stores it as, or None.
 
@@ -94,22 +93,4 @@ def as_schedule(value: "Schedule | Mapping[str, object] | None") -> Schedule:
     """
     if value is None:
         return Constant(1.0)
-    if isinstance(value, tuple(_BY_NAME.values())):
-        return value
-    name = str(value["class_path"]).rsplit(".", 1)[-1]
-    if name not in _BY_NAME:
-        raise ValueError(f"Unknown schedule {value['class_path']!r}")
-    return _BY_NAME[name](**dict(value.get("init_args", {})))
-
-
-def schedule_config(schedule: Schedule) -> dict:
-    """The mapping form, for hyperparameters.
-
-    Checkpoints must hold primitives: torch.load defaults to weights_only=True
-    since 2.6, which refuses to unpickle a dataclass and makes the whole file
-    unloadable -- not just this field.
-    """
-    return {
-        "class_path": f"{__name__}.{type(schedule).__name__}",
-        "init_args": asdict(schedule),
-    }
+    return from_mapping(value, (Constant, Exponential, PiecewiseLinear))

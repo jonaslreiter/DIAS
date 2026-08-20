@@ -41,26 +41,30 @@ domain. Training logs and checkpoints land under `logs/`.
 
 ### Noise ablation
 
-Input adjacency noise has two models, selected by `data.init_args.noise_model`:
+Input adjacency noise comes from one of two models, set on `data.init_args.noise`:
 
 ```yaml
-# ratio (default): Bernoulli edge flips
+# Bernoulli edge flips, at a rate per cell
 data:
   init_args:
-    noise_model: ratio
-    edge_remove_ratio: 0.1  # paper sweeps 0.0–0.5
-    edge_add_ratio: 0.1
+    noise:
+      class_path: dias.data.noise.Ratio
+      init_args:
+        remove: 0.1  # paper sweeps 0.0–0.5
+        add: 0.1
 
-# expected_count: Poisson flip budget per adjacency tensor (statics untouched)
+# a Poisson flip budget per adjacency tensor, statics untouched
 data:
   init_args:
-    noise_model: expected_count
-    expected_removed_atoms: 2.0
-    expected_added_atoms: 2.0
+    noise:
+      class_path: dias.data.noise.ExpectedCount
+      init_args:
+        removed_atoms: 2.0
+        added_atoms: 2.0
 ```
 
-Set the active model's knobs to `0.0` for the clean setup. The `noise` experiment
-(below) uses `expected_count` via `configs/experiments/noise.yaml`.
+Leave `noise` unset for the clean setup. The `noise` experiment (below) uses
+`ExpectedCount` via `configs/experiments/noise.yaml`.
 
 ## Baseline validation
 
@@ -108,8 +112,8 @@ python scripts/launch.py --experiment-type mlp --experiment mlp-main
 
 # One noise level (expected 2 added / 2 removed atoms)
 python scripts/launch.py --experiment-type noise --experiment noise-a2r2 \
-    --set data.init_args.expected_added_atoms=2 \
-    --set data.init_args.expected_removed_atoms=2
+    --set data.init_args.noise.added_atoms=2 \
+    --set data.init_args.noise.removed_atoms=2
 
 # Hyperparameter sweep: all domains × the axis grid × 3 seeds. Each value
 # becomes its own sub-experiment `<experiment>-<tag><value>`; the override is
@@ -179,8 +183,8 @@ python scripts/launch.py --experiment datasize-clean --sweep dataset-size \
 python scripts/launch.py --experiment datasize-noise --sweep dataset-size \
     --experiment-type noise --num-runs 3 \
     --domains blocks-3 delivery gripper hanoi logistics miconic \
-    --set data.init_args.expected_removed_atoms=0.5 \
-    --set data.init_args.expected_added_atoms=0.5
+    --set data.init_args.noise.removed_atoms=0.5 \
+    --set data.init_args.noise.added_atoms=0.5
 
 # Collect (one domain × size matrix per metric)
 python scripts/collect_results.py --experiment datasize-clean \

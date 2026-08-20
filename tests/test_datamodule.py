@@ -1,8 +1,11 @@
+import io
 import unittest
 
 import torch
 
+from checkpoints import DOMAIN, TRAIN_PROBLEM
 from dias.data.datamodule import PddlGraphDataModule, PddlTransitionDataset
+from dias.data.noise import ExpectedCount, Ratio
 
 
 def make_data():
@@ -126,11 +129,38 @@ class DataModuleTest(unittest.TestCase):
         kept = data_module._cap_per_label(samples)
         self.assertEqual([sample["id"] for sample in kept], [0, 1, 3])
 
-    def test_relation_true_ratio_handles_unary_diagonal_and_binary_regions(self):
-        data_module = PddlGraphDataModule.__new__(PddlGraphDataModule)
-        data_module.arity_relations = [1, 2]
-        data_module._base = PddlTransitionDataset(make_data())
-        self.assertEqual(data_module._compute_relation_true_ratio(), [1 / 7, 1 / 7])
+
+class NoiseArgumentTest(unittest.TestCase):
+    """The noise model is a dataclass, and checkpoints may hold only primitives."""
+
+    def build(self, **kwargs) -> PddlGraphDataModule:
+        return PddlGraphDataModule(
+            domain_path=str(DOMAIN),
+            problem_path=str(TRAIN_PROBLEM),
+            min_per_label_train=2,
+            min_per_label_valid=1,
+            **kwargs,
+        )
+
+    def test_a_configured_model_arrives_as_itself(self):
+        noise = ExpectedCount(removed_atoms=1.0, added_atoms=2.0)
+        self.assertEqual(self.build(noise=noise).noise, noise)
+
+    def test_the_mapping_a_checkpoint_stores_rebuilds_the_model(self):
+        stored = self.build(noise=Ratio(remove=0.25)).hparams["noise"]
+        self.assertEqual(self.build(noise=stored).noise, Ratio(remove=0.25))
+
+    def test_the_stored_form_survives_a_weights_only_load(self):
+        """A dataclass here would make torch.load refuse the whole checkpoint."""
+        stored = self.build(noise=ExpectedCount(added_atoms=1.0)).hparams["noise"]
+        buffer = io.BytesIO()
+        torch.save(stored, buffer)
+        self.assertEqual(torch.load(io.BytesIO(buffer.getvalue())), stored)
+
+    def test_no_noise_is_the_default(self):
+        module = self.build()
+        self.assertIsNone(module.noise)
+        self.assertIsNone(module.hparams["noise"])
 
 
 if __name__ == "__main__":

@@ -15,11 +15,8 @@
 #
 # Composed last. Override the atom budgets per launch to sweep noise levels, e.g.:
 #   scripts/launch.py --experiment-type noise \
-#       --set data.init_args.expected_added_atoms=2 \
-#       --set data.init_args.expected_removed_atoms=2
-#
-# `noise_model: expected_count` requires edge_add_ratio / edge_remove_ratio to stay
-# at 0.0 (enforced by the datamodule). Static predicates are left untouched.
+#       --set data.init_args.noise.added_atoms=2 \
+#       --set data.init_args.noise.removed_atoms=2
 model:
   init_args:
     # Tau decays as in main.yaml but bottoms out at 0.1 instead of 0: under
@@ -34,12 +31,14 @@ model:
 
 data:
   init_args:
-    noise_model: expected_count
-    edge_remove_ratio: 0.0
-    edge_add_ratio: 0.0
-    expected_removed_atoms: 1.0
-    expected_added_atoms: 1.0
-    noise_on_fluents_only: true
+    noise:
+      class_path: dias.data.noise.ExpectedCount
+      init_args:
+        removed_atoms: 1.0
+        added_atoms: 1.0
+        # Static relations describe the instance, not its state; corrupting
+        # them would ask the model to learn a different problem.
+        fluents_only: true
     min_per_label_train_floor: 200
     min_per_label_valid_floor: 100
     batch_size: 50

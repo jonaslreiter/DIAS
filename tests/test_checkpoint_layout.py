@@ -17,9 +17,10 @@ from pathlib import Path
 import torch
 
 from checkpoints import pre_split_name
+from dias.hparams import to_mapping
 from dias.models.checkpoints import CHECKPOINT_VERSION, VERSION_KEY
 from dias.models.dias import DIAS
-from dias.schedules import Constant, Exponential, schedule_config
+from dias.schedules import Constant, Exponential
 
 V1_HPARAMS = {
     "num_objects": 4,
@@ -85,7 +86,7 @@ CURRENT_HPARAMS = {
     key: value for key, value in V1_HPARAMS.items() if key not in V1_ONLY_HPARAMS
 } | {
     # v1's gmean_offset of 0.0 leaves the schedule unchanged.
-    "gmean_temperature": schedule_config(
+    "gmean_temperature": to_mapping(
         Exponential(start=1.0, floor=0.0, factor=0.1, every=500)
     ),
     # Added after v1, so a v1 checkpoint gets the constructor default.
