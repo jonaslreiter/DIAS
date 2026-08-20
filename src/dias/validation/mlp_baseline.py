@@ -24,7 +24,6 @@ from .artifacts import PddlWorkspace
 from .checkpoint import load_run
 from .decoding import process_model_logits
 from .successors import (
-    DEFAULT_SAMPLE_SEED,
     LEARNED_ACTION_PREFIX,
     sample_reachable_states,
     transfer_states,
@@ -357,7 +356,7 @@ class ModelValidation:
         self,
         num_samples: int = 250,
         sample_population: int = 500,
-        seed: int = DEFAULT_SAMPLE_SEED,
+        seed: int | None = None,
     ):
         original_states = sample_reachable_states(
             self.original_problem, num_samples, sample_population, seed

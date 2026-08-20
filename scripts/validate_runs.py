@@ -99,11 +99,8 @@ def validate_run(
         )
     num_samples = int(val_cfg["num_samples"])
     sample_population = int(val_cfg["sample_population"])
-    # Imported here rather than at module scope, like the validator itself:
-    # dias.validation pulls in pymimir and torch, which --help should not need.
-    from dias.validation.successors import DEFAULT_SAMPLE_SEED
-
-    sample_seed = int(val_cfg.get("sample_seed", DEFAULT_SAMPLE_SEED))
+    configured_seed = val_cfg.get("sample_seed")
+    sample_seed = None if configured_seed is None else int(configured_seed)
     extra_kwargs = {} if experiment_type == "mlp" else {"threshold": threshold}
 
     per_problem: dict[str, dict[str, Any]] = {}
@@ -130,7 +127,14 @@ def validate_run(
         per_problem[stem] = {k: _plain(val) for k, val in result.items()}
 
     _write_json(
-        logs_dir, results_experiment, domain, seed, run_id, per_problem, threshold
+        logs_dir,
+        results_experiment,
+        domain,
+        seed,
+        run_id,
+        per_problem,
+        threshold,
+        sample_seed,
     )
     if log_wandb:
         _log_to_wandb(results_experiment, domain, seed, run_id, logs_dir, per_problem)
@@ -160,6 +164,7 @@ def _write_json(
     run_id: str,
     per_problem: dict,
     threshold: float = 0.5,
+    sample_seed: int | None = None,
 ) -> None:
     out = logs_dir / "validation" / experiment / domain / f"seed{seed}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -172,6 +177,9 @@ def _write_json(
                 "seed": seed,
                 "run_id": run_id,
                 "threshold": threshold,
+                # null means the states were drawn unseeded, so these numbers
+                # are one sample and not reproducible.
+                "sample_seed": sample_seed,
                 "status": "ok" if ok else "validation_failed",
                 "per_problem": per_problem,
             },

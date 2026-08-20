@@ -21,22 +21,20 @@ logger = logging.getLogger(__name__)
 # which is the only thing telling the two apart when scoring.
 LEARNED_ACTION_PREFIX = "learned_"
 
-# Which states a problem is validated on is a choice, not an accident: every
-# run of every seed is scored on the same ones.
-DEFAULT_SAMPLE_SEED = 0
-
 
 def sample_reachable_states(
     problem,
     num_samples: int,
     sample_population: int,
-    seed: int = DEFAULT_SAMPLE_SEED,
+    seed: int | None = None,
 ) -> list:
     """Draw `num_samples` distinct states from a BFS over `problem`.
 
-    The draw is seeded, and from a generator of its own rather than the global
-    one, so a result can be reproduced later and two validators asked to
-    compare see the same states.
+    Unseeded by default, so repeated runs see different states. Passing a
+    `seed` fixes which ones, which is what makes a result reproducible later
+    and lets two validators be compared on the same states. Either way the
+    draw comes from a generator of its own, never the global one, so it
+    neither depends on nor disturbs anything else's random state.
     """
     if num_samples > sample_population:
         logger.warning(

@@ -8,10 +8,11 @@
 num_samples: 250
 sample_population: 500
 
-# Which of the reachable states get sampled. Fixed so a run can be reproduced,
-# and so every domain's seeds are scored on the same states rather than each
-# on its own draw. Results produced before this was seeded are not reproducible.
-sample_seed: 0
+# Which of the reachable states get sampled. Null draws a fresh sample every
+# run; set it to a number to fix the draw, which makes a result reproducible
+# and scores every seed of a domain on the same states. The seed used is
+# recorded in each result JSON.
+sample_seed: null
 
 # Which problems (from the manifest's `problems` list) to validate on.
 num_problems: 3
