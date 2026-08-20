@@ -86,10 +86,7 @@ class Ratio:
 
     def describe(self, stats: RelationStats) -> str:
         scaled = [f"{self.add * ratio:.4g}" for ratio in stats.true_ratio]
-        return (
-            f"ratio noise: remove={self.remove}, add={self.add}, "
-            f"scaled add per relation={scaled}"
-        )
+        return f"{self}, adding per relation at {scaled}"
 
     def corrupt(self, states, stats, generator=None) -> torch.Tensor:
         return torch.stack(
@@ -140,11 +137,7 @@ class ExpectedCount:
         return self.removed_atoms > 0.0 or self.added_atoms > 0.0
 
     def describe(self, stats: RelationStats) -> str:
-        scope = "fluent relations" if self.fluents_only else "all relations"
-        return (
-            f"expected-count noise: remove={self.removed_atoms}, "
-            f"add={self.added_atoms} atoms per adjacency tensor, over {scope}"
-        )
+        return str(self)
 
     def corrupt(self, states, stats, generator=None) -> torch.Tensor:
         return torch.stack(

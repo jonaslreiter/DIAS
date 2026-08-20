@@ -2,147 +2,46 @@
 
 import unittest
 
+from checkpoints import DOMAIN, TRAIN_PROBLEM
 from dias.schema.domain import read_metadata, tensor_relations
 
 
-class FakeTerm:
-    def __init__(self, index):
-        self.index = index
-
-    def get_index(self):
-        return self.index
-
-
-class FakePredicate:
-    def __init__(self, name, arity, static=False):
-        self.name = name
-        self.arity = arity
-        self.static = static
-
-    def get_name(self):
-        return self.name
-
-    def get_arity(self):
-        return self.arity
-
-    def is_static(self):
-        return self.static
-
-
-class FakeAtom:
-    def __init__(self, predicate, indices):
-        self.predicate = predicate
-        self.indices = indices
-
-    def get_predicate(self):
-        return self.predicate
-
-    def get_terms(self):
-        return [FakeTerm(index) for index in self.indices]
-
-
-class FakeObject:
-    def __init__(self, index, name):
-        self.index = index
-        self.name = name
-
-    def get_index(self):
-        return self.index
-
-    def get_name(self):
-        return self.name
-
-
-class FakeAction:
-    def __init__(self, name, arity):
-        self.name = name
-        self.arity = arity
-
-    def get_name(self):
-        return self.name
-
-    def get_arity(self):
-        return self.arity
-
-
-class FakeGroundAction:
-    def __init__(self, action, objects, successor):
-        self.action = action
-        self.objects = objects
-        self.successor = successor
-
-    def get_action(self):
-        return self.action
-
-    def get_objects(self):
-        return self.objects
-
-    def apply(self, state):
-        return self.successor
-
-
-class FakeState:
-    def __init__(self, index, atoms, actions=None):
-        self.index = index
-        self.atoms = atoms
-        self.actions = actions or []
-
-    def get_index(self):
-        return self.index
-
-    def get_atoms(self):
-        return self.atoms
-
-    def generate_applicable_actions(self):
-        return self.actions
-
-
-class FakeDomain:
-    def __init__(self, name, predicates, actions):
-        self.name = name
-        self.predicates = predicates
-        self.actions = actions
-
-    def get_name(self):
-        return self.name
-
-    def get_predicates(self):
-        return self.predicates
-
-    def get_actions(self):
-        return self.actions
-
-
-class FakeProblem:
-    def __init__(self, domain, initial, objects):
-        self._domain = domain
-        self.initial = initial
-        self.objects = objects
-
-    def get_initial_state(self):
-        return self.initial
-
-    def get_objects(self):
-        return self.objects
-
-
 class ReadMetadataTest(unittest.TestCase):
-    def test_it_reports_the_domain_objects_predicates_and_actions(self):
-        fluent = FakePredicate("ready", 1)
-        static = FakePredicate("type", 1, static=True)
-        state = FakeState(0, [FakeAtom(fluent, [1]), FakeAtom(static, [0])])
-        action = FakeAction("go", 1)
-        domain = FakeDomain("demo", [static, fluent], [action])
-        problem = FakeProblem(domain, state, [FakeObject(0, "a"), FakeObject(1, "b")])
+    """Read against a real domain: fakes of the pymimir API pin nothing."""
 
-        metadata = read_metadata(domain, problem)
-        self.assertEqual(metadata["domain_name"], "demo")
-        self.assertEqual(metadata["objects"], {"0": "a", "1": "b"})
-        self.assertEqual(metadata["object_name_to_idx"], {"a": 0, "b": 1})
-        self.assertEqual(metadata["num_objects"], 2)
-        self.assertEqual(metadata["actions"], [{"name": "go", "arity": 1}])
-        # Sorted by name, so the tensor channels have a stable order.
-        self.assertEqual([p["name"] for p in metadata["predicates"]], ["ready", "type"])
+    @classmethod
+    def setUpClass(cls):
+        import pymimir
+
+        domain = pymimir.Domain(DOMAIN)
+        cls.metadata = read_metadata(domain, pymimir.Problem(domain, TRAIN_PROBLEM))
+
+    def test_objects_are_indexed_both_ways(self):
+        self.assertEqual(self.metadata["num_objects"], 5)
+        self.assertEqual(self.metadata["objects"]["0"], "b1")
+        self.assertEqual(self.metadata["object_name_to_idx"]["b1"], 0)
+
+    def test_predicates_come_back_sorted_with_their_arity_and_staticness(self):
+        """Sorted by name, so the tensor channels have a stable order."""
+        predicates = self.metadata["predicates"]
+        self.assertEqual(
+            [p["name"] for p in predicates],
+            ["clear", "eq", "number", "object", "on", "on-table"],
+        )
+        self.assertEqual(
+            {p["name"] for p in predicates if p["static"]}, {"eq", "number", "object"}
+        )
+        self.assertEqual(predicates[4], {"name": "on", "arity": 2, "static": False})
+
+    def test_actions_keep_the_order_the_domain_declares_them_in(self):
+        self.assertEqual(
+            self.metadata["actions"],
+            [
+                {"name": "stack", "arity": 2},
+                {"name": "newtower", "arity": 2},
+                {"name": "move", "arity": 3},
+            ],
+        )
 
 
 class TensorRelationsTest(unittest.TestCase):
