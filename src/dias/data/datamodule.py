@@ -15,6 +15,7 @@ from dias.data.datasets import (
     StratifiedActionIterableDataset,
 )
 from dias.data.noise import ExpectedCount, NoiseModel, Ratio, RelationStats
+from dias.data.quota import SampleQuota
 from dias.data.splitting import (
     cap_per_label,
     check_every_action_survives,
@@ -34,14 +35,16 @@ logger = logging.getLogger(__name__)
 
 
 class PddlGraphDataModule(L.LightningDataModule):
-    """Random-walk PDDL data pipeline with configurable stopping / batching.
+    """One problem instance, as the transitions a training run reads.
 
-    Stopping is driven by ``(min_per_label_train, min_per_label_valid)`` and/or
-    ``(num_train, num_valid)``. If both are set, their train:valid ratios must
-    match. Optional ``max_per_label_*`` cap each label after sampling, and
-    optional ``min_per_label_*_floor`` raise (never lower) the corresponding
-    minimum. ``batch_sampling_strategy`` is ``"random"`` (shuffled DataLoader)
-    or ``"stratified"`` (unbounded action-balanced sampler).
+    A random walk draws transitions until `SampleQuota` is met, they are split
+    by action, and the train half is optionally corrupted by a `NoiseModel`.
+    `batch_sampling_strategy` is ``"random"`` (a shuffled pass over the split)
+    or ``"stratified"`` (an unbounded action-balanced stream, in which case
+    training length comes from ``trainer.max_steps``).
+
+    The sampling arguments stay flat here rather than nesting into the quota,
+    because they are what configs, sweeps and archived hyper-parameters name.
     """
 
     def __init__(
@@ -75,37 +78,39 @@ class PddlGraphDataModule(L.LightningDataModule):
         self.domain_path = domain_path
         self.problem_path = problem_path
         self.seed = seed
-        self.include_statics = include_statics
-        self.default_statics = default_statics
-        self.action_arguments = action_arguments
-        self.strips_plus_actions = strips_plus_actions
         self.pt_file = pt_file
-        self.min_per_label_train = min_per_label_train
-        self.min_per_label_valid = min_per_label_valid
-        self.min_per_label_train_floor = min_per_label_train_floor
-        self.min_per_label_valid_floor = min_per_label_valid_floor
-        self.max_per_label_train = max_per_label_train
-        self.max_per_label_valid = max_per_label_valid
-        self.num_train = num_train
-        self.num_valid = num_valid
         self.max_steps = max_steps
         self.batch_size = batch_size
         self.batch_sampling_strategy = batch_sampling_strategy
         self.shuffle_train = shuffle_train
         self.num_workers = num_workers
-        self.noise = (
-            None if noise is None else from_mapping(noise, (Ratio, ExpectedCount))
-        )
-        # Hyper-parameters must stay primitive; see dias.hparams.
-        self.hparams["noise"] = None if self.noise is None else to_mapping(self.noise)
+        self.action_arguments = action_arguments
+        self.strips_plus_actions = strips_plus_actions
+        self.include_statics = include_statics
+        self.default_statics = default_statics
 
         if batch_sampling_strategy not in ("random", "stratified"):
             raise ValueError(
                 f"batch_sampling_strategy must be 'random' or 'stratified', "
                 f"got {batch_sampling_strategy!r}."
             )
-        self._apply_min_per_label_floors()
-        self._validate_sampling_config()
+        # The floors mutate the minima, so the quota is derived rather than
+        # read back off `hparams`, which keep the per-domain values as written.
+        self.quota = SampleQuota.with_floors(
+            min_per_label_train=min_per_label_train,
+            min_per_label_valid=min_per_label_valid,
+            min_per_label_train_floor=min_per_label_train_floor,
+            min_per_label_valid_floor=min_per_label_valid_floor,
+            max_per_label_train=max_per_label_train,
+            max_per_label_valid=max_per_label_valid,
+            num_train=num_train,
+            num_valid=num_valid,
+        )
+        self.noise = (
+            None if noise is None else from_mapping(noise, (Ratio, ExpectedCount))
+        )
+        # Hyper-parameters must stay primitive; see dias.hparams.
+        self.hparams["noise"] = None if self.noise is None else to_mapping(self.noise)
 
         logger.info("Loading domain %s, problem %s", domain_path, problem_path)
         self.domain = pymimir.Domain(Path(domain_path))
@@ -113,13 +118,13 @@ class PddlGraphDataModule(L.LightningDataModule):
         self.metadata = read_metadata(self.domain, self.problem)
         self.schema = DomainSchema.from_metadata(
             self.metadata,
-            include_statics=self.include_statics,
-            default_statics=self.default_statics,
+            include_statics=include_statics,
+            default_statics=default_statics,
             action_arg_positions=argument_positions(
                 self.metadata["actions"],
                 domain_path=domain_path,
-                action_arguments=self.action_arguments,
-                strips_plus_actions=self.strips_plus_actions,
+                action_arguments=action_arguments,
+                strips_plus_actions=strips_plus_actions,
             ),
         )
         self.arity_relations: list[int] = list(self.schema.relation_arities)
@@ -129,94 +134,6 @@ class PddlGraphDataModule(L.LightningDataModule):
         self._valid_ds = None
         self._train_idx: list[int] = []
         self._valid_idx: list[int] = []
-
-    def _apply_min_per_label_floors(self) -> None:
-        """Raise ``min_per_label_*`` to a shared lower bound, never lower it.
-
-        Experiment overlays are composed *after* the per-domain config, so a
-        plain ``min_per_label_train`` there would also shrink the domains that
-        sample more. The floors only ever increase the per-domain value — that
-        is what the paper's noise setup asks for: the *smallest* per-action
-        minimum sample count is raised to Nmin = 200, the larger ones stay.
-        """
-        for name, floor in (
-            ("min_per_label_train", self.min_per_label_train_floor),
-            ("min_per_label_valid", self.min_per_label_valid_floor),
-        ):
-            current = getattr(self, name)
-            if floor is None or current is None or current >= floor:
-                continue
-            logger.info("Raising %s from %s to its floor of %s.", name, current, floor)
-            setattr(self, name, floor)
-
-    @property
-    def _has_min(self) -> bool:
-        return (
-            self.min_per_label_train is not None
-            and self.min_per_label_valid is not None
-        )
-
-    @property
-    def _has_num(self) -> bool:
-        return self.num_train is not None and self.num_valid is not None
-
-    @property
-    def _has_max(self) -> bool:
-        return (
-            self.max_per_label_train is not None
-            and self.max_per_label_valid is not None
-        )
-
-    def _validate_sampling_config(self) -> None:
-        if self.pt_file is not None:
-            return
-        if not self._has_min and not self._has_num:
-            raise ValueError(
-                "PddlGraphDataModule: at least one of "
-                "(min_per_label_train, min_per_label_valid) or "
-                "(num_train, num_valid) must be set."
-            )
-        if self._has_min and (
-            self.min_per_label_train <= 0 or self.min_per_label_valid <= 0
-        ):
-            raise ValueError("min_per_label_train and min_per_label_valid must be > 0.")
-        if self._has_num and (self.num_train <= 0 or self.num_valid <= 0):
-            raise ValueError("num_train and num_valid must be > 0.")
-        if (self.max_per_label_train is None) != (self.max_per_label_valid is None):
-            raise ValueError(
-                "max_per_label_train and max_per_label_valid must be set together."
-            )
-        if self._has_max and (
-            self.max_per_label_train <= 0 or self.max_per_label_valid <= 0
-        ):
-            raise ValueError("max_per_label_train and max_per_label_valid must be > 0.")
-        if (
-            self._has_max
-            and self._has_min
-            and (
-                self.max_per_label_train < self.min_per_label_train
-                or self.max_per_label_valid < self.min_per_label_valid
-            )
-        ):
-            raise ValueError(
-                f"max_per_label_* must be >= min_per_label_*: "
-                f"max=({self.max_per_label_train},{self.max_per_label_valid}) "
-                f"vs min=({self.min_per_label_train},{self.min_per_label_valid})."
-            )
-        if (
-            self._has_min
-            and self._has_num
-            and (
-                self.min_per_label_train * self.num_valid
-                != self.num_train * self.min_per_label_valid
-            )
-        ):
-            raise ValueError(
-                f"Ratio mismatch: "
-                f"min_per_label_train:min_per_label_valid="
-                f"{self.min_per_label_train}:{self.min_per_label_valid} "
-                f"vs num_train:num_valid={self.num_train}:{self.num_valid}."
-            )
 
     @property
     def base(self) -> PddlTransitionDataset:
@@ -280,10 +197,7 @@ class PddlGraphDataModule(L.LightningDataModule):
 
         total = len(self._base)
         self._train_idx, self._valid_idx = stratified_split(
-            self._base.action_indices,
-            self.num_train if self._has_num else self.min_per_label_train,
-            self.num_valid if self._has_num else self.min_per_label_valid,
-            self.seed,
+            self._base.action_indices, *self.quota.split_weights, self.seed
         )
         self.relation_stats = self._measure_relations()
         if total > 0:
@@ -323,23 +237,17 @@ class PddlGraphDataModule(L.LightningDataModule):
             self.metadata["num_objects"],
             [a["name"] for a in self.metadata["actions"]],
         )
-        min_total = (
-            self.min_per_label_train + self.min_per_label_valid if self._has_min else 0
-        )
-        num_total = self.num_train + self.num_valid if self._has_num else 0
         samples = generate_random_walk(
             problem=self.problem,
-            min_num_samples=num_total,
-            min_per_label=min_total,
+            min_num_samples=self.quota.num_total,
+            min_per_label=self.quota.min_total,
             only_unseen_states=False,
             max_steps=self.max_steps,
             include_statics=self.include_statics,
         )
-        if self._has_max:
-            samples = cap_per_label(
-                samples, self.max_per_label_train + self.max_per_label_valid
-            )
-        return samples
+        if self.quota.cap is None:
+            return samples
+        return cap_per_label(samples, self.quota.cap)
 
     def _postprocess_action_args(self, samples: list[dict]) -> None:
         if self.action_arguments and self.strips_plus_actions:

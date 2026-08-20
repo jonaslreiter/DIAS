@@ -8,89 +8,6 @@ from dias.data.datamodule import PddlGraphDataModule
 from dias.data.noise import ExpectedCount, Ratio
 
 
-class SamplingConfigTest(unittest.TestCase):
-    def test_sampling_validation_rejects_invalid_combinations(self):
-        def module(**values):
-            data_module = PddlGraphDataModule.__new__(PddlGraphDataModule)
-            defaults = {
-                "pt_file": None,
-                "min_per_label_train": None,
-                "min_per_label_valid": None,
-                "num_train": None,
-                "num_valid": None,
-                "max_per_label_train": None,
-                "max_per_label_valid": None,
-            }
-            defaults.update(values)
-            for name, value in defaults.items():
-                setattr(data_module, name, value)
-            return data_module
-
-        with self.assertRaisesRegex(ValueError, "at least one"):
-            module()._validate_sampling_config()
-        with self.assertRaisesRegex(ValueError, "must be > 0"):
-            module(
-                min_per_label_train=0, min_per_label_valid=1
-            )._validate_sampling_config()
-        with self.assertRaisesRegex(ValueError, "set together"):
-            module(
-                num_train=2, num_valid=1, max_per_label_train=1
-            )._validate_sampling_config()
-        with self.assertRaisesRegex(ValueError, "must be >= min"):
-            module(
-                min_per_label_train=2,
-                min_per_label_valid=2,
-                max_per_label_train=1,
-                max_per_label_valid=2,
-            )._validate_sampling_config()
-        with self.assertRaisesRegex(ValueError, "Ratio mismatch"):
-            module(
-                min_per_label_train=1,
-                min_per_label_valid=1,
-                num_train=3,
-                num_valid=1,
-            )._validate_sampling_config()
-
-    def test_min_per_label_floors_only_raise_the_per_domain_values(self):
-        def module(**values):
-            data_module = PddlGraphDataModule.__new__(PddlGraphDataModule)
-            for name, value in values.items():
-                setattr(data_module, name, value)
-            return data_module
-
-        raised = module(
-            min_per_label_train=20,
-            min_per_label_valid=10,
-            min_per_label_train_floor=200,
-            min_per_label_valid_floor=100,
-        )
-        raised._apply_min_per_label_floors()
-        self.assertEqual(
-            (raised.min_per_label_train, raised.min_per_label_valid), (200, 100)
-        )
-
-        kept = module(
-            min_per_label_train=1000,
-            min_per_label_valid=500,
-            min_per_label_train_floor=200,
-            min_per_label_valid_floor=100,
-        )
-        kept._apply_min_per_label_floors()
-        self.assertEqual(
-            (kept.min_per_label_train, kept.min_per_label_valid), (1000, 500)
-        )
-
-        # No floors / sampling by num_* instead: nothing to do.
-        untouched = module(
-            min_per_label_train=None,
-            min_per_label_valid=None,
-            min_per_label_train_floor=200,
-            min_per_label_valid_floor=None,
-        )
-        untouched._apply_min_per_label_floors()
-        self.assertIsNone(untouched.min_per_label_train)
-
-
 class NoiseArgumentTest(unittest.TestCase):
     """The noise model is a dataclass, and checkpoints may hold only primitives."""
 
@@ -122,6 +39,22 @@ class NoiseArgumentTest(unittest.TestCase):
         module = self.build()
         self.assertIsNone(module.noise)
         self.assertIsNone(module.hparams["noise"])
+
+
+class QuotaFloorTest(unittest.TestCase):
+    def test_a_raised_minimum_does_not_reach_the_saved_hyperparameters(self):
+        """An archived run must record the value its config asked for."""
+        module = PddlGraphDataModule(
+            domain_path=str(DOMAIN),
+            problem_path=str(TRAIN_PROBLEM),
+            min_per_label_train=2,
+            min_per_label_valid=1,
+            min_per_label_train_floor=20,
+            min_per_label_valid_floor=10,
+        )
+        self.assertEqual(module.quota.split_weights, (20, 10))
+        self.assertEqual(module.hparams["min_per_label_train"], 2)
+        self.assertEqual(module.hparams["min_per_label_valid"], 1)
 
 
 class DataloaderTest(unittest.TestCase):
