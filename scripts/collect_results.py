@@ -49,7 +49,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import sys
 from pathlib import Path
@@ -61,13 +60,12 @@ from launch_threshold_validation import (  # noqa: E402
     THRESHOLD_VALUES,
     threshold_experiment_name,
 )
+from pipeline import (  # noqa: E402
+    LOGS_DIR,
+    WANDB_ENTITY,
+    WANDB_PROJECT,
+)
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-# Which W&B account and project the runs live in. Unset entity means "whichever
-# account is logged in", so a clone needs no edit here; both are overridable on
-# the command line.
-WANDB_PROJECT = os.environ.get("WANDB_PROJECT", "dias")
-WANDB_ENTITY = os.environ.get("WANDB_ENTITY") or None
 ONE = 1.0 - 1e-9
 
 
@@ -200,7 +198,7 @@ def _collect(
 ) -> dict[str, list[tuple[float, float]]]:
     """Per-domain (precision, recall) pairs of an experiment, from the chosen source."""
     if args.source == "local":
-        by_domain = collect_local(experiment, args.logs_dir)
+        by_domain = collect_local(experiment, args.log_dir)
     else:
         by_domain = collect_wandb(experiment, args.wandb_project, args.wandb_entity)
     if args.domains:
@@ -491,7 +489,7 @@ def main() -> int:
     p.add_argument(
         "--domains", nargs="+", default=None, help="Restrict to these domains."
     )
-    p.add_argument("--logs-dir", type=Path, default=PROJECT_ROOT / "logs")
+    p.add_argument("--log-dir", type=Path, default=LOGS_DIR)
     p.add_argument("--wandb-project", default=WANDB_PROJECT)
     p.add_argument("--wandb-entity", default=WANDB_ENTITY)
     p.add_argument(

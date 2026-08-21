@@ -37,7 +37,7 @@ python scripts/validate_runs.py \
   --domain "$DOMAIN" \
   --seed "$SEED" \
   --experiment-type "$EXP_TYPE" \
-  --logs-dir "$LOGS_DIR" \
+  --log-dir "$LOGS_DIR" \
   --domain-settings "$DOMAIN_SETTINGS" \
   --validation-config "$VALIDATION_CONFIG" \
   "${EXTRA[@]}"

@@ -36,8 +36,6 @@ Examples
 from __future__ import annotations
 
 import argparse
-import shlex
-import subprocess
 import sys
 from pathlib import Path
 
@@ -54,16 +52,8 @@ from benchmark import DEFAULT_RESULTS_DIR, SIZES_CONFIG  # noqa: E402
 
 # Reused rather than re-derived so this study's sbatch flags mean exactly what
 # the main pipeline's mean (see AGENTS.md on keeping launchers in sync).
-from launch import _format_array, _sbatch_resource_opts  # noqa: E402
+from pipeline import format_array, run_command, sbatch_resource_opts  # noqa: E402
 from run_scaling import instances_for, run_ladder  # noqa: E402
-
-
-def _run(cmd: list[str], dry_run: bool) -> str | None:
-    print("  " + shlex.join(cmd), flush=True)
-    if dry_run:
-        return None
-    out = subprocess.run(cmd, check=True, capture_output=True, text=True)
-    return out.stdout.strip()
 
 
 def _submit_domain(
@@ -87,13 +77,13 @@ def _submit_domain(
         "sbatch",
         "--parsable",
         f"--job-name=dias-scaling-{domain}",
-        f"--array={_format_array(seeds)}",
-        *_sbatch_resource_opts(resources),
+        f"--array={format_array(seeds)}",
+        *sbatch_resource_opts(resources),
         f"--export={export}",
         str(SLURM_SCRIPT.relative_to(PROJECT_ROOT)),
     ]
     print(f"[{domain}] submit scaling array ({len(seeds)} seeds)")
-    _run(cmd, args.dry_run)
+    run_command(cmd, args.dry_run)
 
 
 def main() -> int:
@@ -149,7 +139,8 @@ def main() -> int:
         raise SystemExit(
             "Missing instance file(s): "
             + ", ".join(missing)
-            + "\nRun: python scaling/generate_instances.py"
+            + "\nRegenerate them with scaling/generate_instances.py "
+            "--generators-dir DIR (see scaling/README.md)."
         )
 
     total = sum(len(instances_for(d, cfg)) for d in domains) * len(seeds)

@@ -86,7 +86,6 @@ Examples
 from __future__ import annotations
 
 import argparse
-import shlex
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -94,16 +93,31 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-import yaml
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # for `import pipeline`
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-EXPERIMENTS_DIR = PROJECT_ROOT / "configs" / "experiments"
+from pipeline import (  # noqa: E402
+    EXPERIMENT_TYPES,
+    EXPERIMENT_VALIDATOR,
+    EXPERIMENTS_DIR,
+    PROJECT_ROOT,
+    SLURM_RESOURCES,
+    SLURM_RESOURCES_VALIDATION,
+    add_domain_arguments,
+    add_path_arguments,
+    format_array,
+    load_yaml,
+    prepare_slurm_logs,
+    resolve_resources,
+    resolve_seeds,
+    run_command,
+    sbatch_resource_opts,
+    select_domains,
+)
+
 EXPERIMENT_OVERLAYS = {
     "mlp": EXPERIMENTS_DIR / "mlp.yaml",
     "noise": EXPERIMENTS_DIR / "noise.yaml",
 }
-# Which validator each experiment type uses (noise still uses the DIAS validator).
-VALIDATOR_TYPE = {"dias": "dias", "noise": "dias", "mlp": "mlp"}
 # Schema-derivation threshold (Eq. 14) per experiment type; the paper raises it
 # to 0.75 under noise. Override per launch with --validation-threshold.
 DEFAULT_VALIDATION_THRESHOLD = 0.5
@@ -248,10 +262,6 @@ def _axis_grid_help() -> str:
     )
 
 
-def _load_yaml(path: Path) -> dict:
-    return yaml.safe_load(path.read_text())
-
-
 def _config_value(cfg: dict, dotted_key: str):
     """Look up a dotted key in a nested config dict; ``None`` if absent."""
     node = cfg
@@ -298,73 +308,13 @@ def _check_sweep_config(
     # Overlays are composed after the domain config and can carry the same
     # parameters (the noise overlay replaces the whole schedule, for instance).
     for path in paths + overlays:
-        cfg = _load_yaml(path) or {}
+        cfg = load_yaml(path) or {}
         if reuse_default and _config_value(cfg, axis.param) is not None:
             raise SystemExit(
                 f"--reuse-default: {path} overrides {axis.param}, so "
                 f"'{reuse_default}' did not run it at the axis default "
                 f"{axis.default:g}"
             )
-
-
-def _parse_seeds(specs: list[str]) -> list[int]:
-    """Parse ``--seeds`` tokens into a sorted, deduplicated seed list.
-
-    Accepts single seeds and inclusive ranges, space- or comma-separated:
-    ``--seeds 3 7-9`` and ``--seeds 3,7-9`` both give ``[3, 7, 8, 9]``.
-    """
-    seeds: set[int] = set()
-    for spec in specs:
-        for part in spec.split(","):
-            part = part.strip()
-            if not part:
-                continue
-            lo_s, sep, hi_s = part.partition("-")
-            try:
-                lo = int(lo_s)
-                hi = int(hi_s) if sep else lo
-            except ValueError:
-                raise SystemExit(f"--seeds: expected N or N-M, got {part!r}")
-            if lo < 0 or hi < lo:
-                raise SystemExit(f"--seeds: invalid range {part!r}")
-            seeds.update(range(lo, hi + 1))
-    if not seeds:
-        raise SystemExit("--seeds: no seeds given")
-    return sorted(seeds)
-
-
-def _format_array(seeds: list[int]) -> str:
-    """Compress a sorted seed list into an sbatch ``--array`` spec (``3,7-9``)."""
-    parts: list[str] = []
-    start = prev = seeds[0]
-    for seed in seeds[1:]:
-        if seed == prev + 1:
-            prev = seed
-            continue
-        parts.append(f"{start}-{prev}" if prev > start else str(start))
-        start = prev = seed
-    parts.append(f"{start}-{prev}" if prev > start else str(start))
-    return ",".join(parts)
-
-
-def _resolve_resources(slurm_cfg: dict, domain: str) -> dict:
-    merged = dict(slurm_cfg.get("defaults", {}))
-    merged.update(slurm_cfg.get(domain) or {})
-    return merged
-
-
-def _sbatch_resource_opts(res: dict) -> list[str]:
-    opts: list[str] = []
-    if "time" in res:
-        opts.append(f"--time={res['time']}")
-    if "mem" in res:
-        opts.append(f"--mem={res['mem']}")
-    if "cpus" in res:
-        opts.append(f"--cpus-per-task={res['cpus']}")
-    if "gres" in res:
-        opts.append(f"--gres={res['gres']}")
-    opts += list(res.get("sbatch_extra", []))
-    return opts
 
 
 def _base_train_args(
@@ -424,16 +374,6 @@ def run_directory_args(run_id: str, logs_dir: Path, log_wandb: bool) -> list[str
     ]
 
 
-def _run(cmd: list[str], dry_run: bool) -> str | None:
-    # shlex.join keeps the printed command copy-pasteable: sweep overrides can
-    # carry a JSON value, whose quotes a plain join would lose.
-    print("  " + shlex.join(cmd), flush=True)
-    if dry_run:
-        return None
-    out = subprocess.run(cmd, check=True, capture_output=True, text=True)
-    return out.stdout.strip()
-
-
 def _submit_domain_slurm(
     experiment: str,
     domain: str,
@@ -449,9 +389,9 @@ def _submit_domain_slurm(
 ) -> None:
     # Array task id == seed, so a seed subset becomes a sparse array spec and
     # aftercorr still pairs train/validate tasks of the same seed.
-    array = _format_array(seeds)
-    train_res_opts = _sbatch_resource_opts(train_res)
-    val_res_opts = _sbatch_resource_opts(val_res)
+    array = format_array(seeds)
+    train_res_opts = sbatch_resource_opts(train_res)
+    val_res_opts = sbatch_resource_opts(val_res)
 
     # EXPERIMENT/DOMAIN go through --export (single tokens, needed to build the
     # run id); the Lightning config chain is passed as positional args so sbatch
@@ -476,7 +416,7 @@ def _submit_domain_slurm(
         *base_args,
     ]
     print(f"[{domain}] submit training array ({len(seeds)} runs, seeds {array})")
-    train_jobid = _run(train_cmd, args.dry_run)
+    train_jobid = run_command(train_cmd, args.dry_run)
 
     val_vars = [
         "ALL",
@@ -506,7 +446,7 @@ def _submit_domain_slurm(
         "scripts/slurm/validate.sh",
     ]
     print(f"[{domain}] submit validation array (aftercorr:{dep})")
-    _run(val_cmd, args.dry_run)
+    run_command(val_cmd, args.dry_run)
 
 
 def _run_domain_local(
@@ -523,8 +463,8 @@ def _run_domain_local(
     # Imported here so Slurm submission never needs torch/pymimir installed.
     from validate_runs import run_id_for, validate_run
 
-    domain_settings = _load_yaml(args.domain_settings)
-    val_cfg = _load_yaml(args.validation_config)
+    domain_settings = load_yaml(args.domain_settings)
+    val_cfg = load_yaml(args.validation_config)
 
     for seed in seeds:
         run_id = run_id_for(experiment, domain, seed)
@@ -539,13 +479,12 @@ def _run_domain_local(
             *run_directory_args(run_id, logs_dir, log_wandb=not args.no_wandb),
         ]
         print(f"\n[{domain} seed={seed}] train  (run_id={run_id})", flush=True)
-        print("  " + shlex.join(train_cmd), flush=True)
-        if args.dry_run:
-            continue
         try:
-            subprocess.run(train_cmd, check=True)
+            run_command(train_cmd, args.dry_run)
         except subprocess.CalledProcessError as e:
             print(f"[skip] {domain} seed={seed}: training failed ({e})", flush=True)
+            continue
+        if args.dry_run:
             continue
         validate_run(
             experiment=experiment,
@@ -571,7 +510,7 @@ def main() -> int:
         help="Experiment name = W&B group = results dir. Defaults to a timestamp.",
     )
     p.add_argument(
-        "--experiment-type", default="dias", choices=["dias", "mlp", "noise"]
+        "--experiment-type", default="dias", choices=sorted(EXPERIMENT_TYPES)
     )
     p.add_argument(
         "--ablation",
@@ -580,27 +519,7 @@ def main() -> int:
         help="Model ablation overlay, composed on top of the experiment type "
         "(uses the DIAS validator). Default: none (full model).",
     )
-    p.add_argument(
-        "--domains",
-        nargs="+",
-        default=None,
-        help="Domain keys to run (default: all in the manifest).",
-    )
-    p.add_argument(
-        "--num-runs",
-        type=int,
-        default=None,
-        help="Runs (seeds 0..N-1) per domain. Default: len(validation.yaml seeds).",
-    )
-    p.add_argument(
-        "--seeds",
-        nargs="+",
-        default=None,
-        metavar="SEED",
-        help="Explicit seeds instead of 0..num-runs-1, as single values and/or "
-        "inclusive ranges (e.g. '--seeds 3 7-9'). Use to re-run individual "
-        "failed seeds. Mutually exclusive with --num-runs.",
-    )
+    add_domain_arguments(p)
     p.add_argument(
         "--sweep",
         default=None,
@@ -664,52 +583,25 @@ def main() -> int:
         action="store_true",
         help="Log neither training nor validation to W&B (both backends).",
     )
-    p.add_argument(
-        "--domain-settings",
-        type=Path,
-        default=PROJECT_ROOT / "pddl" / "domain-settings.yaml",
-    )
-    p.add_argument(
-        "--train-config", type=Path, default=PROJECT_ROOT / "configs" / "main.yaml"
-    )
-    p.add_argument(
-        "--validation-config",
-        type=Path,
-        default=PROJECT_ROOT / "configs" / "validation.yaml",
-    )
-    p.add_argument(
-        "--slurm-resources",
-        type=Path,
-        default=PROJECT_ROOT / "configs" / "slurm-resources.yaml",
-    )
+    add_path_arguments(p, train_config=True)
+    p.add_argument("--slurm-resources", type=Path, default=SLURM_RESOURCES)
     p.add_argument(
         "--slurm-resources-validation",
         type=Path,
-        default=PROJECT_ROOT / "configs" / "slurm-resources-validation.yaml",
+        default=SLURM_RESOURCES_VALIDATION,
     )
-    p.add_argument("--log-dir", type=Path, default=PROJECT_ROOT / "logs")
     args = p.parse_args()
 
-    domain_settings = _load_yaml(args.domain_settings)
-    domains = args.domains or list(domain_settings.keys())
-    for d in domains:
-        if d not in domain_settings:
-            raise SystemExit(f"domain '{d}' not in {args.domain_settings}")
-
-    if args.seeds is not None:
-        if args.num_runs is not None:
-            raise SystemExit("--seeds and --num-runs are mutually exclusive")
-        seeds = _parse_seeds(args.seeds)
-    else:
-        num_runs = args.num_runs or len(_load_yaml(args.validation_config)["seeds"])
-        seeds = list(range(num_runs))
+    domain_settings = load_yaml(args.domain_settings)
+    domains = select_domains(domain_settings, args.domains)
+    seeds = resolve_seeds(args)
     overlays = []
     exp_overlay = EXPERIMENT_OVERLAYS.get(args.experiment_type)
     if exp_overlay is not None:
         overlays.append(exp_overlay)
     if args.ablation is not None:
         overlays.append(ABLATION_OVERLAYS[args.ablation])
-    val_type = VALIDATOR_TYPE[args.experiment_type]
+    val_type = EXPERIMENT_VALIDATOR[args.experiment_type]
     threshold = (
         args.validation_threshold
         if args.validation_threshold is not None
@@ -768,7 +660,7 @@ def main() -> int:
                 f"--reuse-default: the {axis_name} axis has no reusable default "
                 "(the value is tuned per domain)"
             )
-        train_cfg = _load_yaml(args.train_config)
+        train_cfg = load_yaml(args.train_config)
         _check_sweep_config(
             axis,
             axis_name,
@@ -799,7 +691,7 @@ def main() -> int:
     )
     print(
         f"domains    : {len(domains)} x {len(seeds)} runs  "
-        f"(seeds={_format_array(seeds)}, backend={args.backend})"
+        f"(seeds={format_array(seeds)}, backend={args.backend})"
     )
     if axis is not None:
         print(
@@ -816,11 +708,11 @@ def main() -> int:
         print(f"overlay    : {overlay}")
 
     if args.backend == "slurm" and not args.dry_run:
-        (PROJECT_ROOT / "logs" / "slurm").mkdir(parents=True, exist_ok=True)
+        prepare_slurm_logs(args.log_dir)
 
-    slurm_cfg = _load_yaml(args.slurm_resources) if args.backend == "slurm" else {}
+    slurm_cfg = load_yaml(args.slurm_resources) if args.backend == "slurm" else {}
     val_slurm_cfg = (
-        _load_yaml(args.slurm_resources_validation) if args.backend == "slurm" else {}
+        load_yaml(args.slurm_resources_validation) if args.backend == "slurm" else {}
     )
 
     for experiment, point_extra, reused in points:
@@ -852,8 +744,8 @@ def main() -> int:
                     val_type,
                     threshold,
                     seeds,
-                    _resolve_resources(slurm_cfg, domain),
-                    _resolve_resources(val_slurm_cfg, domain),
+                    resolve_resources(slurm_cfg, domain),
+                    resolve_resources(val_slurm_cfg, domain),
                     args.log_dir,
                     args,
                 )

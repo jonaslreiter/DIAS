@@ -42,18 +42,21 @@ import argparse
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))  # for `import launch`
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # for `import pipeline`
 
-from launch import (  # noqa: E402
-    _format_array,
-    _load_yaml,
-    _parse_seeds,
-    _resolve_resources,
-    _run,
-    _sbatch_resource_opts,
+from pipeline import (  # noqa: E402
+    SLURM_RESOURCES_VALIDATION,
+    add_domain_arguments,
+    add_path_arguments,
+    format_array,
+    load_yaml,
+    prepare_slurm_logs,
+    resolve_resources,
+    resolve_seeds,
+    run_command,
+    sbatch_resource_opts,
+    select_domains,
 )
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 # Grid of the bare --thresholds flag; 0.5 is the default the paper reports and
 # is re-run here too, so every column of the sweep comes from the same code path.
@@ -102,7 +105,7 @@ def _submit_slurm(
 ) -> None:
     # Array task id == seed, exactly as in the normal validation array, so a
     # seed subset becomes a sparse array spec.
-    array = _format_array(seeds)
+    array = format_array(seeds)
     export = ",".join(
         [
             "ALL",
@@ -122,12 +125,12 @@ def _submit_slurm(
         "--parsable",
         f"--job-name=dias-val-{THRESHOLD_TAG}{threshold:g}-{domain}",
         f"--array={array}",
-        *_sbatch_resource_opts(val_res),
+        *sbatch_resource_opts(val_res),
         f"--export={export}",
         "scripts/slurm/validate.sh",
     ]
     print(f"[{domain} @ {threshold:g}] submit validation array ({len(seeds)} seeds)")
-    _run(cmd, args.dry_run)
+    run_command(cmd, args.dry_run)
 
 
 def _run_local(
@@ -142,8 +145,8 @@ def _run_local(
     # Imported here so Slurm submission never needs torch/pymimir installed.
     from validate_runs import validate_run
 
-    domain_settings = _load_yaml(args.domain_settings)
-    val_cfg = _load_yaml(args.validation_config)
+    domain_settings = load_yaml(args.domain_settings)
+    val_cfg = load_yaml(args.validation_config)
     for seed in seeds:
         print(f"\n[{domain} seed={seed} @ {threshold:g}] validate", flush=True)
         if args.dry_run:
@@ -187,26 +190,7 @@ def main() -> int:
         choices=["dias", "noise"],
         help="Validator to use. The MLP baseline has no schema to binarize.",
     )
-    p.add_argument(
-        "--domains",
-        nargs="+",
-        default=None,
-        help="Domain keys to re-validate (default: all in the manifest).",
-    )
-    p.add_argument(
-        "--num-runs",
-        type=int,
-        default=None,
-        help="Seeds 0..N-1 per domain. Default: len(validation.yaml seeds).",
-    )
-    p.add_argument(
-        "--seeds",
-        nargs="+",
-        default=None,
-        metavar="SEED",
-        help="Explicit seeds instead of 0..num-runs-1 (e.g. '--seeds 3 7-9'). "
-        "Mutually exclusive with --num-runs.",
-    )
+    add_domain_arguments(p)
     p.add_argument("--backend", default="slurm", choices=["slurm", "local"])
     # Overrides for configs/slurm-resources-validation.yaml, applied to every
     # array: the sweep is 5x the usual validation volume, so it is usually worth
@@ -232,37 +216,17 @@ def main() -> int:
         action="store_true",
         help="Submit even when some (domain, seed) has no checkpoint yet.",
     )
-    p.add_argument(
-        "--domain-settings",
-        type=Path,
-        default=PROJECT_ROOT / "pddl" / "domain-settings.yaml",
-    )
-    p.add_argument(
-        "--validation-config",
-        type=Path,
-        default=PROJECT_ROOT / "configs" / "validation.yaml",
-    )
+    add_path_arguments(p)
     p.add_argument(
         "--slurm-resources-validation",
         type=Path,
-        default=PROJECT_ROOT / "configs" / "slurm-resources-validation.yaml",
+        default=SLURM_RESOURCES_VALIDATION,
     )
-    p.add_argument("--log-dir", type=Path, default=PROJECT_ROOT / "logs")
     args = p.parse_args()
 
-    domain_settings = _load_yaml(args.domain_settings)
-    domains = args.domains or list(domain_settings.keys())
-    for d in domains:
-        if d not in domain_settings:
-            raise SystemExit(f"domain '{d}' not in {args.domain_settings}")
-
-    if args.seeds is not None:
-        if args.num_runs is not None:
-            raise SystemExit("--seeds and --num-runs are mutually exclusive")
-        seeds = _parse_seeds(args.seeds)
-    else:
-        num_runs = args.num_runs or len(_load_yaml(args.validation_config)["seeds"])
-        seeds = list(range(num_runs))
+    domain_settings = load_yaml(args.domain_settings)
+    domains = select_domains(domain_settings, args.domains)
+    seeds = resolve_seeds(args)
 
     thresholds = list(args.thresholds or THRESHOLD_VALUES)
     for t in thresholds:
@@ -288,7 +252,7 @@ def main() -> int:
         f"domains    : {len(domains)} x {len(seeds)} seeds x "
         f"{len(thresholds)} thresholds = "
         f"{len(domains) * len(seeds) * len(thresholds)} validations "
-        f"(seeds={_format_array(seeds)}, backend={args.backend})"
+        f"(seeds={format_array(seeds)}, backend={args.backend})"
     )
     print(f"thresholds : {', '.join(f'{t:g}' for t in thresholds)}")
     print(
@@ -301,9 +265,9 @@ def main() -> int:
     )
 
     if args.backend == "slurm" and not args.dry_run:
-        (PROJECT_ROOT / "logs" / "slurm").mkdir(parents=True, exist_ok=True)
+        prepare_slurm_logs(args.log_dir)
     val_slurm_cfg = (
-        _load_yaml(args.slurm_resources_validation) if args.backend == "slurm" else {}
+        load_yaml(args.slurm_resources_validation) if args.backend == "slurm" else {}
     )
 
     for threshold in thresholds:
@@ -311,7 +275,7 @@ def main() -> int:
         print(f"\n=== threshold {threshold:g} -> {results_experiment} ===")
         for domain in domains:
             if args.backend == "slurm":
-                res = _resolve_resources(val_slurm_cfg, domain)
+                res = resolve_resources(val_slurm_cfg, domain)
                 if args.time:
                     res["time"] = args.time
                 if args.mem:

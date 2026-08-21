@@ -34,39 +34,32 @@ from __future__ import annotations
 import argparse
 import json
 import numbers
-import os
 import re
 import sys
 import traceback
 from pathlib import Path
 from typing import Any
 
-import yaml
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # for `import pipeline`
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-# Which W&B account and project the runs live in. Unset entity means "whichever
-# account is logged in", so a clone needs no edit here; both are overridable on
-# the command line.
-WANDB_PROJECT = os.environ.get("WANDB_PROJECT", "dias")
-WANDB_ENTITY = os.environ.get("WANDB_ENTITY") or None
+from pipeline import (  # noqa: E402
+    EXPERIMENT_TYPES,
+    EXPERIMENT_VALIDATOR,
+    PROJECT_ROOT,
+    VALIDATORS,
+    WANDB_ENTITY,
+    WANDB_PROJECT,
+    add_path_arguments,
+    load_yaml,
+    select_domains,
+    validator_class,
+)
 
 
 def run_id_for(experiment: str, domain: str, seed: int) -> str:
     """Deterministic, filesystem/W&B-safe run id shared by train and validate."""
     raw = f"{experiment}-{domain}-s{seed}"
     return re.sub(r"[^0-9A-Za-z_-]", "-", raw)
-
-
-def _load_yaml(path: Path) -> dict:
-    return yaml.safe_load(path.read_text())
-
-
-def _validator_class(experiment_type: str):
-    if experiment_type == "mlp":
-        from dias.validation.mlp_baseline import ModelValidation
-    else:  # dias, noise
-        from dias.validation.dias_validate import ModelValidation
-    return ModelValidation
 
 
 def validate_run(
@@ -95,17 +88,18 @@ def validate_run(
     n = int(val_cfg["num_problems"])
     val_problems = spec["problems"][offset : offset + n]
 
-    ModelValidation = _validator_class(experiment_type)
-    if experiment_type == "mlp" and threshold != 0.5:
+    validator = VALIDATORS[EXPERIMENT_VALIDATOR[experiment_type]]
+    ModelValidation = validator_class(validator.name)
+    if not validator.binarizes_schema and threshold != 0.5:
         raise SystemExit(
-            "--threshold applies to the DIAS validator only; the MLP baseline "
-            "predicts successor adjacencies directly and has no schema to binarize"
+            f"--threshold applies to a validator that reads a lifted schema; "
+            f"{validator.summary}"
         )
     num_samples = int(val_cfg["num_samples"])
     sample_population = int(val_cfg["sample_population"])
     configured_seed = val_cfg.get("sample_seed")
     sample_seed = None if configured_seed is None else int(configured_seed)
-    extra_kwargs = {} if experiment_type == "mlp" else {"threshold": threshold}
+    extra_kwargs = {"threshold": threshold} if validator.binarizes_schema else {}
 
     per_problem: dict[str, dict[str, Any]] = {}
     for problem in val_problems:
@@ -235,7 +229,7 @@ def main() -> int:
     )
     p.add_argument("--seed", type=int, required=True)
     p.add_argument(
-        "--experiment-type", default="dias", choices=["dias", "mlp", "noise"]
+        "--experiment-type", default="dias", choices=sorted(EXPERIMENT_TYPES)
     )
     p.add_argument(
         "--run-id", default=None, help="Defaults to <experiment>-<domain>-s<seed>."
@@ -254,23 +248,12 @@ def main() -> int:
         "<experiment>/. The checkpoint is still located via --experiment, so a "
         "re-validation at another --threshold leaves the original JSONs alone.",
     )
-    p.add_argument("--logs-dir", type=Path, default=PROJECT_ROOT / "logs")
-    p.add_argument(
-        "--domain-settings",
-        type=Path,
-        default=PROJECT_ROOT / "pddl" / "domain-settings.yaml",
-    )
-    p.add_argument(
-        "--validation-config",
-        type=Path,
-        default=PROJECT_ROOT / "configs" / "validation.yaml",
-    )
+    add_path_arguments(p)
     p.add_argument("--no-wandb", action="store_true", help="Skip W&B logging.")
     args = p.parse_args()
 
-    domain_settings = _load_yaml(args.domain_settings)
-    if args.domain not in domain_settings:
-        raise SystemExit(f"domain '{args.domain}' not in {args.domain_settings}")
+    domain_settings = load_yaml(args.domain_settings)
+    select_domains(domain_settings, [args.domain])
 
     per_problem = validate_run(
         experiment=args.experiment,
@@ -278,8 +261,8 @@ def main() -> int:
         seed=args.seed,
         experiment_type=args.experiment_type,
         domain_settings=domain_settings,
-        val_cfg=_load_yaml(args.validation_config),
-        logs_dir=args.logs_dir,
+        val_cfg=load_yaml(args.validation_config),
+        logs_dir=args.log_dir,
         run_id=args.run_id,
         log_wandb=not args.no_wandb,
         threshold=args.threshold,
