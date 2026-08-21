@@ -122,6 +122,17 @@ class CadenceTest(unittest.TestCase):
             SchemaChartCallback(log_every_n_validations=0)
 
 
+class PanelStepTest(unittest.TestCase):
+    def test_the_query_names_one_step_for_the_whole_run(self):
+        """A configuration that keeps moving points the page at a table that
+
+        has not finished uploading, which is what made live panels blink.
+        """
+        callback = SchemaChartCallback()
+        named = [callback._panel_step(trainer(global_step=s)) for s in (50, 100, 150)]
+        self.assertEqual(named, [50, 50, 50])
+
+
 class ChartSetTest(unittest.TestCase):
     """What a logging pass produces, without a W&B run to send it to."""
 

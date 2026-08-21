@@ -219,8 +219,8 @@ def heatmap(
 
     `columns` names the table's columns -- one per axis of `values`, then the
     value itself -- and `fields` maps the specification's placeholders onto
-    them. `step` is where the panel's slider starts, so the newest schema is
-    what a run's page opens on.
+    them. `step` names the step the panel's history query asks for; see
+    `SchemaChartCallback._panel_step` for why it stays put.
     """
     import wandb
     from wandb.plot.custom_chart import CustomChart

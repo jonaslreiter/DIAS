@@ -51,6 +51,7 @@ class SchemaChartCallback(L.Callback):
         self.log_every_n_validations = log_every_n_validations
 
         self._validations = 0
+        self._first_step: int | None = None
         self._selection: tuple[torch.Tensor, torch.Tensor] | None = None
         self._spec_ids: dict[str, str] | None = None
 
@@ -101,10 +102,24 @@ class SchemaChartCallback(L.Callback):
         if self._spec_ids is None:
             self._spec_ids = charts.register(run.entity)
 
-        step = int(trainer.global_step)
-        media = self._charts(trainer, pl_module, self._spec_ids, step)
+        media = self._charts(
+            trainer, pl_module, self._spec_ids, self._panel_step(trainer)
+        )
         if media:
-            run.log(media, step=step)
+            run.log(media, step=int(trainer.global_step))
+
+    def _panel_step(self, trainer) -> int:
+        """The step each panel's history query names, fixed at the first log.
+
+        W&B rewrites a panel's configuration every time the chart is logged, so
+        naming the newest step here would keep pointing the page at a table
+        that is still uploading -- which is what made a live run's panels blink
+        in and out. Written once, the configuration stops moving; the slider
+        opens on the first logged schema and reaches the rest.
+        """
+        if self._first_step is None:
+            self._first_step = int(trainer.global_step)
+        return self._first_step
 
     def _charts(self, trainer, pl_module, specs: dict[str, str], step) -> dict:
         schema = pl_module.schema_logits()
