@@ -19,8 +19,14 @@ GRID_FIELDS = {
 }
 
 
-def _slot_labels(count: int) -> list[str]:
-    return [f"slot {index}" for index in range(count)]
+def _slots(count: int) -> list[int]:
+    """Slot numbers, as numbers.
+
+    The column names say these are slots, so spelling it again in every cell
+    cost a third of the table. It also sorts them correctly: a chart of ten
+    slots ordered "slot 1", "slot 10", "slot 2".
+    """
+    return list(range(count))
 
 
 class SchemaChartCallback(L.Callback):
@@ -161,7 +167,7 @@ class SchemaChartCallback(L.Callback):
             ),
         ]
 
-        slots = _slot_labels(panels[0][2].shape[-1])
+        slots = _slots(panels[0][2].shape[-1])
         return {
             key: charts.heatmap(
                 specs["dias-heatmap-grid"],
@@ -194,7 +200,7 @@ class SchemaChartCallback(L.Callback):
                 columns=("action", "slot", "object", "weight"),
                 axis_labels=(
                     [actions[action] for action in order],
-                    _slot_labels(assignments.shape[1]),
+                    _slots(assignments.shape[1]),
                     objects,
                 ),
                 fields={
@@ -210,7 +216,7 @@ class SchemaChartCallback(L.Callback):
                 "Slot weights",
                 weights.numpy(),
                 columns=("action", "slot", "weight"),
-                axis_labels=(actions, _slot_labels(weights.shape[-1])),
+                axis_labels=(actions, _slots(weights.shape[-1])),
                 fields={"x": "slot", "y": "action", "value": "weight"},
                 step=step,
             ),
