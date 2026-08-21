@@ -110,6 +110,7 @@ from pipeline import (  # noqa: E402
     resolve_resources,
     resolve_seeds,
     run_command,
+    sbatch_output_opt,
     sbatch_resource_opts,
     select_domains,
 )
@@ -134,6 +135,9 @@ ABLATION_OVERLAYS = {
 }
 # The tau schedule is a typed dataclass, so its fields are ordinary dotted keys.
 SCHEDULE_KEY = "model.init_args.gmean_temperature"
+
+TRAIN_SCRIPT = PROJECT_ROOT / "scripts" / "slurm" / "train.sh"
+VALIDATE_SCRIPT = PROJECT_ROOT / "scripts" / "slurm" / "validate.sh"
 
 
 @dataclass(frozen=True)
@@ -317,42 +321,92 @@ def _check_sweep_config(
             )
 
 
-def _base_train_args(
-    experiment: str,
-    domain: str,
-    spec: dict,
-    train_config: Path,
-    domain_config: Path,
-    overlays: list[Path],
-    logs_dir: Path,
-    extra: list[str],
-    log_wandb: bool,
-) -> list[str]:
-    """Seed-independent Lightning args shared by all runs of a domain."""
-    args = ["--config", str(train_config), "--config", str(domain_config)]
-    for overlay in overlays:
-        args += ["--config", str(overlay)]
-    args += [
-        "--experiment",
-        experiment,
-        "--data.init_args.domain_path",
-        str(PROJECT_ROOT / spec["domain"]),
-        "--data.init_args.problem_path",
-        str(PROJECT_ROOT / spec["problems"][0]),
-    ]
-    if log_wandb:
+# ── the launch, resolved ──────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class SweepPoint:
+    """One value of the swept axis: its sub-experiment and the args pinning it.
+
+    Without a sweep there is exactly one point, carrying the launch's own name
+    and only the ``--set`` overrides. ``reused`` marks the axis-default point
+    that ``--reuse-default`` maps onto an existing experiment; it is described
+    but never submitted.
+    """
+
+    experiment: str
+    overrides: list[str]
+    reused: bool = False
+
+
+@dataclass(frozen=True)
+class LaunchPlan:
+    """Everything a launch does, decided before anything is submitted.
+
+    Building this is where every ``SystemExit`` lives, so an invalid launch
+    fails before the first sbatch rather than half way through the grid.
+    """
+
+    experiment: str
+    experiment_type: str
+    ablation: str | None
+    validator: str
+    threshold: float
+    domains: list[str]
+    seeds: list[int]
+    domain_settings: dict
+    overlays: list[Path]
+    points: list[SweepPoint]
+    axis: SweepAxis | None
+    axis_name: str | None
+    values: list[float]
+    reuse_default: str | None
+    backend: str
+    dry_run: bool
+    log_wandb: bool
+    log_dir: Path
+    train_config: Path
+    validation_config: Path
+    domain_settings_path: Path
+    train_resources: dict
+    validation_resources: dict
+
+    @property
+    def submitted(self) -> list[SweepPoint]:
+        return [point for point in self.points if not point.reused]
+
+    def domain_config(self, domain: str) -> Path:
+        return (PROJECT_ROOT / self.domain_settings[domain]["domain"]).parent / (
+            "config.yaml"
+        )
+
+    def train_args(self, point: SweepPoint, domain: str) -> list[str]:
+        """Seed-independent Lightning args shared by all runs of a domain."""
+        spec = self.domain_settings[domain]
+        args = ["--config", str(self.train_config)]
+        for path in [self.domain_config(domain), *self.overlays]:
+            args += ["--config", str(path)]
         args += [
-            "--trainer.logger.init_args.group",
-            experiment,
-            "--trainer.logger.init_args.save_dir",
-            str(logs_dir),
+            "--experiment",
+            point.experiment,
+            "--data.init_args.domain_path",
+            str(PROJECT_ROOT / spec["domain"]),
+            "--data.init_args.problem_path",
+            str(PROJECT_ROOT / spec["problems"][0]),
         ]
-    else:
-        # Without a logger the run directory comes from default_root_dir, which
-        # the per-seed args set to the path validation looks the checkpoint up
-        # under. See _run_domain_local and scripts/slurm/train.sh.
-        args += ["--trainer.logger=false"]
-    return args + extra
+        if self.log_wandb:
+            args += [
+                "--trainer.logger.init_args.group",
+                point.experiment,
+                "--trainer.logger.init_args.save_dir",
+                str(self.log_dir),
+            ]
+        else:
+            # Without a logger the run directory comes from default_root_dir,
+            # which run_directory_args sets to the path validation looks the
+            # checkpoint up under.
+            args += ["--trainer.logger=false"]
+        return args + point.overrides
 
 
 def run_directory_args(run_id: str, logs_dir: Path, log_wandb: bool) -> list[str]:
@@ -362,7 +416,8 @@ def run_directory_args(run_id: str, logs_dir: Path, log_wandb: bool) -> list[str
     checkpoints``. With W&B that path is the logger's own (project / run id);
     without one, ModelCheckpoint falls back to ``default_root_dir``, so the same
     path has to be named explicitly -- otherwise a --no-wandb run writes its
-    checkpoint to ./checkpoints and validation cannot find it.
+    checkpoint to ./checkpoints and validation cannot find it. Mirrored in
+    scripts/slurm/train.sh, which builds the same args for an array task.
     """
     if not log_wandb:
         return ["--trainer.default_root_dir", str(logs_dir / "dias" / run_id)]
@@ -374,66 +429,203 @@ def run_directory_args(run_id: str, logs_dir: Path, log_wandb: bool) -> list[str
     ]
 
 
-def _submit_domain_slurm(
-    experiment: str,
-    domain: str,
-    spec: dict,
-    base_args: list[str],
-    val_type: str,
-    threshold: float,
-    seeds: list[int],
-    train_res: dict,
-    val_res: dict,
-    logs_dir: Path,
-    args: argparse.Namespace,
-) -> None:
+def _sweep_points(args: argparse.Namespace, plan_context: dict) -> tuple:
+    """The sweep points of a launch, and the axis they came from.
+
+    Returns ``(points, axis, axis_name, values)``; without ``--sweep`` that is
+    the single point named by ``--experiment``.
+    """
+    overrides = []
+    for override in args.overrides:
+        if "=" not in override:
+            raise SystemExit(f"--set expects key=value, got {override!r}")
+        if "," in override:
+            raise SystemExit(f"--set value must not contain commas: {override!r}")
+        overrides.append(f"--{override}")
+
+    if args.sweep is None:
+        if args.sweep_values:
+            raise SystemExit("--sweep-values requires --sweep")
+        if args.reuse_default:
+            raise SystemExit("--reuse-default requires --sweep")
+        return [SweepPoint(args.experiment, overrides)], None, None, []
+
+    axis_name = args.sweep
+    axis = SWEEP_AXES[axis_name]
+    values = list(args.sweep_values) if args.sweep_values else list(axis.values)
+    for param in _axis_params(axis):
+        if any(o.startswith(f"{param}=") for o in args.overrides):
+            raise SystemExit(f"--set {param}=... conflicts with --sweep {axis_name}")
+    if axis_name == "aux-loss-weight" and args.ablation == "no-aux-loss":
+        raise SystemExit(
+            "--ablation no-aux-loss disables the auxiliary losses, so sweeping "
+            "their weight has no effect"
+        )
+    if args.reuse_default and axis.default is None:
+        raise SystemExit(
+            f"--reuse-default: the {axis_name} axis has no reusable default "
+            "(the value is tuned per domain)"
+        )
+    _check_sweep_config(
+        axis,
+        axis_name,
+        plan_context["domains"],
+        plan_context["domain_settings"],
+        load_yaml(args.train_config),
+        args.train_config,
+        plan_context["overlays"],
+        args.reuse_default,
+    )
+    # The override is appended last so it beats the per-domain config.
+    points = [
+        SweepPoint(
+            name := sweep_experiment_name(
+                args.experiment, axis, value, args.reuse_default
+            ),
+            overrides + _sweep_override_args(axis, value),
+            reused=name == args.reuse_default,
+        )
+        for value in values
+    ]
+    return points, axis, axis_name, values
+
+
+def build_plan(args: argparse.Namespace) -> LaunchPlan:
+    """Resolve command-line arguments into a launch, or refuse them."""
+    domain_settings = load_yaml(args.domain_settings)
+    domains = select_domains(domain_settings, args.domains)
+    seeds = resolve_seeds(args)
+
+    overlays = []
+    exp_overlay = EXPERIMENT_OVERLAYS.get(args.experiment_type)
+    if exp_overlay is not None:
+        overlays.append(exp_overlay)
+    if args.ablation is not None:
+        overlays.append(ABLATION_OVERLAYS[args.ablation])
+
+    threshold = (
+        args.validation_threshold
+        if args.validation_threshold is not None
+        else VALIDATION_THRESHOLD.get(
+            args.experiment_type, DEFAULT_VALIDATION_THRESHOLD
+        )
+    )
+    if not 0.0 < threshold < 1.0:
+        raise SystemExit(
+            f"--validation-threshold: expected a probability in (0,1), got "
+            f"{threshold:g}"
+        )
+
+    points, axis, axis_name, values = _sweep_points(
+        args,
+        {"domains": domains, "domain_settings": domain_settings, "overlays": overlays},
+    )
+
+    on_slurm = args.backend == "slurm"
+    return LaunchPlan(
+        experiment=args.experiment,
+        experiment_type=args.experiment_type,
+        ablation=args.ablation,
+        validator=EXPERIMENT_VALIDATOR[args.experiment_type],
+        threshold=threshold,
+        domains=domains,
+        seeds=seeds,
+        domain_settings=domain_settings,
+        overlays=overlays,
+        points=points,
+        axis=axis,
+        axis_name=axis_name,
+        values=values,
+        reuse_default=args.reuse_default,
+        backend=args.backend,
+        dry_run=args.dry_run,
+        log_wandb=not args.no_wandb,
+        log_dir=args.log_dir,
+        train_config=args.train_config,
+        validation_config=args.validation_config,
+        domain_settings_path=args.domain_settings,
+        train_resources=load_yaml(args.slurm_resources) if on_slurm else {},
+        validation_resources=(
+            load_yaml(args.slurm_resources_validation) if on_slurm else {}
+        ),
+    )
+
+
+def describe(plan: LaunchPlan) -> None:
+    """Print what is about to happen, before it happens."""
+    print(
+        f"experiment : {plan.experiment}  (type={plan.experiment_type}, "
+        f"ablation={plan.ablation or 'none'}, validator={plan.validator}, "
+        f"threshold={plan.threshold:g})"
+    )
+    print(
+        f"domains    : {len(plan.domains)} x {len(plan.seeds)} runs  "
+        f"(seeds={format_array(plan.seeds)}, backend={plan.backend})"
+    )
+    if plan.axis is not None:
+        runs = len(plan.submitted) * len(plan.domains) * len(plan.seeds)
+        values = ", ".join(f"{v:g}" for v in plan.values)
+        print(f"sweep      : {plan.axis.param} in {{{values}}}  -> {runs} runs total")
+        if len(plan.submitted) < len(plan.points):
+            print(
+                f"reuse      : {plan.axis.default:g} not submitted; results come "
+                f"from experiment '{plan.reuse_default}'"
+            )
+    for overlay in plan.overlays:
+        print(f"overlay    : {overlay}")
+
+
+# ── backends ──────────────────────────────────────────────────────────────────
+
+
+def submit_domain(plan: LaunchPlan, point: SweepPoint, domain: str) -> None:
+    """Submit one domain's training array plus its dependent validation array."""
     # Array task id == seed, so a seed subset becomes a sparse array spec and
     # aftercorr still pairs train/validate tasks of the same seed.
-    array = format_array(seeds)
-    train_res_opts = sbatch_resource_opts(train_res)
-    val_res_opts = sbatch_resource_opts(val_res)
+    array = format_array(plan.seeds)
 
     # EXPERIMENT/DOMAIN go through --export (single tokens, needed to build the
     # run id); the Lightning config chain is passed as positional args so sbatch
     # preserves argv exactly (no fragile string splitting).
     train_vars = [
         "ALL",
-        f"EXPERIMENT={experiment}",
+        f"DIAS_ROOT={PROJECT_ROOT}",
+        f"EXPERIMENT={point.experiment}",
         f"DOMAIN={domain}",
-        f"LOGS_DIR={logs_dir}",
+        f"LOGS_DIR={plan.log_dir}",
     ]
-    if args.no_wandb:
+    val_vars = [
+        "ALL",
+        f"DIAS_ROOT={PROJECT_ROOT}",
+        f"EXPERIMENT={point.experiment}",
+        f"DOMAIN={domain}",
+        f"EXP_TYPE={plan.validator}",
+        f"LOGS_DIR={plan.log_dir}",
+        f"DOMAIN_SETTINGS={plan.domain_settings_path}",
+        f"VALIDATION_CONFIG={plan.validation_config}",
+    ]
+    if not plan.log_wandb:
         train_vars.append("NO_WANDB=1")
-    train_export = ",".join(train_vars)
+        val_vars.append("NO_WANDB=1")
+    # validate.sh only forwards --threshold when THRESHOLD is set, so leave it
+    # unset at the default and keep the plain pipeline unchanged.
+    if plan.threshold != DEFAULT_VALIDATION_THRESHOLD:
+        val_vars.append(f"THRESHOLD={plan.threshold:g}")
+
     train_cmd = [
         "sbatch",
         "--parsable",
         f"--job-name=dias-train-{domain}",
         f"--array={array}",
-        *train_res_opts,
-        f"--export={train_export}",
-        "scripts/slurm/train.sh",
-        *base_args,
+        sbatch_output_opt(plan.log_dir),
+        *sbatch_resource_opts(resolve_resources(plan.train_resources, domain)),
+        f"--export={','.join(train_vars)}",
+        str(TRAIN_SCRIPT),
+        *plan.train_args(point, domain),
     ]
-    print(f"[{domain}] submit training array ({len(seeds)} runs, seeds {array})")
-    train_jobid = run_command(train_cmd, args.dry_run)
+    print(f"[{domain}] submit training array ({len(plan.seeds)} runs, seeds {array})")
+    train_jobid = run_command(train_cmd, plan.dry_run)
 
-    val_vars = [
-        "ALL",
-        f"EXPERIMENT={experiment}",
-        f"DOMAIN={domain}",
-        f"EXP_TYPE={val_type}",
-        f"LOGS_DIR={logs_dir}",
-        f"DOMAIN_SETTINGS={args.domain_settings}",
-        f"VALIDATION_CONFIG={args.validation_config}",
-    ]
-    if args.no_wandb:
-        val_vars.append("NO_WANDB=1")
-    # validate.sh only forwards --threshold when THRESHOLD is set, so leave it
-    # unset at the default and keep the plain pipeline unchanged.
-    if threshold != DEFAULT_VALIDATION_THRESHOLD:
-        val_vars.append(f"THRESHOLD={threshold:g}")
-    val_export = ",".join(val_vars)
     dep = train_jobid or "<train_jobid>"
     val_cmd = [
         "sbatch",
@@ -441,66 +633,74 @@ def _submit_domain_slurm(
         f"--job-name=dias-val-{domain}",
         f"--array={array}",
         f"--dependency=aftercorr:{dep}",
-        *val_res_opts,
-        f"--export={val_export}",
-        "scripts/slurm/validate.sh",
+        sbatch_output_opt(plan.log_dir),
+        *sbatch_resource_opts(resolve_resources(plan.validation_resources, domain)),
+        f"--export={','.join(val_vars)}",
+        str(VALIDATE_SCRIPT),
     ]
     print(f"[{domain}] submit validation array (aftercorr:{dep})")
-    run_command(val_cmd, args.dry_run)
+    run_command(val_cmd, plan.dry_run)
 
 
-def _run_domain_local(
-    experiment: str,
-    domain: str,
-    spec: dict,
-    base_args: list[str],
-    val_type: str,
-    threshold: float,
-    seeds: list[int],
-    logs_dir: Path,
-    args: argparse.Namespace,
-) -> None:
+def run_domain(plan: LaunchPlan, point: SweepPoint, domain: str) -> None:
+    """Train and validate one domain's seeds here, one after another."""
     # Imported here so Slurm submission never needs torch/pymimir installed.
     from validate_runs import run_id_for, validate_run
 
-    domain_settings = load_yaml(args.domain_settings)
-    val_cfg = load_yaml(args.validation_config)
-
-    for seed in seeds:
-        run_id = run_id_for(experiment, domain, seed)
+    val_cfg = load_yaml(plan.validation_config)
+    for seed in plan.seeds:
+        run_id = run_id_for(point.experiment, domain, seed)
         train_cmd = [
             "dias-train",
             "fit",
-            *base_args,
+            *plan.train_args(point, domain),
             "--seed_everything",
             str(seed),
             "--data.init_args.seed",
             str(seed),
-            *run_directory_args(run_id, logs_dir, log_wandb=not args.no_wandb),
+            *run_directory_args(run_id, plan.log_dir, plan.log_wandb),
         ]
         print(f"\n[{domain} seed={seed}] train  (run_id={run_id})", flush=True)
         try:
-            run_command(train_cmd, args.dry_run)
-        except subprocess.CalledProcessError as e:
-            print(f"[skip] {domain} seed={seed}: training failed ({e})", flush=True)
+            run_command(train_cmd, plan.dry_run)
+        except subprocess.CalledProcessError as error:
+            print(f"[skip] {domain} seed={seed}: training failed ({error})", flush=True)
             continue
-        if args.dry_run:
+        if plan.dry_run:
             continue
         validate_run(
-            experiment=experiment,
+            experiment=point.experiment,
             domain=domain,
             seed=seed,
-            experiment_type=val_type,
-            domain_settings=domain_settings,
+            experiment_type=plan.experiment_type,
+            domain_settings=plan.domain_settings,
             val_cfg=val_cfg,
-            logs_dir=logs_dir,
+            logs_dir=plan.log_dir,
             run_id=run_id,
-            log_wandb=not args.no_wandb,
-            threshold=threshold,
+            log_wandb=plan.log_wandb,
+            threshold=plan.threshold,
         )
 
 
-def main() -> int:
+def execute(plan: LaunchPlan) -> None:
+    if plan.backend == "slurm" and not plan.dry_run:
+        prepare_slurm_logs(plan.log_dir)
+    backend = submit_domain if plan.backend == "slurm" else run_domain
+
+    for point in plan.points:
+        if point.reused:
+            print(f"\n=== {point.experiment} (reused, nothing submitted) ===")
+            continue
+        if len(plan.points) > 1:
+            print(f"\n=== sub-experiment {point.experiment} ===")
+        for domain in plan.domains:
+            backend(plan, point, domain)
+
+
+# ── command line ──────────────────────────────────────────────────────────────
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -535,14 +735,6 @@ def main() -> int:
         default=None,
         metavar="V",
         help="Values for --sweep instead of that axis' default grid.",
-    )
-    p.add_argument(
-        "--sweep-aux-loss-weight",
-        nargs="*",
-        type=float,
-        default=None,
-        metavar="ALPHA",
-        help="Alias for '--sweep aux-loss-weight [--sweep-values ALPHA ...]'.",
     )
     p.add_argument(
         "--reuse-default",
@@ -590,184 +782,16 @@ def main() -> int:
         type=Path,
         default=SLURM_RESOURCES_VALIDATION,
     )
-    args = p.parse_args()
+    return p.parse_args(argv)
 
-    domain_settings = load_yaml(args.domain_settings)
-    domains = select_domains(domain_settings, args.domains)
-    seeds = resolve_seeds(args)
-    overlays = []
-    exp_overlay = EXPERIMENT_OVERLAYS.get(args.experiment_type)
-    if exp_overlay is not None:
-        overlays.append(exp_overlay)
-    if args.ablation is not None:
-        overlays.append(ABLATION_OVERLAYS[args.ablation])
-    val_type = EXPERIMENT_VALIDATOR[args.experiment_type]
-    threshold = (
-        args.validation_threshold
-        if args.validation_threshold is not None
-        else VALIDATION_THRESHOLD.get(
-            args.experiment_type, DEFAULT_VALIDATION_THRESHOLD
-        )
-    )
-    if not 0.0 < threshold < 1.0:
-        raise SystemExit(
-            f"--validation-threshold: expected a probability in (0,1), got "
-            f"{threshold:g}"
-        )
-    extra = []
-    for o in args.overrides:
-        if "=" not in o:
-            raise SystemExit(f"--set expects key=value, got {o!r}")
-        if "," in o:
-            raise SystemExit(f"--set value must not contain commas: {o!r}")
-        extra.append(f"--{o}")
 
-    axis_name = args.sweep
-    values = list(args.sweep_values) if args.sweep_values else None
-    if args.sweep_aux_loss_weight is not None:
-        if axis_name is not None:
-            raise SystemExit(
-                "--sweep-aux-loss-weight is an alias for --sweep aux-loss-weight; "
-                "pass only one of them"
-            )
-        axis_name = "aux-loss-weight"
-        values = list(args.sweep_aux_loss_weight) or None
-
-    # Sweep points: (sub-experiment name, extra Lightning args, reused?). Without
-    # a sweep this is the single point (args.experiment, extra, False).
-    if axis_name is None:
-        if args.sweep_values:
-            raise SystemExit("--sweep-values requires --sweep")
-        if args.reuse_default:
-            raise SystemExit("--reuse-default requires --sweep")
-        points = [(args.experiment, extra, False)]
-        axis = None
-    else:
-        axis = SWEEP_AXES[axis_name]
-        values = values or list(axis.values)
-        for param in _axis_params(axis):
-            if any(o.startswith(f"{param}=") for o in args.overrides):
-                raise SystemExit(
-                    f"--set {param}=... conflicts with --sweep {axis_name}"
-                )
-        if axis_name == "aux-loss-weight" and args.ablation == "no-aux-loss":
-            raise SystemExit(
-                "--ablation no-aux-loss disables the auxiliary losses, so "
-                "sweeping their weight has no effect"
-            )
-        if args.reuse_default and axis.default is None:
-            raise SystemExit(
-                f"--reuse-default: the {axis_name} axis has no reusable default "
-                "(the value is tuned per domain)"
-            )
-        train_cfg = load_yaml(args.train_config)
-        _check_sweep_config(
-            axis,
-            axis_name,
-            domains,
-            domain_settings,
-            train_cfg,
-            args.train_config,
-            overlays,
-            args.reuse_default,
-        )
-        # The override is appended last so it beats the per-domain config.
-        points = []
-        for v in values:
-            name = sweep_experiment_name(args.experiment, axis, v, args.reuse_default)
-            points.append(
-                (
-                    name,
-                    extra + _sweep_override_args(axis, v),
-                    name == args.reuse_default,
-                )
-            )
-
-    submitted = [p for p in points if not p[2]]
-    print(
-        f"experiment : {args.experiment}  (type={args.experiment_type}, "
-        f"ablation={args.ablation or 'none'}, validator={val_type}, "
-        f"threshold={threshold:g})"
-    )
-    print(
-        f"domains    : {len(domains)} x {len(seeds)} runs  "
-        f"(seeds={format_array(seeds)}, backend={args.backend})"
-    )
-    if axis is not None:
-        print(
-            f"sweep      : {axis.param} in "
-            f"{{{', '.join(f'{v:g}' for v in values)}}}  "
-            f"-> {len(submitted) * len(domains) * len(seeds)} runs total"
-        )
-        if len(submitted) < len(points):
-            print(
-                f"reuse      : {axis.default:g} not submitted; results come from "
-                f"experiment '{args.reuse_default}'"
-            )
-    for overlay in overlays:
-        print(f"overlay    : {overlay}")
-
-    if args.backend == "slurm" and not args.dry_run:
-        prepare_slurm_logs(args.log_dir)
-
-    slurm_cfg = load_yaml(args.slurm_resources) if args.backend == "slurm" else {}
-    val_slurm_cfg = (
-        load_yaml(args.slurm_resources_validation) if args.backend == "slurm" else {}
-    )
-
-    for experiment, point_extra, reused in points:
-        if reused:
-            print(f"\n=== {experiment} (reused, nothing submitted) ===")
-            continue
-        if len(points) > 1:
-            print(f"\n=== sub-experiment {experiment} ===")
-        for domain in domains:
-            spec = domain_settings[domain]
-            domain_config = (PROJECT_ROOT / spec["domain"]).parent / "config.yaml"
-            base_args = _base_train_args(
-                experiment,
-                domain,
-                spec,
-                args.train_config,
-                domain_config,
-                overlays,
-                args.log_dir,
-                point_extra,
-                log_wandb=not args.no_wandb,
-            )
-            if args.backend == "slurm":
-                _submit_domain_slurm(
-                    experiment,
-                    domain,
-                    spec,
-                    base_args,
-                    val_type,
-                    threshold,
-                    seeds,
-                    resolve_resources(slurm_cfg, domain),
-                    resolve_resources(val_slurm_cfg, domain),
-                    args.log_dir,
-                    args,
-                )
-            else:
-                _run_domain_local(
-                    experiment,
-                    domain,
-                    spec,
-                    base_args,
-                    val_type,
-                    threshold,
-                    seeds,
-                    args.log_dir,
-                    args,
-                )
-
-    print("\nDone submitting." if args.backend == "slurm" else "\nDone.")
+def main(argv: list[str] | None = None) -> int:
+    plan = build_plan(parse_args(argv))
+    describe(plan)
+    execute(plan)
+    print("\nDone submitting." if plan.backend == "slurm" else "\nDone.")
     return 0
 
 
 if __name__ == "__main__":
-    sys.path.insert(
-        0, str(Path(__file__).resolve().parent)
-    )  # for `import validate_runs`
     sys.exit(main())

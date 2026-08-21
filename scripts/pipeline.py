@@ -191,6 +191,17 @@ def sbatch_resource_opts(res: dict) -> list[str]:
     return opts
 
 
+def sbatch_output_opt(log_dir: Path) -> str:
+    """Where an array task's stdout goes, as an absolute path.
+
+    The ``#SBATCH --output`` line inside each script is relative, so it only
+    resolves when sbatch is invoked from the repository root. Naming it on the
+    command line instead makes a submission from anywhere work, and makes
+    ``--log-dir`` apply to the job output too.
+    """
+    return f"--output={Path(log_dir).resolve()}/slurm/%x-%A_%a.out"
+
+
 def prepare_slurm_logs(log_dir: Path) -> None:
     """Create the directory the ``#SBATCH --output`` patterns write into.
 

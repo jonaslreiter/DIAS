@@ -52,7 +52,13 @@ from benchmark import DEFAULT_RESULTS_DIR, SIZES_CONFIG  # noqa: E402
 
 # Reused rather than re-derived so this study's sbatch flags mean exactly what
 # the main pipeline's mean (see AGENTS.md on keeping launchers in sync).
-from pipeline import format_array, run_command, sbatch_resource_opts  # noqa: E402
+from pipeline import (  # noqa: E402
+    format_array,
+    prepare_slurm_logs,
+    run_command,
+    sbatch_output_opt,
+    sbatch_resource_opts,
+)
 from run_scaling import instances_for, run_ladder  # noqa: E402
 
 
@@ -65,6 +71,7 @@ def _submit_domain(
     export = ",".join(
         [
             "ALL",
+            f"DIAS_ROOT={PROJECT_ROOT}",
             f"EXPERIMENT={args.experiment}",
             f"DOMAIN={domain}",
             f"RESULTS_DIR={args.results_dir}",
@@ -78,9 +85,10 @@ def _submit_domain(
         "--parsable",
         f"--job-name=dias-scaling-{domain}",
         f"--array={format_array(seeds)}",
+        sbatch_output_opt(PROJECT_ROOT / "logs"),
         *sbatch_resource_opts(resources),
         f"--export={export}",
-        str(SLURM_SCRIPT.relative_to(PROJECT_ROOT)),
+        str(SLURM_SCRIPT),
     ]
     print(f"[{domain}] submit scaling array ({len(seeds)} seeds)")
     run_command(cmd, args.dry_run)
@@ -150,6 +158,8 @@ def main() -> int:
     )
 
     if args.backend == "slurm":
+        if not args.dry_run:
+            prepare_slurm_logs(PROJECT_ROOT / "logs")
         for domain in domains:
             _submit_domain(domain, seeds, resources, args)
         return 0

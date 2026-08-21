@@ -45,6 +45,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # for `import pipeline`
 
 from pipeline import (  # noqa: E402
+    PROJECT_ROOT,
     SLURM_RESOURCES_VALIDATION,
     add_domain_arguments,
     add_path_arguments,
@@ -54,6 +55,7 @@ from pipeline import (  # noqa: E402
     resolve_resources,
     resolve_seeds,
     run_command,
+    sbatch_output_opt,
     sbatch_resource_opts,
     select_domains,
 )
@@ -109,6 +111,7 @@ def _submit_slurm(
     export = ",".join(
         [
             "ALL",
+            f"DIAS_ROOT={PROJECT_ROOT}",
             f"EXPERIMENT={experiment}",
             f"RESULTS_EXPERIMENT={results_experiment}",
             f"THRESHOLD={threshold:g}",
@@ -125,9 +128,10 @@ def _submit_slurm(
         "--parsable",
         f"--job-name=dias-val-{THRESHOLD_TAG}{threshold:g}-{domain}",
         f"--array={array}",
+        sbatch_output_opt(logs_dir),
         *sbatch_resource_opts(val_res),
         f"--export={export}",
-        "scripts/slurm/validate.sh",
+        str(PROJECT_ROOT / "scripts" / "slurm" / "validate.sh"),
     ]
     print(f"[{domain} @ {threshold:g}] submit validation array ({len(seeds)} seeds)")
     run_command(cmd, args.dry_run)

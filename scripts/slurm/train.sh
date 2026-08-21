@@ -1,17 +1,28 @@
 #!/usr/bin/env zsh
+# ── site configuration ────────────────────────────────────────────────────────
+# These are the only lines in this file specific to one cluster; everything
+# below the end marker is portable. Adjust them for yours (README: "Running on
+# your own cluster"). The partition and QoS are fallbacks only -- resources,
+# the array spec and the output path come from scripts/launch.py, which reads
+# configs/slurm-resources.yaml.
 #SBATCH --job-name=dias-train
 #SBATCH --partition=rleap_gpu_24gb,rleap_gpu_48gb
-#SBATCH --output=logs/slurm/%x-%A_%a.out
 #SBATCH --qos=rleap_deadline
+#SBATCH --output=logs/slurm/%x-%A_%a.out
+#
+# How a compute node gets a `python` with dias importable. Export
+# DIAS_ENV_SETUP before submitting to replace it; note that it is evaluated by
+# the shell in the shebang above, which is part of this block too.
+: ${DIAS_ENV_SETUP:="source ~/.zshrc && conda activate ddl"}
+# ── end site configuration ────────────────────────────────────────────────────
 #
 # DIAS training array task. Do NOT run directly — submit via
 #   python scripts/launch.py ...
-# which sets resources (--time/--mem/--gres/--array, overriding any #SBATCH
-# fallbacks above), exports EXPERIMENT/DOMAIN, and passes the composed Lightning
-# config chain as positional args ("$@").
+# which sets resources (--time/--mem/--gres/--array/--output, overriding the
+# #SBATCH fallbacks above), exports DIAS_ROOT/EXPERIMENT/DOMAIN/LOGS_DIR, and
+# passes the composed Lightning config chain as positional args ("$@").
 
-source ~/.zshrc
-conda activate ddl
+eval "$DIAS_ENV_SETUP"
 set -euo pipefail
 
 # Use the expandable-segments allocator to avoid the large reserved-vs-allocated

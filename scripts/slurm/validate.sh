@@ -1,20 +1,26 @@
 #!/usr/bin/env zsh
+# ── site configuration ────────────────────────────────────────────────────────
+# See scripts/slurm/train.sh for what this block is and how to adapt it. The
+# partition list here names CPU partitions too: validation runs the model on
+# CPU and spends its time in pymimir successor generation.
 #SBATCH --job-name=dias-val
 #SBATCH --partition=rleap_gpu_24gb,rleap_gpu_48gb,rleap_cpu,rleap_cpu_modern
-#SBATCH --output=logs/slurm/%x-%A_%a.out
 #SBATCH --qos=rleap_deadline
+#SBATCH --output=logs/slurm/%x-%A_%a.out
+#
+: ${DIAS_ENV_SETUP:="source ~/.zshrc && conda activate ddl"}
+# ── end site configuration ────────────────────────────────────────────────────
 #
 # DIAS validation array task. Do NOT run directly — submit via
 #   python scripts/launch.py ...
 # which submits this array with --dependency=aftercorr on the training array
 # (task i validates the checkpoint from training task i) and exports the
-# EXPERIMENT/DOMAIN/EXP_TYPE/paths below.
+# DIAS_ROOT/EXPERIMENT/DOMAIN/EXP_TYPE/paths below.
 #
 # scripts/launch_threshold_validation.py reuses this same script to re-validate
 # already-trained checkpoints, exporting the three optional variables below.
 
-source ~/.zshrc
-conda activate ddl
+eval "$DIAS_ENV_SETUP"
 set -euo pipefail
 
 SEED=${SLURM_ARRAY_TASK_ID:-0}
@@ -32,7 +38,9 @@ if [[ "${NO_WANDB:-0}" == "1" ]]; then
   EXTRA+=(--no-wandb)
 fi
 
-python scripts/validate_runs.py \
+# DIAS_ROOT rather than a relative path: Slurm runs the batch script from a
+# spool copy, so nothing here may assume the submission directory.
+python "${DIAS_ROOT}/scripts/validate_runs.py" \
   --experiment "$EXPERIMENT" \
   --domain "$DOMAIN" \
   --seed "$SEED" \

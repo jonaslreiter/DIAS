@@ -514,14 +514,6 @@ def main() -> int:
         help="Values for --sweep instead of that axis' default grid.",
     )
     p.add_argument(
-        "--aux-sweep",
-        nargs="*",
-        type=float,
-        default=None,
-        metavar="ALPHA",
-        help="Alias for '--sweep aux-loss-weight [--sweep-values ALPHA ...]'.",
-    )
-    p.add_argument(
         "--reuse-default",
         default=None,
         metavar="EXPERIMENT",
@@ -552,11 +544,7 @@ def main() -> int:
     args = p.parse_args()
 
     experiments = list(dict.fromkeys(args.experiment))
-    sweeping = (
-        args.sweep is not None
-        or args.aux_sweep is not None
-        or args.threshold_sweep is not None
-    )
+    sweeping = args.sweep is not None or args.threshold_sweep is not None
     if len(experiments) > 1 and sweeping:
         raise SystemExit(
             "--sweep / --threshold-sweep read the sub-experiments of a single "
@@ -566,7 +554,7 @@ def main() -> int:
     args.experiment = experiments[0]
 
     if args.threshold_sweep is not None:
-        if args.sweep is not None or args.aux_sweep is not None:
+        if args.sweep is not None:
             raise SystemExit(
                 "--threshold-sweep varies a validation parameter and cannot be "
                 "combined with the training-parameter sweeps"
@@ -581,15 +569,6 @@ def main() -> int:
 
     axis_name = args.sweep
     values = list(args.sweep_values) if args.sweep_values else None
-    if args.aux_sweep is not None:
-        if axis_name is not None:
-            raise SystemExit(
-                "--aux-sweep is an alias for --sweep aux-loss-weight; "
-                "pass only one of them"
-            )
-        axis_name = "aux-loss-weight"
-        values = list(args.aux_sweep) or None
-
     if axis_name is not None:
         run_sweep(args, axis_name, values or list(SWEEP_AXES[axis_name].values))
         return 0
