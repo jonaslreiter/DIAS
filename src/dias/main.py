@@ -40,7 +40,7 @@ class SaveAndLogConfigCallback(SaveConfigCallback):
 
     def setup(self, trainer, pl_module, stage):
         if isinstance(trainer.logger, Logger):
-            run_dir = Path(trainer.logger.name) / trainer.logger.version
+            run_dir = Path(trainer.logger.name or "") / str(trainer.logger.version)
             os.makedirs(Path(trainer.log_dir) / run_dir, exist_ok=True)
             self.config_filename = run_dir / self.config_filename
             super().setup(trainer, pl_module, stage)
@@ -61,6 +61,10 @@ def main():
     torch.set_float32_matmul_precision("medium")
 
     CLI(
+        # No logger here: which W&B account a run belongs to is a property of
+        # whoever is running it, so it is declared in configs/main.yaml (where
+        # it can be edited or overridden) rather than compiled into the library.
+        # Without a config, Lightning's own account-free default applies.
         trainer_defaults={
             "callbacks": [
                 ModelCheckpoint(filename="final-{epoch}-{step}"),
@@ -69,14 +73,6 @@ def main():
                 ),
                 TQDMProgressBar(),
             ],
-            "logger": {
-                "class_path": "WandbLogger",
-                "init_args": {
-                    "save_dir": "logs",
-                    "project": "dias",
-                    "entity": "team-jonas-reiter",
-                },
-            },
         },
         save_config_callback=SaveAndLogConfigCallback,
         # Let a re-launched (experiment, domain, seed) overwrite its own saved

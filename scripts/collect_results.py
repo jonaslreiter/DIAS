@@ -49,6 +49,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -62,8 +63,11 @@ from launch_threshold_validation import (  # noqa: E402
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-WANDB_PROJECT = "dias"
-WANDB_ENTITY = "team-jonas-reiter"
+# Which W&B account and project the runs live in. Unset entity means "whichever
+# account is logged in", so a clone needs no edit here; both are overridable on
+# the command line.
+WANDB_PROJECT = os.environ.get("WANDB_PROJECT", "dias")
+WANDB_ENTITY = os.environ.get("WANDB_ENTITY") or None
 ONE = 1.0 - 1e-9
 
 

@@ -376,6 +376,7 @@ def _base_train_args(
     overlays: list[Path],
     logs_dir: Path,
     extra: list[str],
+    log_wandb: bool,
 ) -> list[str]:
     """Seed-independent Lightning args shared by all runs of a domain."""
     args = ["--config", str(train_config), "--config", str(domain_config)]
@@ -388,12 +389,39 @@ def _base_train_args(
         str(PROJECT_ROOT / spec["domain"]),
         "--data.init_args.problem_path",
         str(PROJECT_ROOT / spec["problems"][0]),
-        "--trainer.logger.init_args.group",
-        experiment,
-        "--trainer.logger.init_args.save_dir",
-        str(logs_dir),
     ]
+    if log_wandb:
+        args += [
+            "--trainer.logger.init_args.group",
+            experiment,
+            "--trainer.logger.init_args.save_dir",
+            str(logs_dir),
+        ]
+    else:
+        # Without a logger the run directory comes from default_root_dir, which
+        # the per-seed args set to the path validation looks the checkpoint up
+        # under. See _run_domain_local and scripts/slurm/train.sh.
+        args += ["--trainer.logger=false"]
     return args + extra
+
+
+def run_directory_args(run_id: str, logs_dir: Path, log_wandb: bool) -> list[str]:
+    """Per-seed args putting this run's checkpoints where validation looks.
+
+    ``validation.checkpoint.load_run`` resolves ``<logs>/dias/<run_id>/
+    checkpoints``. With W&B that path is the logger's own (project / run id);
+    without one, ModelCheckpoint falls back to ``default_root_dir``, so the same
+    path has to be named explicitly -- otherwise a --no-wandb run writes its
+    checkpoint to ./checkpoints and validation cannot find it.
+    """
+    if not log_wandb:
+        return ["--trainer.default_root_dir", str(logs_dir / "dias" / run_id)]
+    return [
+        "--trainer.logger.init_args.id",
+        run_id,
+        "--trainer.logger.init_args.name",
+        run_id,
+    ]
 
 
 def _run(cmd: list[str], dry_run: bool) -> str | None:
@@ -428,7 +456,15 @@ def _submit_domain_slurm(
     # EXPERIMENT/DOMAIN go through --export (single tokens, needed to build the
     # run id); the Lightning config chain is passed as positional args so sbatch
     # preserves argv exactly (no fragile string splitting).
-    train_export = ",".join(["ALL", f"EXPERIMENT={experiment}", f"DOMAIN={domain}"])
+    train_vars = [
+        "ALL",
+        f"EXPERIMENT={experiment}",
+        f"DOMAIN={domain}",
+        f"LOGS_DIR={logs_dir}",
+    ]
+    if args.no_wandb:
+        train_vars.append("NO_WANDB=1")
+    train_export = ",".join(train_vars)
     train_cmd = [
         "sbatch",
         "--parsable",
@@ -451,6 +487,8 @@ def _submit_domain_slurm(
         f"DOMAIN_SETTINGS={args.domain_settings}",
         f"VALIDATION_CONFIG={args.validation_config}",
     ]
+    if args.no_wandb:
+        val_vars.append("NO_WANDB=1")
     # validate.sh only forwards --threshold when THRESHOLD is set, so leave it
     # unset at the default and keep the plain pipeline unchanged.
     if threshold != DEFAULT_VALIDATION_THRESHOLD:
@@ -498,10 +536,7 @@ def _run_domain_local(
             str(seed),
             "--data.init_args.seed",
             str(seed),
-            "--trainer.logger.init_args.id",
-            run_id,
-            "--trainer.logger.init_args.name",
-            run_id,
+            *run_directory_args(run_id, logs_dir, log_wandb=not args.no_wandb),
         ]
         print(f"\n[{domain} seed={seed}] train  (run_id={run_id})", flush=True)
         print("  " + shlex.join(train_cmd), flush=True)
@@ -625,7 +660,9 @@ def main() -> int:
         help="Print commands without submitting/running.",
     )
     p.add_argument(
-        "--no-wandb", action="store_true", help="Local backend: skip W&B logging."
+        "--no-wandb",
+        action="store_true",
+        help="Log neither training nor validation to W&B (both backends).",
     )
     p.add_argument(
         "--domain-settings",
@@ -804,6 +841,7 @@ def main() -> int:
                 overlays,
                 args.log_dir,
                 point_extra,
+                log_wandb=not args.no_wandb,
             )
             if args.backend == "slurm":
                 _submit_domain_slurm(

@@ -37,8 +37,8 @@ data:
   class_path: dias.data.datamodule.PddlGraphDataModule
   init_args:
     # ── Domain / problem ────────────────────────────────────────────────
-    domain_path: pddl/satellite/domain.pddl
-    problem_path: pddl/satellite/train.pddl
+    domain_path: pddl/gripper/domain.pddl
+    problem_path: pddl/gripper/train.pddl
 
     # ── Sampling ────────────────────────────────────────────────────────
     min_per_label_train: 100
@@ -63,6 +63,18 @@ data:
     num_workers: 0
 
 trainer:
+  # Weights & Biases. `entity: null` means "whichever account is logged in"
+  # (or $WANDB_ENTITY), so a clone of this repository logs to its own account
+  # and needs no edit here. To train without W&B at all, either
+  #   --trainer.logger=false          (no logging)
+  #   WANDB_MODE=offline dias-train   (log to logs/wandb, upload later)
+  logger:
+    class_path: lightning.pytorch.loggers.WandbLogger
+    init_args:
+      save_dir: logs
+      project: dias
+      entity: null
+
   # The learned schema, logged as W&B custom charts rather than as images.
   # Raise log_every_n_validations to log fewer of them; the final schema is
   # logged when training ends either way.

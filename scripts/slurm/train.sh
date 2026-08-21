@@ -28,8 +28,18 @@ RUN_ID=$(echo "${EXPERIMENT}-${DOMAIN}-s${SEED}" | sed 's/[^0-9A-Za-z_-]/-/g')
 
 echo "train  domain=$DOMAIN  seed=$SEED  run_id=$RUN_ID"
 
+# Where this run's checkpoints go. With W&B that is the logger's own directory;
+# without one Lightning falls back to default_root_dir, which then has to name
+# the same path so validation still finds the checkpoint. Must agree with
+# launch.run_directory_args.
+if [[ "${NO_WANDB:-0}" == "1" ]]; then
+  RUN_DIR=(--trainer.default_root_dir "${LOGS_DIR:-logs}/dias/$RUN_ID")
+else
+  RUN_DIR=(--trainer.logger.init_args.id "$RUN_ID"
+           --trainer.logger.init_args.name "$RUN_ID")
+fi
+
 python -m dias.main fit "$@" \
   --seed_everything "$SEED" \
   --data.init_args.seed "$SEED" \
-  --trainer.logger.init_args.id "$RUN_ID" \
-  --trainer.logger.init_args.name "$RUN_ID"
+  "${RUN_DIR[@]}"
