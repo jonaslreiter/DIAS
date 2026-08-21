@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import Mapping, Sequence
 
@@ -34,21 +34,6 @@ DIGITS = 4
 # the mutation below talks to the backend directly and has to do that itself.
 SPEC_TYPE = "vega2"
 ACCESS = "private"
-
-
-@dataclass(frozen=True)
-class Step:
-    """Where a chart's step slider sits.
-
-    `number` is the training step the schema was logged at, which the panel's
-    history query asks for; `index` is that step's position among the ones
-    logged so far, which is what the slider itself is indexed by. They are
-    different numbers -- step 200 can be the 4th thing logged -- and W&B wants
-    both.
-    """
-
-    number: int = 0
-    index: int = 0
 
 
 def cells(values: np.ndarray, *axis_labels: Sequence[str]) -> list[list]:
@@ -175,8 +160,13 @@ def _spec_class():
     Reproducing what the editor writes when a panel's query is switched by
     hand takes three things it does not: `historyTable` in place of
     `summaryTable`, its `extraKeys` and `index` arguments -- without `index`
-    the panel has no step to draw and comes up empty -- and the two panel
-    settings that put the slider on screen and open it at the newest schema.
+    the panel has no step to draw and comes up empty -- and `showStepSelector`,
+    which puts the slider on screen.
+
+    The editor also writes `defaultViewedStepIndex`, the slider's opening
+    position. It is left out on purpose: the panel's configuration is rewritten
+    on every log, and naming a position that the table for it has not finished
+    uploading to is what made a live run's panels blink in and out.
 
     Built on first use: defining the subclass needs wandb imported, and
     importing this module must not.
@@ -185,13 +175,12 @@ def _spec_class():
 
     @dataclass
     class HistoryChartSpec(CustomChartSpec):
-        step: Step = field(default_factory=Step)
+        step: int = 0
 
         @property
         def config_value(self) -> dict:
             config = super().config_value
             config["panel_config"]["showStepSelector"] = True
-            config["panel_config"]["defaultViewedStepIndex"] = self.step.index
             queries = config["panel_config"]["userQuery"]["queryFields"]
             summary = [
                 field
@@ -210,7 +199,7 @@ def _spec_class():
                 field["args"] = [
                     {"name": "extraKeys", "value": []},
                     {"name": "tableKey", "value": self.table_key},
-                    {"name": "index", "value": self.step.number},
+                    {"name": "index", "value": self.step},
                 ]
             return config
 
@@ -224,7 +213,7 @@ def heatmap(
     columns: Sequence[str],
     axis_labels: Sequence[Sequence[str]],
     fields: Mapping[str, str],
-    step: Step,
+    step: int,
 ):
     """One custom chart: `values` as a table, bound to a registered spec.
 

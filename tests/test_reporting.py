@@ -12,7 +12,7 @@ import torch
 import dias
 from checkpoints import build_model
 from dias.reporting.callback import SchemaChartCallback
-from dias.reporting.charts import Step, cells
+from dias.reporting.charts import cells
 from dias.reporting.vega import SPECS
 
 SPEC_IDS = {name: f"someone/{name}" for name in SPECS}
@@ -67,7 +67,7 @@ class ChartQueryTest(unittest.TestCase):
             columns=("row", "column", "probability"),
             axis_labels=(["a", "b"], ["x", "y"]),
             fields={"x": "column", "y": "row", "value": "probability"},
-            step=Step(number=150, index=2),
+            step=150,
         )
         chart.set_key("add_effects")
         panel = chart.spec.config_value["panel_config"]
@@ -88,7 +88,9 @@ class ChartQueryTest(unittest.TestCase):
             ],
         )
         self.assertIs(panel["showStepSelector"], True)
-        self.assertEqual(panel["defaultViewedStepIndex"], 2)
+        # Deliberately absent: naming an opening position the table has not
+        # finished uploading to made a live run's panels blink in and out.
+        self.assertNotIn("defaultViewedStepIndex", panel)
 
 
 def trainer(logger=None, sanity_checking=False, global_step=7, datamodule=None):
@@ -120,23 +122,12 @@ class CadenceTest(unittest.TestCase):
             SchemaChartCallback(log_every_n_validations=0)
 
 
-class StepPositionTest(unittest.TestCase):
-    def test_a_second_log_at_one_step_is_a_single_slider_position(self):
-        """The last validation and on_fit_end land on the same step."""
-        callback = SchemaChartCallback()
-        steps = [callback._step(trainer(global_step=s)) for s in (50, 100, 100, 150)]
-        self.assertEqual(
-            [(step.number, step.index) for step in steps],
-            [(50, 0), (100, 1), (100, 1), (150, 2)],
-        )
-
-
 class ChartSetTest(unittest.TestCase):
     """What a logging pass produces, without a W&B run to send it to."""
 
     def charts(self, callback, **overrides):
         model, _ = build_model(**overrides)
-        return callback._charts(trainer(), model, SPEC_IDS, Step())
+        return callback._charts(trainer(), model, SPEC_IDS, 0)
 
     def test_the_full_model_reports_effects_preconditions_and_selection(self):
         callback = SchemaChartCallback()
@@ -167,7 +158,7 @@ class ChartSetTest(unittest.TestCase):
 
     def test_a_table_holds_one_row_per_cell_of_the_tensor(self):
         model, _ = build_model()
-        charts = SchemaChartCallback()._charts(trainer(), model, SPEC_IDS, Step())
+        charts = SchemaChartCallback()._charts(trainer(), model, SPEC_IDS, 0)
         chart = charts["add_effects"]
         schema = model.schema_logits()
         self.assertEqual(len(chart.table.data), schema.effects[..., 0].numel())

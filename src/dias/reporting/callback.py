@@ -51,7 +51,6 @@ class SchemaChartCallback(L.Callback):
         self.log_every_n_validations = log_every_n_validations
 
         self._validations = 0
-        self._logged_steps: list[int] = []
         self._selection: tuple[torch.Tensor, torch.Tensor] | None = None
         self._spec_ids: dict[str, str] | None = None
 
@@ -102,21 +101,10 @@ class SchemaChartCallback(L.Callback):
         if self._spec_ids is None:
             self._spec_ids = charts.register(run.entity)
 
-        media = self._charts(trainer, pl_module, self._spec_ids, self._step(trainer))
+        step = int(trainer.global_step)
+        media = self._charts(trainer, pl_module, self._spec_ids, step)
         if media:
-            run.log(media, step=int(trainer.global_step))
-
-    def _step(self, trainer) -> charts.Step:
-        """This log's place in the run, for the panel's slider.
-
-        Logging twice at one step -- the last validation and `on_fit_end` --
-        is one position on the slider, because W&B merges the two into a
-        single entry in the run's history.
-        """
-        number = int(trainer.global_step)
-        if not self._logged_steps or self._logged_steps[-1] != number:
-            self._logged_steps.append(number)
-        return charts.Step(number=number, index=len(self._logged_steps) - 1)
+            run.log(media, step=step)
 
     def _charts(self, trainer, pl_module, specs: dict[str, str], step) -> dict:
         schema = pl_module.schema_logits()
