@@ -97,11 +97,14 @@ def _heatmap(scheme: str, reverse: bool = False, *, rows=False, columns=False) -
     }
 
 
-# The name each specification is registered under, within the run's entity.
+# The name each specification is registered under, within the run's entity,
+# and which chart it draws.
+SCHEMA = "dias-schema-heatmap"
+SELECTION = "dias-selection-heatmap"
+SLOT_WEIGHTS = "dias-slot-weights-heatmap"
+
 SPECS = {
-    "dias-heatmap": _heatmap("viridis"),
-    "dias-heatmap-rows": _heatmap("viridis", rows=True),
-    "dias-heatmap-grid": _heatmap(
-        "redyellowblue", reverse=True, rows=True, columns=True
-    ),
+    SCHEMA: _heatmap("redyellowblue", reverse=True, rows=True, columns=True),
+    SELECTION: _heatmap("viridis", rows=True, columns=True),
+    SLOT_WEIGHTS: _heatmap("viridis"),
 }

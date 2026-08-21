@@ -8,6 +8,7 @@ import torch
 from dias.models.outputs import Channels
 from dias.reporting import charts
 from dias.reporting.labels import resolve_label_names
+from dias.reporting.vega import SCHEMA, SELECTION, SLOT_WEIGHTS
 
 GRID_COLUMNS = ("action", "relation", "row slot", "column slot", "probability")
 GRID_FIELDS = {
@@ -33,8 +34,8 @@ class SchemaChartCallback(L.Callback):
     """Log the learned schema to W&B as interactive heatmaps.
 
     Six panels: add and delete effects, positive and negative preconditions,
-    the slot-to-object assignment of one validation batch, and the slot
-    weights. Each is drawn in the browser from the numbers it is made of, by a
+    `selection_samples` slot-to-object assignments per action from one
+    validation batch, and the slot weights. Each is drawn in the browser from the numbers it is made of, by a
     Vega specification registered in the run's own entity.
 
     Charts go out every `log_every_n_validations` validation epochs and once
@@ -45,6 +46,7 @@ class SchemaChartCallback(L.Callback):
         self,
         effect_and_precondition: bool = True,
         selection: bool = True,
+        selection_samples: int = 3,
         log_every_n_validations: int = 20,
     ):
         if log_every_n_validations < 1:
@@ -52,8 +54,13 @@ class SchemaChartCallback(L.Callback):
                 "Expected log_every_n_validations >= 1, got "
                 f"{log_every_n_validations}"
             )
+        if selection_samples < 1:
+            raise ValueError(
+                f"Expected selection_samples >= 1, got {selection_samples}"
+            )
         self.effect_and_precondition = effect_and_precondition
         self.selection = selection
+        self.selection_samples = selection_samples
         self.log_every_n_validations = log_every_n_validations
 
         self._validations = 0
@@ -170,7 +177,7 @@ class SchemaChartCallback(L.Callback):
         slots = _slots(panels[0][2].shape[-1])
         return {
             key: charts.heatmap(
-                specs["dias-heatmap-grid"],
+                specs[SCHEMA],
                 title,
                 values.numpy(),
                 columns=GRID_COLUMNS,
@@ -183,28 +190,35 @@ class SchemaChartCallback(L.Callback):
 
     def _selection_charts(self, schema, actions, objects, specs, step) -> dict:
         selection, y_action = self._selection
-        # One sample per action -- the first the batch happens to hold.
-        sampled: dict[int, torch.Tensor] = {}
+        by_action: dict[int, list[torch.Tensor]] = {}
         for index, action in enumerate(y_action.tolist()):
-            sampled.setdefault(int(action), selection[index])
+            by_action.setdefault(int(action), []).append(selection[index])
 
-        order = sorted(sampled)
-        assignments = torch.stack([sampled[action] for action in order])
+        order = sorted(by_action)
+        # One column per sample. A batch does not hold every action equally
+        # often and the grid has to be rectangular, so the rarest one sets the
+        # width -- a batch short of samples shows fewer, not a ragged chart.
+        count = min(self.selection_samples, *(len(by_action[a]) for a in order))
+        assignments = torch.stack(
+            [torch.stack(by_action[action][:count]) for action in order]
+        )
         weights = torch.sigmoid(schema.slot_weight_logits)
 
         return {
             "selection": charts.heatmap(
-                specs["dias-heatmap-rows"],
+                specs[SELECTION],
                 "Slot to object selection",
                 assignments.numpy(),
-                columns=("action", "slot", "object", "weight"),
+                columns=("action", "sample", "slot", "object", "weight"),
                 axis_labels=(
                     [actions[action] for action in order],
-                    _slots(assignments.shape[1]),
+                    list(range(count)),
+                    _slots(assignments.shape[2]),
                     objects,
                 ),
                 fields={
                     "row_facet": "action",
+                    "col_facet": "sample",
                     "x": "object",
                     "y": "slot",
                     "value": "weight",
@@ -212,7 +226,7 @@ class SchemaChartCallback(L.Callback):
                 step=step,
             ),
             "slot_weights": charts.heatmap(
-                specs["dias-heatmap"],
+                specs[SLOT_WEIGHTS],
                 "Slot weights",
                 weights.numpy(),
                 columns=("action", "slot", "weight"),

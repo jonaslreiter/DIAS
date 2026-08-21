@@ -13,7 +13,7 @@ import dias
 from checkpoints import build_model
 from dias.reporting.callback import SchemaChartCallback
 from dias.reporting.charts import cells
-from dias.reporting.vega import SPECS
+from dias.reporting.vega import SCHEMA, SELECTION, SLOT_WEIGHTS, SPECS
 
 SPEC_IDS = {name: f"someone/{name}" for name in SPECS}
 
@@ -33,10 +33,10 @@ class CellsTest(unittest.TestCase):
 
 
 class VegaSpecTest(unittest.TestCase):
-    def test_each_spec_facets_the_way_its_name_says(self):
-        self.assertNotIn("facet", SPECS["dias-heatmap"])
-        self.assertEqual(set(SPECS["dias-heatmap-rows"]["facet"]), {"row"})
-        self.assertEqual(set(SPECS["dias-heatmap-grid"]["facet"]), {"row", "column"})
+    def test_each_spec_is_shaped_for_the_chart_it_draws(self):
+        self.assertNotIn("facet", SPECS[SLOT_WEIGHTS])
+        self.assertEqual(set(SPECS[SCHEMA]["facet"]), {"row", "column"})
+        self.assertEqual(set(SPECS[SELECTION]["facet"]), {"row", "column"})
 
     def test_no_panel_carries_a_colour_bar(self):
         """Every cell is labelled with its value; a legend repeats it.
@@ -61,7 +61,7 @@ class ChartQueryTest(unittest.TestCase):
         from dias.reporting.charts import heatmap
 
         chart = heatmap(
-            "someone/dias-heatmap",
+            "someone/dias-selection-heatmap",
             "Add effects",
             np.zeros((2, 2)),
             columns=("row", "column", "probability"),
@@ -161,6 +161,23 @@ class ChartSetTest(unittest.TestCase):
         self.assertEqual(
             set(charts), {"positive_preconditions", "negative_preconditions"}
         )
+
+    def test_the_selection_grid_holds_the_requested_number_of_samples(self):
+        callback = SchemaChartCallback(selection_samples=2)
+        # Three samples of action 0, two of action 1, four slots, five objects.
+        callback._selection = (torch.rand(5, 4, 5), torch.tensor([0, 1, 0, 1, 0]))
+        chart = self.charts(callback)["selection"]
+        self.assertEqual(
+            chart.table.columns, ["action", "sample", "slot", "object", "weight"]
+        )
+        self.assertEqual(len(chart.table.data), 2 * 2 * 4 * 5)
+
+    def test_an_action_short_of_samples_narrows_the_grid(self):
+        """The grid is rectangular, so the rarest action sets its width."""
+        callback = SchemaChartCallback(selection_samples=3)
+        callback._selection = (torch.rand(3, 4, 5), torch.tensor([0, 0, 1]))
+        chart = self.charts(callback)["selection"]
+        self.assertEqual(len(chart.table.data), 2 * 1 * 4 * 5)
 
     def test_each_switch_drops_its_own_panels(self):
         callback = SchemaChartCallback(effect_and_precondition=False)
