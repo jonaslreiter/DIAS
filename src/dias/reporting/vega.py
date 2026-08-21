@@ -42,6 +42,9 @@ def _cells(scheme: str, reverse: bool) -> list[dict]:
                         "reverse": reverse,
                         "domain": [0.0, 1.0],
                     },
+                    # Every cell carries its own number; a colour bar beside
+                    # each panel would say the same thing again.
+                    "legend": None,
                 },
                 "tooltip": [
                     {"field": "${field:x}", "type": "nominal"},

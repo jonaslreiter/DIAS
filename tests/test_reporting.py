@@ -38,6 +38,40 @@ class VegaSpecTest(unittest.TestCase):
         self.assertEqual(set(SPECS["dias-heatmap-rows"]["facet"]), {"row"})
         self.assertEqual(set(SPECS["dias-heatmap-grid"]["facet"]), {"row", "column"})
 
+    def test_no_panel_carries_a_colour_bar(self):
+        """Every cell is labelled with its value; a legend repeats it."""
+        for name, spec in SPECS.items():
+            panel = spec.get("spec", spec)
+            for layer in panel["layer"]:
+                with self.subTest(spec=name, mark=layer["mark"]["type"]):
+                    self.assertIsNone(layer["encoding"]["color"]["legend"])
+
+
+class ChartQueryTest(unittest.TestCase):
+    def test_the_panel_reads_the_table_from_history(self):
+        """Which is what gives the panel a step slider over the whole run.
+
+        wandb.plot_table binds to summaryTable, so the panel would show the
+        last logged schema and nothing before it.
+        """
+        from dias.reporting.charts import heatmap
+
+        chart = heatmap(
+            "someone/dias-heatmap",
+            "Add effects",
+            np.zeros((2, 2)),
+            columns=("row", "column", "probability"),
+            axis_labels=(["a", "b"], ["x", "y"]),
+            fields={"x": "column", "y": "row", "value": "probability"},
+        )
+        chart.set_key("add_effects")
+        query = chart.spec.config_value["panel_config"]["userQuery"]
+        names = [f["name"] for f in query["queryFields"][0]["fields"]]
+
+        self.assertIn("historyTable", names)
+        self.assertNotIn("summaryTable", names)
+        self.assertEqual(chart.spec.table_key, "add_effects_table")
+
 
 def trainer(logger=None, sanity_checking=False, global_step=7, datamodule=None):
     return SimpleNamespace(

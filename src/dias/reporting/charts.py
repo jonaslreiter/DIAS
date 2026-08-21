@@ -12,6 +12,7 @@ require it, and nothing here runs unless a run actually logs charts.
 from __future__ import annotations
 
 import logging
+from functools import lru_cache
 from typing import Mapping, Sequence
 
 import numpy as np
@@ -84,6 +85,40 @@ def register(entity: str) -> dict[str, str]:
     return ids
 
 
+@lru_cache(maxsize=1)
+def _spec_class():
+    """`CustomChartSpec`, but reading the table from history, not the summary.
+
+    `wandb.plot_table` binds a panel to `summaryTable`, which holds only the
+    last table logged under a key -- so a panel logged every N validations
+    showed the newest schema and nothing before it. `historyTable` keeps every
+    step, which is what puts W&B's step slider underneath the panel.
+
+    Built on first use: defining the subclass needs wandb imported, and
+    importing this module must not.
+    """
+    from wandb.plot.custom_chart import CustomChartSpec
+
+    class HistoryChartSpec(CustomChartSpec):
+        @property
+        def config_value(self) -> dict:
+            config = super().config_value
+            queries = config["panel_config"]["userQuery"]["queryFields"]
+            fields = [field for query in queries for field in query["fields"]]
+            summary = [field for field in fields if field["name"] == "summaryTable"]
+            if not summary:
+                logger.warning(
+                    "This wandb does not query summaryTable, so the step slider "
+                    "could not be enabled; the panel will show the last logged "
+                    "schema only."
+                )
+            for field in summary:
+                field["name"] = "historyTable"
+            return config
+
+    return HistoryChartSpec
+
+
 def heatmap(
     spec_id: str,
     title: str,
@@ -99,11 +134,13 @@ def heatmap(
     them.
     """
     import wandb
+    from wandb.plot.custom_chart import CustomChart
 
-    table = wandb.Table(columns=list(columns), data=cells(values, *axis_labels))
-    return wandb.plot_table(
-        vega_spec_name=spec_id,
-        data_table=table,
-        fields=dict(fields),
-        string_fields={"title": title},
+    return CustomChart(
+        table=wandb.Table(columns=list(columns), data=cells(values, *axis_labels)),
+        spec=_spec_class()(
+            spec_name=spec_id,
+            fields=dict(fields),
+            string_fields={"title": title},
+        ),
     )
