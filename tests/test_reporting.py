@@ -12,7 +12,7 @@ import torch
 import dias
 from checkpoints import build_model
 from dias.reporting.callback import SchemaChartCallback
-from dias.reporting.charts import cells
+from dias.reporting.charts import Step, cells
 from dias.reporting.vega import SPECS
 
 SPEC_IDS = {name: f"someone/{name}" for name in SPECS}
@@ -39,20 +39,24 @@ class VegaSpecTest(unittest.TestCase):
         self.assertEqual(set(SPECS["dias-heatmap-grid"]["facet"]), {"row", "column"})
 
     def test_no_panel_carries_a_colour_bar(self):
-        """Every cell is labelled with its value; a legend repeats it."""
+        """Every cell is labelled with its value; a legend repeats it.
+
+        `false`, not the schema's `null`, which W&B draws a bar for anyway.
+        """
         for name, spec in SPECS.items():
             panel = spec.get("spec", spec)
             for layer in panel["layer"]:
                 with self.subTest(spec=name, mark=layer["mark"]["type"]):
-                    self.assertIsNone(layer["encoding"]["color"]["legend"])
+                    self.assertIs(layer["encoding"]["color"]["legend"], False)
 
 
 class ChartQueryTest(unittest.TestCase):
-    def test_the_panel_reads_the_table_from_history(self):
-        """Which is what gives the panel a step slider over the whole run.
+    def test_the_panel_reads_the_table_from_history_at_a_step(self):
+        """The two together are what put a working step slider under the panel.
 
-        wandb.plot_table binds to summaryTable, so the panel would show the
-        last logged schema and nothing before it.
+        wandb.plot_table binds to summaryTable, which holds only the last table
+        logged under a key. historyTable keeps every step, but without `index`
+        the panel has no step to draw and comes up empty.
         """
         from dias.reporting.charts import heatmap
 
@@ -63,14 +67,28 @@ class ChartQueryTest(unittest.TestCase):
             columns=("row", "column", "probability"),
             axis_labels=(["a", "b"], ["x", "y"]),
             fields={"x": "column", "y": "row", "value": "probability"},
+            step=Step(number=150, index=2),
         )
         chart.set_key("add_effects")
-        query = chart.spec.config_value["panel_config"]["userQuery"]
-        names = [f["name"] for f in query["queryFields"][0]["fields"]]
+        panel = chart.spec.config_value["panel_config"]
+        query = panel["userQuery"]
+        fields = query["queryFields"][0]["fields"]
+        names = [f["name"] for f in fields]
 
         self.assertIn("historyTable", names)
         self.assertNotIn("summaryTable", names)
-        self.assertEqual(chart.spec.table_key, "add_effects_table")
+
+        (history,) = [f for f in fields if f["name"] == "historyTable"]
+        self.assertEqual(
+            history["args"],
+            [
+                {"name": "extraKeys", "value": []},
+                {"name": "tableKey", "value": "add_effects_table"},
+                {"name": "index", "value": 150},
+            ],
+        )
+        self.assertIs(panel["showStepSelector"], True)
+        self.assertEqual(panel["defaultViewedStepIndex"], 2)
 
 
 def trainer(logger=None, sanity_checking=False, global_step=7, datamodule=None):
@@ -102,12 +120,23 @@ class CadenceTest(unittest.TestCase):
             SchemaChartCallback(log_every_n_validations=0)
 
 
+class StepPositionTest(unittest.TestCase):
+    def test_a_second_log_at_one_step_is_a_single_slider_position(self):
+        """The last validation and on_fit_end land on the same step."""
+        callback = SchemaChartCallback()
+        steps = [callback._step(trainer(global_step=s)) for s in (50, 100, 100, 150)]
+        self.assertEqual(
+            [(step.number, step.index) for step in steps],
+            [(50, 0), (100, 1), (100, 1), (150, 2)],
+        )
+
+
 class ChartSetTest(unittest.TestCase):
     """What a logging pass produces, without a W&B run to send it to."""
 
     def charts(self, callback, **overrides):
         model, _ = build_model(**overrides)
-        return callback._charts(trainer(), model, SPEC_IDS)
+        return callback._charts(trainer(), model, SPEC_IDS, Step())
 
     def test_the_full_model_reports_effects_preconditions_and_selection(self):
         callback = SchemaChartCallback()
@@ -138,7 +167,8 @@ class ChartSetTest(unittest.TestCase):
 
     def test_a_table_holds_one_row_per_cell_of_the_tensor(self):
         model, _ = build_model()
-        chart = SchemaChartCallback()._charts(trainer(), model, SPEC_IDS)["add_effects"]
+        charts = SchemaChartCallback()._charts(trainer(), model, SPEC_IDS, Step())
+        chart = charts["add_effects"]
         schema = model.schema_logits()
         self.assertEqual(len(chart.table.data), schema.effects[..., 0].numel())
         self.assertEqual(

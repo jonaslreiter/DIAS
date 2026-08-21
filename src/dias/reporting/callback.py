@@ -51,6 +51,7 @@ class SchemaChartCallback(L.Callback):
         self.log_every_n_validations = log_every_n_validations
 
         self._validations = 0
+        self._logged_steps: list[int] = []
         self._selection: tuple[torch.Tensor, torch.Tensor] | None = None
         self._spec_ids: dict[str, str] | None = None
 
@@ -101,11 +102,23 @@ class SchemaChartCallback(L.Callback):
         if self._spec_ids is None:
             self._spec_ids = charts.register(run.entity)
 
-        media = self._charts(trainer, pl_module, self._spec_ids)
+        media = self._charts(trainer, pl_module, self._spec_ids, self._step(trainer))
         if media:
             run.log(media, step=int(trainer.global_step))
 
-    def _charts(self, trainer, pl_module, specs: dict[str, str]) -> dict:
+    def _step(self, trainer) -> charts.Step:
+        """This log's place in the run, for the panel's slider.
+
+        Logging twice at one step -- the last validation and `on_fit_end` --
+        is one position on the slider, because W&B merges the two into a
+        single entry in the run's history.
+        """
+        number = int(trainer.global_step)
+        if not self._logged_steps or self._logged_steps[-1] != number:
+            self._logged_steps.append(number)
+        return charts.Step(number=number, index=len(self._logged_steps) - 1)
+
+    def _charts(self, trainer, pl_module, specs: dict[str, str], step) -> dict:
         schema = pl_module.schema_logits()
         actions, relations, objects = resolve_label_names(
             getattr(trainer, "datamodule", None),
@@ -116,12 +129,12 @@ class SchemaChartCallback(L.Callback):
 
         media = {}
         if self.effect_and_precondition:
-            media |= self._schema_charts(schema, actions, relations, specs)
+            media |= self._schema_charts(schema, actions, relations, specs, step)
         if self.selection and self._selection is not None:
-            media |= self._selection_charts(schema, actions, objects, specs)
+            media |= self._selection_charts(schema, actions, objects, specs, step)
         return media
 
-    def _schema_charts(self, schema, actions, relations, specs) -> dict:
+    def _schema_charts(self, schema, actions, relations, specs, step) -> dict:
         panels = []
         # A model whose effects come from the state has no lifted effects to
         # show; its preconditions are still a schema.
@@ -154,11 +167,12 @@ class SchemaChartCallback(L.Callback):
                 columns=GRID_COLUMNS,
                 axis_labels=(actions, relations, slots, slots),
                 fields=GRID_FIELDS,
+                step=step,
             )
             for key, title, values in panels
         }
 
-    def _selection_charts(self, schema, actions, objects, specs) -> dict:
+    def _selection_charts(self, schema, actions, objects, specs, step) -> dict:
         selection, y_action = self._selection
         # One sample per action -- the first the batch happens to hold.
         sampled: dict[int, torch.Tensor] = {}
@@ -186,6 +200,7 @@ class SchemaChartCallback(L.Callback):
                     "y": "slot",
                     "value": "weight",
                 },
+                step=step,
             ),
             "slot_weights": charts.heatmap(
                 specs["dias-heatmap"],
@@ -194,5 +209,6 @@ class SchemaChartCallback(L.Callback):
                 columns=("action", "slot", "weight"),
                 axis_labels=(actions, _slot_labels(weights.shape[-1])),
                 fields={"x": "slot", "y": "action", "value": "weight"},
+                step=step,
             ),
         }

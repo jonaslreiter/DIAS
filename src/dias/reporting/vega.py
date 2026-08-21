@@ -42,9 +42,11 @@ def _cells(scheme: str, reverse: bool) -> list[dict]:
                         "reverse": reverse,
                         "domain": [0.0, 1.0],
                     },
-                    # Every cell carries its own number; a colour bar beside
-                    # each panel would say the same thing again.
-                    "legend": None,
+                    # Every cell carries its own number, so a colour bar beside
+                    # each panel would only say it again. `false` rather than
+                    # the schema's `null`: W&B draws the bar anyway for `null`,
+                    # and for a spec-wide `config.legend.disable`.
+                    "legend": False,
                 },
                 "tooltip": [
                     {"field": "${field:x}", "type": "nominal"},
@@ -70,7 +72,7 @@ def _cells(scheme: str, reverse: bool) -> list[dict]:
                     "field": "${field:value}",
                     "type": "quantitative",
                     "scale": {"type": "threshold", **_TEXT_ON[scheme]},
-                    "legend": None,
+                    "legend": False,
                 },
             },
         },

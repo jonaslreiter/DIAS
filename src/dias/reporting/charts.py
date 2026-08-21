@@ -11,7 +11,9 @@ require it, and nothing here runs unless a run actually logs charts.
 
 from __future__ import annotations
 
+import json
 import logging
+from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Mapping, Sequence
 
@@ -26,6 +28,27 @@ logger = logging.getLogger(__name__)
 # what it is worth: a probability written out to 17 digits is 19 bytes of a
 # ~45 byte row. The chart labels cells to two decimals and tooltips to four.
 DIGITS = 4
+
+# What W&B calls a Vega-Lite specification, and who may see the preset. The
+# SDK takes the access level in lower case and upper-cases it for the backend;
+# the mutation below talks to the backend directly and has to do that itself.
+SPEC_TYPE = "vega2"
+ACCESS = "private"
+
+
+@dataclass(frozen=True)
+class Step:
+    """Where a chart's step slider sits.
+
+    `number` is the training step the schema was logged at, which the panel's
+    history query asks for; `index` is that step's position among the ones
+    logged so far, which is what the slider itself is indexed by. They are
+    different numbers -- step 200 can be the 4th thing logged -- and W&B wants
+    both.
+    """
+
+    number: int = 0
+    index: int = 0
 
 
 def cells(values: np.ndarray, *axis_labels: Sequence[str]) -> list[list]:
@@ -43,45 +66,100 @@ def cells(values: np.ndarray, *axis_labels: Sequence[str]) -> list[list]:
     ]
 
 
-def register(entity: str) -> dict[str, str]:
-    """The id of each chart specification within `entity`, creating them once.
+_LIST_CHARTS = """
+query DiasCharts($entity: String!, $type: String!) {
+  customCharts(entity: $entity, type: $type, first: 100) {
+    edges { node { name spec } }
+  }
+}
+"""
 
-    The id follows from the name, so a preset that already exists -- the
-    ordinary case from an entity's second run onward -- or an API that cannot
-    be reached costs nothing but the drawn panel on a first run. The tables are
-    logged either way.
+_UPDATE_CHART = """
+mutation UpdateDiasChart(
+  $entity: String!, $name: String!, $displayName: String!,
+  $type: String!, $access: String!, $spec: JSONString!
+) {
+  updateCustomChart(input: {
+    entity: $entity, name: $name, displayName: $displayName,
+    type: $type, access: $access, spec: $spec
+  }) { chart { id } }
+}
+"""
+
+
+def _registered(api, entity: str) -> dict[str, dict]:
+    """The Vega specifications this entity already holds, by name."""
+    from wandb_gql import gql
+
+    charts = api.client.execute(
+        gql(_LIST_CHARTS), {"entity": entity, "type": SPEC_TYPE}
+    )
+    return {
+        edge["node"]["name"]: json.loads(edge["node"]["spec"])
+        for edge in charts["customCharts"]["edges"]
+    }
+
+
+def _write(api, entity: str, name: str, spec: dict, exists: bool) -> None:
+    """Create the preset, or update the one that is already there.
+
+    The Python SDK wraps only creation, and creating a preset that exists
+    fails, so a specification edited here would otherwise never reach W&B --
+    which is how a fixed chart can go on being drawn the old way forever.
+    """
+    from wandb_gql import gql
+
+    if not exists:
+        api.create_custom_chart(
+            entity=entity,
+            name=name,
+            display_name=name,
+            spec_type=SPEC_TYPE,
+            access=ACCESS,
+            spec=spec,
+        )
+        logger.info("Registered the W&B chart preset %s/%s.", entity, name)
+        return
+
+    api.client.execute(
+        gql(_UPDATE_CHART),
+        {
+            "entity": entity,
+            "name": name,
+            "displayName": name,
+            "type": SPEC_TYPE,
+            "access": ACCESS.upper(),
+            "spec": json.dumps(spec),
+        },
+    )
+    logger.info("Updated the W&B chart preset %s/%s.", entity, name)
+
+
+def register(entity: str) -> dict[str, str]:
+    """The id of each chart specification within `entity`, bringing it up to date.
+
+    A preset that is already there and already matches is left alone, so the
+    ordinary run makes one read and no writes. If W&B cannot be reached the
+    ids still follow from the names, and only the drawn panel suffers -- the
+    tables are logged either way.
     """
     import wandb
 
     ids = {name: f"{entity}/{name}" for name in SPECS}
     try:
         api = wandb.Api()
+        existing = _registered(api, entity)
     except Exception as error:
-        logger.debug("No W&B API to register chart presets with (%s)", error)
+        logger.warning("Could not read this entity's chart presets: %s", error)
         return ids
 
     for name, spec in SPECS.items():
+        if existing.get(name) == spec:
+            continue
         try:
-            ids[name] = api.create_custom_chart(
-                entity=entity,
-                name=name,
-                display_name=name,
-                spec_type="vega2",
-                access="private",
-                spec=spec,
-            )
-            logger.info("Registered the W&B chart preset %s.", ids[name])
+            _write(api, entity, name, spec, exists=name in existing)
         except Exception as error:
-            # W&B reports this on its own terminal as an error. It is the
-            # ordinary case -- the preset is already there -- so say what it
-            # means rather than leaving that line to stand on its own.
-            logger.info(
-                "Chart preset %s is already registered or not writable; "
-                "using %s (%s)",
-                name,
-                ids[name],
-                error,
-            )
+            logger.warning("Could not write the chart preset %s: %s", name, error)
     return ids
 
 
@@ -91,29 +169,49 @@ def _spec_class():
 
     `wandb.plot_table` binds a panel to `summaryTable`, which holds only the
     last table logged under a key -- so a panel logged every N validations
-    showed the newest schema and nothing before it. `historyTable` keeps every
-    step, which is what puts W&B's step slider underneath the panel.
+    showed the newest schema and nothing before it, where the images it
+    replaced got a step slider for free.
+
+    Reproducing what the editor writes when a panel's query is switched by
+    hand takes three things it does not: `historyTable` in place of
+    `summaryTable`, its `extraKeys` and `index` arguments -- without `index`
+    the panel has no step to draw and comes up empty -- and the two panel
+    settings that put the slider on screen and open it at the newest schema.
 
     Built on first use: defining the subclass needs wandb imported, and
     importing this module must not.
     """
     from wandb.plot.custom_chart import CustomChartSpec
 
+    @dataclass
     class HistoryChartSpec(CustomChartSpec):
+        step: Step = field(default_factory=Step)
+
         @property
         def config_value(self) -> dict:
             config = super().config_value
+            config["panel_config"]["showStepSelector"] = True
+            config["panel_config"]["defaultViewedStepIndex"] = self.step.index
             queries = config["panel_config"]["userQuery"]["queryFields"]
-            fields = [field for query in queries for field in query["fields"]]
-            summary = [field for field in fields if field["name"] == "summaryTable"]
+            summary = [
+                field
+                for query in queries
+                for field in query["fields"]
+                if field["name"] == "summaryTable"
+            ]
             if not summary:
                 logger.warning(
-                    "This wandb does not query summaryTable, so the step slider "
-                    "could not be enabled; the panel will show the last logged "
+                    "This wandb does not query summaryTable, so the panel's step "
+                    "slider could not be set up; it will show the last logged "
                     "schema only."
                 )
             for field in summary:
                 field["name"] = "historyTable"
+                field["args"] = [
+                    {"name": "extraKeys", "value": []},
+                    {"name": "tableKey", "value": self.table_key},
+                    {"name": "index", "value": self.step.number},
+                ]
             return config
 
     return HistoryChartSpec
@@ -126,12 +224,14 @@ def heatmap(
     columns: Sequence[str],
     axis_labels: Sequence[Sequence[str]],
     fields: Mapping[str, str],
+    step: Step,
 ):
     """One custom chart: `values` as a table, bound to a registered spec.
 
     `columns` names the table's columns -- one per axis of `values`, then the
     value itself -- and `fields` maps the specification's placeholders onto
-    them.
+    them. `step` is where the panel's slider starts, so the newest schema is
+    what a run's page opens on.
     """
     import wandb
     from wandb.plot.custom_chart import CustomChart
@@ -142,5 +242,6 @@ def heatmap(
             spec_name=spec_id,
             fields=dict(fields),
             string_fields={"title": title},
+            step=step,
         ),
     )
