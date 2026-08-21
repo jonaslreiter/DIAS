@@ -1,7 +1,4 @@
-# Per-domain training overrides for 'driverlog'.
-# Composed after configs/main.yaml, e.g.:
-#   dias-train fit --config configs/main.yaml --config pddl/driverlog/config.yaml
-# Holds domain-specific data (sampling) and model overrides.
+# Per-domain overrides for 'driverlog', composed after configs/main.yaml.
 data:
   init_args:
     min_per_label_train: 2000

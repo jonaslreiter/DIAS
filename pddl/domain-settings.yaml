@@ -1,10 +1,14 @@
-# Per-domain manifest: paths + problem list only.
-# Per-domain training overrides live in <domain-folder>/config.yaml.
-# Slurm resources live in configs/slurm-resources.yaml.
+# Per-domain manifest: the domain file and its problem list, nothing else.
+#
+# problems[0] is the training instance; validation uses the rest, sliced by
+# problem_offset / num_problems in configs/validation.yaml. Per-domain training
+# overrides live in <domain-folder>/config.yaml, Slurm resources in
+# configs/slurm-resources.yaml, and the STRIPS+ argument positions in
+# <domain-folder>/strips+.yaml, which is found beside the domain file rather
+# than named here.
 
 blocks-3:
   domain: pddl/blocks-3/domain.pddl
-  strips_yaml: pddl/blocks-3/strips+.yaml
   problems:
     - pddl/blocks-3/train.pddl
     - pddl/blocks-3/test-1.pddl
@@ -12,7 +16,6 @@ blocks-3:
     - pddl/blocks-3/test-3.pddl
 delivery:
   domain: pddl/delivery/domain.pddl
-  strips_yaml: pddl/delivery/strips+.yaml
   problems:
     - pddl/delivery/train.pddl
     - pddl/delivery/test-1.pddl
@@ -20,7 +23,6 @@ delivery:
     - pddl/delivery/test-3.pddl
 driverlog:
   domain: pddl/driverlog/domain.pddl
-  strips_yaml: pddl/driverlog/strips+.yaml
   problems:
     - pddl/driverlog/train.pddl
     - pddl/driverlog/test-1.pddl
@@ -28,7 +30,6 @@ driverlog:
     - pddl/driverlog/test-3.pddl
 gripper:
   domain: pddl/gripper/domain.pddl
-  strips_yaml: pddl/gripper/strips+.yaml
   problems:
     - pddl/gripper/train.pddl
     - pddl/gripper/test-1.pddl
@@ -36,7 +37,6 @@ gripper:
     - pddl/gripper/test-3.pddl
 hanoi:
   domain: pddl/hanoi/domain.pddl
-  strips_yaml: pddl/hanoi/strips+.yaml
   problems:
     - pddl/hanoi/train.pddl
     - pddl/hanoi/test-1.pddl
@@ -44,7 +44,6 @@ hanoi:
     - pddl/hanoi/test-3.pddl
 logistics:
   domain: pddl/logistics/domain.pddl
-  strips_yaml: pddl/logistics/strips+.yaml
   problems:
     - pddl/logistics/train.pddl
     - pddl/logistics/test-1.pddl
@@ -52,7 +51,6 @@ logistics:
     - pddl/logistics/test-3.pddl
 miconic:
   domain: pddl/miconic/domain.pddl
-  strips_yaml: pddl/miconic/strips+.yaml
   problems:
     - pddl/miconic/train.pddl
     - pddl/miconic/test-1.pddl
@@ -60,7 +58,6 @@ miconic:
     - pddl/miconic/test-3.pddl
 n-puzzle:
   domain: pddl/n-puzzle/domain.pddl
-  strips_yaml: pddl/n-puzzle/strips+.yaml
   problems:
     - pddl/n-puzzle/train.pddl
     - pddl/n-puzzle/test-1.pddl
@@ -68,7 +65,6 @@ n-puzzle:
     - pddl/n-puzzle/test-3.pddl
 satellite:
   domain: pddl/satellite/domain.pddl
-  strips_yaml: pddl/satellite/strips+.yaml
   problems:
     - pddl/satellite/train.pddl
     - pddl/satellite/test-1.pddl
@@ -76,7 +72,6 @@ satellite:
     - pddl/satellite/test-3.pddl
 sokoban:
   domain: pddl/sokoban/domain.pddl
-  strips_yaml: pddl/sokoban/strips+.yaml
   problems:
     - pddl/sokoban/train.pddl
     - pddl/sokoban/test-1.pddl
@@ -84,7 +79,6 @@ sokoban:
     - pddl/sokoban/test-3.pddl
 sokoban-pull:
   domain: pddl/sokoban-pull/domain.pddl
-  strips_yaml: pddl/sokoban-pull/strips+.yaml
   problems:
     - pddl/sokoban-pull/train.pddl
     - pddl/sokoban-pull/test-1.pddl
@@ -92,7 +86,6 @@ sokoban-pull:
     - pddl/sokoban-pull/test-3.pddl
 spanner:
   domain: pddl/spanner/domain.pddl
-  strips_yaml: pddl/spanner/strips+.yaml
   problems:
     - pddl/spanner/train.pddl
     - pddl/spanner/test-1.pddl
@@ -100,7 +93,6 @@ spanner:
     - pddl/spanner/test-3.pddl
 visitall:
   domain: pddl/visitall/domain.pddl
-  strips_yaml: pddl/visitall/strips+.yaml
   problems:
     - pddl/visitall/train.pddl
     - pddl/visitall/test-1.pddl

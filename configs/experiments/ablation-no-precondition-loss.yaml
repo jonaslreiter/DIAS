@@ -1,8 +1,4 @@
-# Ablation overlay: drop L_pre (the restrictive-precondition auxiliary term).
-# Composed last on top of main.yaml, e.g.:
-#   dias-train fit --config configs/main.yaml \
-#       --config pddl/<domain>/config.yaml \
-#       --config configs/experiments/ablation-no-precondition-loss.yaml
+# Ablation: no L_pre, the restrictive-precondition auxiliary term.
 model:
   init_args:
     use_precondition_loss: false

@@ -1,9 +1,4 @@
-# Ablation overlay: replace PCGrad projection with a plain weighted sum
-# L_adj + alpha * L_aux (same alpha = aux_loss_weight).
-# Composed last on top of main.yaml, e.g.:
-#   dias-train fit --config configs/main.yaml \
-#       --config pddl/<domain>/config.yaml \
-#       --config configs/experiments/ablation-no-pcgrad.yaml
+# Ablation: a plain weighted sum L_adj + alpha * L_aux instead of PCGrad.
 model:
   init_args:
     use_pcgrad: false

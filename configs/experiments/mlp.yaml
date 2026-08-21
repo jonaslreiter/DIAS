@@ -1,10 +1,5 @@
-# MLP-baseline experiment overlay. Composed last, e.g.:
-#   dias-train fit --config configs/main.yaml \
-#       --config pddl/<domain>/config.yaml \
-#       --config configs/experiments/mlp.yaml
-#
-# Effects are predicted from the current state by an MLP (state_dependent_effects).
-# The mlp_baseline validator requires a checkpoint trained with this flag on.
+# MLP baseline: effects are predicted from the current state instead of being a
+# lifted tensor. The mlp validator requires a checkpoint trained with this on.
 model:
   init_args:
     state_dependent_effects: true

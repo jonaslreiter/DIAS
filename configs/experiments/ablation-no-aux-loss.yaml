@@ -1,9 +1,4 @@
-# Ablation overlay: drop the whole auxiliary objective (equivalent to alpha = 0)
-# by turning off both L_pre and L_eff. Only L_adj drives training.
-# Composed last on top of main.yaml, e.g.:
-#   dias-train fit --config configs/main.yaml \
-#       --config pddl/<domain>/config.yaml \
-#       --config configs/experiments/ablation-no-aux-loss.yaml
+# Ablation: no auxiliary objective at all (alpha = 0). Only L_adj trains.
 model:
   init_args:
     use_precondition_loss: false

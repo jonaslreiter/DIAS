@@ -1,13 +1,5 @@
-# Per-domain training overrides for 'satellite'.
-# Composed after configs/main.yaml, e.g.:
-#   dias-train fit --config configs/main.yaml --config pddl/satellite/config.yaml
-# Holds domain-specific data (sampling) and model overrides.
-data:
-  init_args:
-    min_per_label_train: 100
-    min_per_label_valid: 50
-    max_per_label_train: 1000
-    max_per_label_valid: 500
+# Per-domain overrides for 'satellite', composed after configs/main.yaml.
+# Sampling is main.yaml's default; only the auxiliary weight is tuned.
 model:
   init_args:
     aux_loss_weight: 1.0

@@ -1,7 +1,4 @@
-# Per-domain training overrides for 'sokoban'.
-# Composed after configs/main.yaml, e.g.:
-#   dias-train fit --config configs/main.yaml --config pddl/sokoban/config.yaml
-# Holds domain-specific data (sampling) and model overrides.
+# Per-domain overrides for 'sokoban', composed after configs/main.yaml.
 data:
   init_args:
     min_per_label_train: 20
