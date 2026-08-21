@@ -7,8 +7,8 @@ and `delivery`, three seeds each.
 This is a one-off analysis and is deliberately kept out of the main pipeline —
 it trains no model, learns no schema, and writes nothing to W&B. Everything it
 needs lives in this directory; the only things it borrows from the repository
-are the training config chain, the domain files, and two sbatch helpers from
-`scripts/launch.py`.
+are the training config chain, the domain files, and the sbatch helpers in
+`scripts/pipeline.py`.
 
 ## What is measured
 

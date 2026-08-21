@@ -77,9 +77,10 @@ testpaths = ["tests"]
 # Without this, black targets the newest Python it knows and warns that the
 # running interpreter cannot verify its own output.
 target-version = ["py310"]
-extend-exclude = "/(submodules|\\.venv-delivery)/"
+# The delivery generator's throwaway venv, which is not our code.
+extend-exclude = "/\\.venv-delivery/"
 
 [tool.isort]
 profile = "black"
 src_paths = ["src", "tests", "scripts", "scaling"]
-extend_skip_glob = ["submodules/*", "*/.venv-delivery/*"]
+extend_skip_glob = ["*/.venv-delivery/*"]
