@@ -1,10 +1,16 @@
 #!/usr/bin/env python
-"""Generate the scaling-study instances from ``submodules/pddl-generators``.
+"""Regenerate the scaling-study instances from the upstream PDDL generators.
 
 One instance per (domain, size) entry of ``scaling/configs/sizes.yaml``, written
 to ``scaling/instances/<domain>/n<num_objects>.pddl`` plus an ``index.json``
 describing the ladder. Both are committed, so the study is reproducible without
-re-running the generators (and without their build/venv dependencies).
+re-running the generators, which is why the repository does not vendor them:
+running the scaling study needs neither this script nor its toolchain.
+
+To change the ladder, clone and build the generators yourself and point
+``--generators-dir`` at the checkout:
+
+    git clone https://github.com/AI-Planning/pddl-generators.git
 
 The generators emit their own dialect of each domain; this script rewrites their
 output to match the *repository's* ``pddl/<domain>/domain.pddl``, which is what
@@ -35,9 +41,9 @@ delivery
 
 Usage
 -----
-    python scaling/generate_instances.py                  # all domains
-    python scaling/generate_instances.py --domains blocks-3 logistics
-    python scaling/generate_instances.py --force          # overwrite existing
+    python scaling/generate_instances.py --generators-dir ../pddl-generators
+    python scaling/generate_instances.py --generators-dir DIR --domains blocks-3
+    python scaling/generate_instances.py --generators-dir DIR --force
 """
 
 from __future__ import annotations
@@ -56,7 +62,6 @@ import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCALING_DIR = PROJECT_ROOT / "scaling"
-GENERATORS = PROJECT_ROOT / "submodules" / "pddl-generators"
 SIZES_CONFIG = SCALING_DIR / "configs" / "sizes.yaml"
 INSTANCES_DIR = SCALING_DIR / "instances"
 DEFAULT_DELIVERY_VENV = SCALING_DIR / ".venv-delivery"
@@ -83,26 +88,44 @@ def instance_id(num_objects: int) -> str:
 # ── generator drivers ──────────────────────────────────────────────────────────
 
 
+UPSTREAM_GENERATORS = "https://github.com/AI-Planning/pddl-generators.git"
+
+
+def require_generators(path: Path | None) -> Path:
+    """The generator checkout, or an error naming how to obtain one.
+
+    The generators are not vendored: the instances they produce are committed,
+    so nothing but this script needs them.
+    """
+    if path is None:
+        raise SystemExit(
+            "--generators-dir is required to regenerate instances. Clone the "
+            f"upstream generators first:\n    git clone {UPSTREAM_GENERATORS}"
+        )
+    if not path.is_dir():
+        raise SystemExit(
+            f"--generators-dir {path} does not exist. Clone the upstream "
+            f"generators:\n    git clone {UPSTREAM_GENERATORS}"
+        )
+    return path
+
+
 def _require_binary(path: Path, build_hint: str) -> None:
     if not path.exists():
         raise SystemExit(
-            f"Missing generator binary {path}.\n"
-            f"Build it first:  {build_hint}\n"
-            "(and make sure the submodule is checked out: "
-            "git submodule update --init submodules/pddl-generators)"
+            f"Missing generator binary {path}.\n" f"Build it first:  {build_hint}"
         )
 
 
-def _gen_blocksworld(size: dict, seed: int) -> str:
-    script = GENERATORS / "blocksworld" / "blocksworld"
+def _gen_blocksworld(generators: Path, size: dict, seed: int) -> str:
+    script = generators / "blocksworld" / "blocksworld"
     _require_binary(
-        GENERATORS / "blocksworld" / "bwstates.1" / "bwstates",
-        "make -C submodules/pddl-generators/blocksworld/bwstates.1 && "
-        "make -C submodules/pddl-generators/blocksworld/3ops/2pddl",
+        generators / "blocksworld" / "bwstates.1" / "bwstates",
+        f"make -C {generators}/blocksworld/bwstates.1",
     )
     _require_binary(
-        GENERATORS / "blocksworld" / "3ops" / "2pddl" / "2pddl",
-        "make -C submodules/pddl-generators/blocksworld/3ops/2pddl",
+        generators / "blocksworld" / "3ops" / "2pddl" / "2pddl",
+        f"make -C {generators}/blocksworld/3ops/2pddl",
     )
     # The script drops a STATES scratch file into the working directory.
     with tempfile.TemporaryDirectory() as tmp:
@@ -116,9 +139,9 @@ def _gen_blocksworld(size: dict, seed: int) -> str:
     return out.stdout
 
 
-def _gen_logistics(size: dict, seed: int) -> str:
-    binary = GENERATORS / "logistics" / "logistics"
-    _require_binary(binary, "make -C submodules/pddl-generators/logistics")
+def _gen_logistics(generators: Path, size: dict, seed: int) -> str:
+    binary = generators / "logistics" / "logistics"
+    _require_binary(binary, f"make -C {generators}/logistics")
     out = subprocess.run(
         [
             str(binary),
@@ -158,7 +181,9 @@ def _ensure_delivery_venv(venv_dir: Path) -> Path:
     return python
 
 
-def _gen_delivery_tree(sizes: list[dict], seed: int, venv_dir: Path) -> dict:
+def _gen_delivery_tree(
+    generators: Path, sizes: list[dict], seed: int, venv_dir: Path
+) -> dict:
     """Run the delivery generator once; return {(grid, packages): pddl text}.
 
     Its CLI has no seed and no single-instance mode: it always writes the full
@@ -166,13 +191,10 @@ def _gen_delivery_tree(sizes: list[dict], seed: int, venv_dir: Path) -> dict:
     ``./output``. So it is executed once per domain, in a scratch directory,
     through a wrapper that seeds ``random`` for reproducibility.
     """
-    generator = GENERATORS / "delivery" / "generate.py"
-    domain = GENERATORS / "delivery" / "domain.pddl"
+    generator = generators / "delivery" / "generate.py"
+    domain = generators / "delivery" / "domain.pddl"
     if not generator.exists():
-        raise SystemExit(
-            f"Missing {generator} — run: git submodule update --init "
-            "submodules/pddl-generators"
-        )
+        raise SystemExit(f"Missing {generator} in the generator checkout.")
     python = _ensure_delivery_venv(venv_dir)
     max_grid = max(s["grid"] for s in sizes)
     max_packages = max(s["packages"] for s in sizes)
@@ -348,6 +370,7 @@ def generate_domain(
     spec: dict,
     domain_settings: dict,
     force: bool,
+    generators: Path,
     delivery_venv: Path,
 ) -> list[dict]:
     generator = spec["generator"]
@@ -358,7 +381,7 @@ def generate_domain(
     domain_pddl = PROJECT_ROOT / domain_settings[domain]["domain"]
 
     delivery_tree = (
-        _gen_delivery_tree(sizes, seed, delivery_venv)
+        _gen_delivery_tree(generators, sizes, seed, delivery_venv)
         if generator == "delivery"
         else None
     )
@@ -372,9 +395,9 @@ def generate_domain(
             print(f"[{domain}] {iid}: exists, skipping (--force to regenerate)")
         else:
             if generator == "blocksworld":
-                raw = _gen_blocksworld(size, seed)
+                raw = _gen_blocksworld(generators, size, seed)
             elif generator == "logistics":
-                raw = _gen_logistics(size, seed)
+                raw = _gen_logistics(generators, size, seed)
             else:
                 raw = delivery_tree[(size["grid"], size["packages"])]
             path.write_text(REWRITERS[generator](raw, num_objects))
@@ -400,6 +423,14 @@ def main() -> int:
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
+    p.add_argument(
+        "--generators-dir",
+        type=Path,
+        default=None,
+        help="Checkout of the upstream PDDL generators "
+        f"({UPSTREAM_GENERATORS}), built. Required: they are not vendored, "
+        "because the instances they produce are committed.",
+    )
     p.add_argument("--sizes-config", type=Path, default=SIZES_CONFIG)
     p.add_argument(
         "--domain-settings",
@@ -418,6 +449,7 @@ def main() -> int:
     )
     args = p.parse_args()
 
+    generators = require_generators(args.generators_dir)
     cfg = yaml.safe_load(args.sizes_config.read_text())
     domain_settings = yaml.safe_load(args.domain_settings.read_text())
     domains = args.domains or list(cfg["domains"])
@@ -432,6 +464,7 @@ def main() -> int:
             cfg["domains"][domain],
             domain_settings,
             args.force,
+            generators,
             args.delivery_venv,
         )
 

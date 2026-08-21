@@ -26,7 +26,7 @@ The core problem setting is:
 - Training GPU requests are per domain and live entirely in `configs/slurm-resources.yaml`; treat that file as the source of truth rather than hardcoding a partition or GPU size here. It currently requests GPU shards (`gres: shard:N`) sized per domain from a shared `defaults` block, with no partition pinning. A domain that needs a whole GPU or a specific partition gets it via its own entry (`gres: "gpu:1"` and/or `sbatch_extra: ["--partition=<name>"]`).
 - The current single-domain base training config in this workspace is `configs/main.yaml`.
 - Standardized filenames per domain folder are `domain.pddl`, `train.pddl`, `test-1.pddl`, `test-2.pddl`, `test-3.pddl`, `strips+.yaml`, and `config.yaml`.
-- `submodules/pddl-generators` is the upstream instance generator collection (<https://github.com/AI-Planning/pddl-generators>), added as a git submodule. Nothing in the main pipeline needs it; it exists for the scaling study (see below), which commits the instances it generates.
+- The upstream instance generators (<https://github.com/AI-Planning/pddl-generators>) are **not** vendored. They are needed only to change the scaling study's size ladder, whose instances are committed; `scaling/generate_instances.py --generators-dir DIR` takes a checkout of them.
 - `scaling/` is a self-contained one-off study of runtime and GPU memory versus instance size. It is intentionally *not* wired into `scripts/launch.py`; see "Instance-Size Scaling Study".
 
 ## High-Level Pipeline

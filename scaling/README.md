@@ -64,20 +64,22 @@ not treated as a crash, and shows up as `oom` in the aggregated table.
 
 ## Instances
 
-`scaling/instances/<domain>/n<objects>.pddl` are generated once from
-`submodules/pddl-generators` and committed, together with `index.json`
-(parameters + object/action/predicate counts per instance). Nothing in the
-running of the study needs the generators; they are only needed to change the
-ladder.
+`scaling/instances/<domain>/n<objects>.pddl` are generated once from the
+[upstream PDDL generators](https://github.com/AI-Planning/pddl-generators) and
+committed, together with `index.json` (parameters + object/action/predicate
+counts per instance). **Running the study needs neither the generators nor this
+section** — they are only needed to change the ladder, which is why they are not
+vendored here.
 
 ```bash
-git submodule update --init submodules/pddl-generators
-make -C submodules/pddl-generators/blocksworld/bwstates.1
-make -C submodules/pddl-generators/blocksworld/3ops/2pddl
-make -C submodules/pddl-generators/logistics
+git clone https://github.com/AI-Planning/pddl-generators.git ../pddl-generators
+make -C ../pddl-generators/blocksworld/bwstates.1
+make -C ../pddl-generators/blocksworld/3ops/2pddl
+make -C ../pddl-generators/logistics
 
-python scaling/generate_instances.py            # all domains
-python scaling/generate_instances.py --domains delivery --force
+python scaling/generate_instances.py --generators-dir ../pddl-generators
+python scaling/generate_instances.py --generators-dir ../pddl-generators \
+    --domains delivery --force
 ```
 
 The generators emit their own dialect of each domain, so the script rewrites
@@ -141,7 +143,7 @@ per-run rows for plotting.
 |---|---|---|
 | `configs/sizes.yaml` | the ladder, seeds, step counts, Slurm resources | `configs/slurm-resources.yaml` |
 | `configs/scaling.yaml` | Lightning overlay, composed last | `configs/experiments/*.yaml` |
-| `generate_instances.py` | drives the submodule generators, rewrites their output | — |
+| `generate_instances.py` | drives the upstream generators, rewrites their output | — |
 | `benchmark.py` | one (domain, size, seed) point → one JSON | `scripts/validation/run_dias.py` |
 | `run_scaling.py` | walks one domain's ladder for one seed | `scripts/validate_runs.py` |
 | `launch_scaling.py` | submits the arrays / runs locally | `scripts/launch.py` |
