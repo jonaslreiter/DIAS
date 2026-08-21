@@ -36,7 +36,7 @@ Usage:
     python scripts/collect_results.py --experiment paper-main --source wandb
     python scripts/collect_results.py --experiment noise-a2r2 --domains gripper hanoi
     python scripts/collect_results.py --experiment dias-full abl-no-pcgrad \
-        --markdown local/ablations-results-summary.md
+        --markdown logs/ablations-summary.md
     python scripts/collect_results.py --experiment dias-full --threshold-sweep \
         --markdown logs/threshold-sweep.md
     python scripts/collect_results.py --experiment aux-sweep --sweep aux-loss-weight \

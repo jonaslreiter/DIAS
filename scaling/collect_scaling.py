@@ -10,8 +10,8 @@ Metrics: iterations/second, peak GPU memory (allocated and reserved, MiB),
 step time (ms), sampling time (s), and the seed count behind each cell.
 
     python scaling/collect_scaling.py --experiment scaling-a10
-    python scaling/collect_scaling.py --experiment scaling-a10 --markdown local/scaling.md
-    python scaling/collect_scaling.py --experiment scaling-a10 --csv local/scaling.csv
+    python scaling/collect_scaling.py --experiment scaling-a10 --markdown logs/scaling.md
+    python scaling/collect_scaling.py --experiment scaling-a10 --csv logs/scaling.csv
 """
 
 from __future__ import annotations

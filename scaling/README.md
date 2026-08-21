@@ -128,8 +128,8 @@ gitignored `logs/`, like the rest of the pipeline's outputs).
 
 ```bash
 python scaling/collect_scaling.py --experiment scaling-a10
-python scaling/collect_scaling.py --experiment scaling-a10 --markdown local/scaling.md
-python scaling/collect_scaling.py --experiment scaling-a10 --csv local/scaling.csv
+python scaling/collect_scaling.py --experiment scaling-a10 --markdown logs/scaling.md
+python scaling/collect_scaling.py --experiment scaling-a10 --csv logs/scaling.csv
 ```
 
 Prints a domain × object-count matrix per metric (iterations/second, peak GPU
@@ -144,7 +144,7 @@ per-run rows for plotting.
 | `configs/sizes.yaml` | the ladder, seeds, step counts, Slurm resources | `configs/slurm-resources.yaml` |
 | `configs/scaling.yaml` | Lightning overlay, composed last | `configs/experiments/*.yaml` |
 | `generate_instances.py` | drives the upstream generators, rewrites their output | — |
-| `benchmark.py` | one (domain, size, seed) point → one JSON | `scripts/validation/run_dias.py` |
+| `benchmark.py` | one (domain, size, seed) point → one JSON | `scripts/validate_checkpoint.py` |
 | `run_scaling.py` | walks one domain's ladder for one seed | `scripts/validate_runs.py` |
 | `launch_scaling.py` | submits the arrays / runs locally | `scripts/launch.py` |
 | `collect_scaling.py` | aggregates the JSONs into tables | `scripts/collect_results.py` |

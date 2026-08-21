@@ -1,0 +1,22 @@
+# Formatting, enforced before a commit rather than discovered in review.
+#   pip install pre-commit && pre-commit install
+# Versions are pinned so a hook cannot reformat the tree on its own schedule;
+# `pre-commit autoupdate` moves them deliberately.
+repos:
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+        # The Lightning configs are plain YAML; the PDDL manifests too.
+        exclude: ^\.pre-commit-config\.yaml$
+      - id: check-merge-conflict
