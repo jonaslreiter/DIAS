@@ -8,7 +8,6 @@ instead.
 """
 
 import os
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -20,6 +19,7 @@ import torch
 
 from checkpoints import TEST_PROBLEM, build_model, save
 from dias.validation.mlp_baseline import ModelValidation
+from support import temp_dir
 
 torch.set_num_threads(1)
 
@@ -30,7 +30,7 @@ SAMPLE_POPULATION = 20
 
 class MlpBaselineTest(unittest.TestCase):
     def validate(self, **kwargs) -> dict:
-        directory = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        directory = temp_dir(self)
         model, hparams = build_model(state_dependent_effects=True)
         model_id = save(directory, model, hparams)
         validation = ModelValidation(
@@ -70,7 +70,7 @@ class MlpBaselineTest(unittest.TestCase):
         self.assertEqual(self.validate(num_workers=1), self.validate(num_workers=2))
 
     def test_a_static_effects_checkpoint_is_refused(self):
-        directory = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        directory = temp_dir(self)
         model, hparams = build_model()
         model_id = save(directory, model, hparams)
         with self.assertRaisesRegex(ValueError, "state_dependent_effects"):

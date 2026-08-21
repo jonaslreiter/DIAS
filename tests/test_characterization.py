@@ -39,6 +39,16 @@ TOLERANCE = 1e-6
 # no golden trajectory can hold. Single-threaded it is bit-reproducible.
 torch.set_num_threads(1)
 
+# The one parameter the trajectory golden leaves out, because nothing decides
+# its value. The last encoder convolution's bias shifts every object embedding
+# by the same vector, and the Sinkhorn assignment normalises a per-slot offset
+# away, so the loss is invariant to it: its gradient is float32 cancellation
+# noise around 1e-10 -- six orders below any other parameter's -- which Adam
+# then normalises into full-size steps in a direction round-off chose. Three
+# steps of that random walk differ between machines by twice the parameter's
+# own magnitude. UnconstrainedParameterTest pins both halves of this.
+UNCONSTRAINED_PARAMETER = "state_encoder.convs.3.bias"
+
 NUM_OBJECTS = 4
 ARITY_RELATIONS = [1, 2, 2]
 NUM_ACTIONS = 2
@@ -172,13 +182,16 @@ class ForwardCharacterizationTest(unittest.TestCase):
 
 
 def trained_values(model: DIAS) -> dict[str, torch.Tensor]:
-    """Every parameter, under the name the fixture stored it as.
+    """Every parameter the loss constrains, under the name the fixture stored it as.
 
     The two schema tensors are compared as the model applies them. The arity
     mask moved out of the parameters and into the forward pass, so the raw
     parameters now hold untouched noise at cells no schema can express, where
     the fixture holds the mask itself -- and the masked logits it produced then
     are exactly the ones it produces now.
+
+    UNCONSTRAINED_PARAMETER is skipped: pinning a random walk would only ever
+    assert which machine recorded the fixture.
     """
     schema = model.schema_logits()
     masked = {
@@ -187,9 +200,60 @@ def trained_values(model: DIAS) -> dict[str, torch.Tensor]:
     }
     values = {}
     for name, parameter in model.named_parameters():
+        if name == UNCONSTRAINED_PARAMETER:
+            continue
         key = pre_split_name(name)
         values[key] = masked.get(key, parameter)
     return values
+
+
+class UnconstrainedParameterTest(unittest.TestCase):
+    """Why the trajectory golden leaves one parameter out.
+
+    Not a nuisance to be tolerated: the model carries a parameter its own loss
+    cannot see. Both facts are pinned here, so removing the exclusion above
+    without removing the cause fails with a reason attached.
+    """
+
+    def gradients(self, **flags) -> dict[str, float]:
+        torch.manual_seed(11)
+        model = DIAS(**(MODEL_DEFAULTS | flags))
+        self.addCleanup(model.teardown, "test")
+        torch.manual_seed(29)
+        losses = model.step(make_batch())
+        (losses.adjacency + model.aux_loss_weight * losses.auxiliary).backward()
+        return {
+            name: parameter.grad.abs().max().item()
+            for name, parameter in model.named_parameters()
+            if parameter.grad is not None
+        }
+
+    def test_shifting_it_does_not_move_the_slot_assignment(self):
+        """A constant added to every object embedding survives no normalisation."""
+        torch.manual_seed(11)
+        model = DIAS(**MODEL_DEFAULTS)
+        self.addCleanup(model.teardown, "test")
+        model.eval()
+
+        torch.manual_seed(29)
+        before = model(*make_batch()).selection
+        with torch.no_grad():
+            model.get_parameter(UNCONSTRAINED_PARAMETER).add_(1.0)
+        torch.manual_seed(29)
+        after = model(*make_batch()).selection
+
+        self.assertLess((before - after).abs().max().item(), 1e-6)
+
+    def test_its_gradient_is_noise_beside_every_other(self):
+        for name in ("full", "no_pcgrad"):
+            with self.subTest(case=name):
+                flags = {} if name == "full" else {"use_pcgrad": False}
+                gradients = self.gradients(**flags)
+                unconstrained = gradients.pop(UNCONSTRAINED_PARAMETER)
+                # Six orders of magnitude of clearance, so the exclusion is not
+                # a threshold anyone has to tune.
+                self.assertLess(unconstrained, 1e-8)
+                self.assertGreater(min(gradients.values()), 1e-5)
 
 
 class TrainingTrajectoryTest(unittest.TestCase):

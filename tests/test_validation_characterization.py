@@ -18,7 +18,6 @@ convention, the transpiler, domain untyping and merging, pymimir grounding, and
 the micro-averaged successor comparison.
 """
 
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -26,6 +25,7 @@ import torch
 
 from checkpoints import TEST_PROBLEM, build_model, domain_schema, save
 from dias.validation.dias_validate import ModelValidation
+from support import temp_dir
 
 torch.set_num_threads(1)
 
@@ -79,7 +79,7 @@ def build_checkpoint(directory: Path) -> str:
 
 class ValidationCharacterizationTest(unittest.TestCase):
     def validate(self) -> dict:
-        directory = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        directory = temp_dir(self)
         model_id = build_checkpoint(directory)
         validation = ModelValidation(
             model_id, str(directory), problem_path=str(TEST_PROBLEM)

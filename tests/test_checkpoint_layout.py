@@ -9,7 +9,6 @@ must extend the migration in `dias.models` and leave this test passing. That is
 what keeps each step independently landable without breaking archived runs.
 """
 
-import tempfile
 import unittest
 import unittest.mock
 from pathlib import Path
@@ -21,6 +20,7 @@ from dias.hparams import to_mapping
 from dias.models.checkpoints import CHECKPOINT_VERSION, VERSION_KEY
 from dias.models.dias import DIAS
 from dias.schedules import Constant, Exponential
+from support import temp_dir
 
 V1_HPARAMS = {
     "num_objects": 4,
@@ -131,8 +131,8 @@ def build_v1_checkpoint(marker: float = 0.125) -> dict:
 
 class CheckpointLayoutTest(unittest.TestCase):
     def write_v1_checkpoint(self, **kwargs) -> str:
-        directory = self.enterContext(tempfile.TemporaryDirectory())
-        path = Path(directory) / "v1.ckpt"
+        directory = temp_dir(self)
+        path = directory / "v1.ckpt"
         torch.save(build_v1_checkpoint(**kwargs), path)
         return str(path)
 
@@ -173,8 +173,8 @@ class CheckpointLayoutTest(unittest.TestCase):
 
     def test_a_current_checkpoint_loads_without_migrating(self):
         """The stock loader must handle it; migration is the fallback only."""
-        directory = self.enterContext(tempfile.TemporaryDirectory())
-        path = Path(directory) / "current.ckpt"
+        directory = temp_dir(self)
+        path = directory / "current.ckpt"
         model = DIAS(**constructor_args())
         checkpoint = {
             "state_dict": model.state_dict(),
@@ -195,8 +195,8 @@ class CheckpointLayoutTest(unittest.TestCase):
 
     def test_a_v1_offset_becomes_the_schedules_floor(self):
         """The noise runs' tau trajectory has to survive the fold exactly."""
-        directory = self.enterContext(tempfile.TemporaryDirectory())
-        path = Path(directory) / "noise.ckpt"
+        directory = temp_dir(self)
+        path = directory / "noise.ckpt"
         checkpoint = build_v1_checkpoint()
         checkpoint["hyper_parameters"]["gmean_offset"] = 0.1
         checkpoint["hyper_parameters"]["loss_weight_schedule"] = {
@@ -220,8 +220,8 @@ class CheckpointLayoutTest(unittest.TestCase):
 
     def test_a_v1_mlp_checkpoint_is_refused(self):
         """Its effect MLP had no activations, so its weights cannot be reused."""
-        directory = self.enterContext(tempfile.TemporaryDirectory())
-        path = Path(directory) / "mlp.ckpt"
+        directory = temp_dir(self)
+        path = directory / "mlp.ckpt"
         checkpoint = build_v1_checkpoint()
         del checkpoint["state_dict"]["graph_edit.effects"]
         checkpoint["state_dict"]["graph_edit.effects_mlp.1.weight"] = torch.zeros(2, 2)
@@ -231,8 +231,8 @@ class CheckpointLayoutTest(unittest.TestCase):
 
     def test_a_checkpoint_from_a_newer_dias_is_refused(self):
         """Loading it as-is would mean guessing what its keys mean."""
-        directory = self.enterContext(tempfile.TemporaryDirectory())
-        path = Path(directory) / "future.ckpt"
+        directory = temp_dir(self)
+        path = directory / "future.ckpt"
         checkpoint = build_v1_checkpoint()
         checkpoint[VERSION_KEY] = CHECKPOINT_VERSION + 1
         torch.save(checkpoint, path)
@@ -241,8 +241,8 @@ class CheckpointLayoutTest(unittest.TestCase):
 
     def test_a_v1_checkpoint_missing_a_renamed_key_still_loads(self):
         """Not every old checkpoint contains everything a later version renamed."""
-        directory = self.enterContext(tempfile.TemporaryDirectory())
-        path = Path(directory) / "sparse.ckpt"
+        directory = temp_dir(self)
+        path = directory / "sparse.ckpt"
         checkpoint = build_v1_checkpoint()
         del checkpoint["hyper_parameters"]["loss_weight_schedule"]
         torch.save(checkpoint, path)

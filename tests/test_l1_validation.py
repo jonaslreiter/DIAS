@@ -9,11 +9,11 @@ lower the score.
 
 import random
 import re
-import tempfile
 import unittest
 from pathlib import Path
 
 from dias.validation.l1 import ModelValidation
+from support import temp_dir
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DOMAIN = PROJECT_ROOT / "pddl" / "blocks-3" / "domain.pddl"
@@ -26,7 +26,7 @@ SAMPLE_POPULATION = 20
 
 class L1ValidationTest(unittest.TestCase):
     def validate(self, learned_domain_text: str) -> dict:
-        directory = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        directory = temp_dir(self)
         learned = directory / "learned.pddl"
         learned.write_text(learned_domain_text)
         random.seed(SAMPLE_SEED)
@@ -55,7 +55,7 @@ class L1ValidationTest(unittest.TestCase):
         self.assertGreater(result["fp"], 0)
 
     def test_setup_is_required_before_validate(self):
-        directory = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        directory = temp_dir(self)
         learned = directory / "learned.pddl"
         learned.write_text(DOMAIN.read_text())
         validation = ModelValidation(
