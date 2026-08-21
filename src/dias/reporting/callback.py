@@ -207,7 +207,7 @@ class SchemaChartCallback(L.Callback):
         return {
             "selection": charts.heatmap(
                 specs[SELECTION],
-                "Slot to object selection",
+                "Object selection",
                 assignments.numpy(),
                 columns=("action", "sample", "slot", "object", "weight"),
                 axis_labels=(
@@ -231,7 +231,8 @@ class SchemaChartCallback(L.Callback):
                 weights.numpy(),
                 columns=("action", "slot", "weight"),
                 axis_labels=(actions, _slots(weights.shape[-1])),
-                fields={"x": "slot", "y": "action", "value": "weight"},
+                # One strip per action; the panel has no second axis to place.
+                fields={"row_facet": "action", "x": "slot", "value": "weight"},
                 step=step,
             ),
         }

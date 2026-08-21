@@ -13,7 +13,7 @@ import dias
 from checkpoints import build_model
 from dias.reporting.callback import SchemaChartCallback
 from dias.reporting.charts import cells
-from dias.reporting.vega import SCHEMA, SELECTION, SLOT_WEIGHTS, SPECS
+from dias.reporting.vega import CELL, SCHEMA, SELECTION, SLOT_WEIGHTS, SPECS
 
 SPEC_IDS = {name: f"someone/{name}" for name in SPECS}
 
@@ -34,9 +34,38 @@ class CellsTest(unittest.TestCase):
 
 class VegaSpecTest(unittest.TestCase):
     def test_each_spec_is_shaped_for_the_chart_it_draws(self):
-        self.assertNotIn("facet", SPECS[SLOT_WEIGHTS])
         self.assertEqual(set(SPECS[SCHEMA]["facet"]), {"row", "column"})
         self.assertEqual(set(SPECS[SELECTION]["facet"]), {"row", "column"})
+        # Slot weights are one strip per action, so the panel has no y axis.
+        self.assertEqual(set(SPECS[SLOT_WEIGHTS]["facet"]), {"row"})
+        self.assertNotIn("y", SPECS[SLOT_WEIGHTS]["spec"]["layer"][0]["encoding"])
+
+    def test_a_value_cell_is_square_and_the_same_size_everywhere(self):
+        for name, spec in SPECS.items():
+            panel = spec.get("spec", spec)
+            with self.subTest(spec=name):
+                self.assertEqual(panel["width"], {"step": CELL})
+                self.assertEqual(
+                    panel["height"],
+                    {"step": CELL} if "y" in panel["layer"][0]["encoding"] else CELL,
+                )
+
+    def test_nothing_names_the_axis_it_sits_on(self):
+        """The values say what they are; a title would repeat it per panel."""
+        for name, spec in SPECS.items():
+            panel = spec.get("spec", spec)
+            titled = [
+                channel
+                for channel, encoding in panel["layer"][0]["encoding"].items()
+                if channel in ("x", "y")
+                and encoding.get("title", "missing") is not None
+            ] + [
+                side
+                for side, encoding in spec.get("facet", {}).items()
+                if encoding.get("title", "missing") is not None
+            ]
+            with self.subTest(spec=name):
+                self.assertEqual(titled, [])
 
     def test_no_panel_carries_a_colour_bar(self):
         """Every cell is labelled with its value; a legend repeats it.

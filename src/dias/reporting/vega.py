@@ -6,12 +6,22 @@ owns the run, so a clone of this repository draws its own charts instead of
 depending on a specification saved in somebody else's account.
 
 `${field:...}` placeholders are bound to table columns at log time and
-`${string:title}` to the panel's title. Axes are deliberately left untitled:
-Vega-Lite then labels them with the bound column names, which say what they
-are without a second set of strings to keep in step.
+`${string:title}` to the panel's title. Nothing is titled: what an axis holds
+is clear from the values along it, and every string here would be repeated on
+every panel of every chart.
+
+Selection and slot weights are separate charts, where the figures these
+replaced drew them side by side per action. A `facet` takes only a unit or
+layer spec, never a concat, so the two cannot share one panel without
+smuggling the weights in as an extra object column -- a different quantity on
+an axis that says it holds objects.
 """
 
 from __future__ import annotations
+
+# The edge of one value cell, in pixels. Every chart states it, so a cell is
+# square and the same size whichever chart it is in.
+CELL = 18
 
 # Where the ink has to switch from light to dark to stay readable on the cell
 # beneath it. A threshold scale takes one boundary fewer than it has colours.
@@ -23,12 +33,24 @@ _TEXT_ON = {
 }
 
 
-def _cells(scheme: str, reverse: bool) -> list[dict]:
-    """A grid of coloured cells with the value written into each one."""
+def _cells(scheme: str, reverse: bool, stacked: bool) -> list[dict]:
+    """A row of coloured cells with the value written into each one.
+
+    `stacked` gives them a second axis to spread over; without it the panel is
+    the single row a slot-weight strip needs.
+    """
     position = {
-        "x": {"field": "${field:x}", "type": "nominal", "axis": {"labelAngle": 0}},
-        "y": {"field": "${field:y}", "type": "nominal"},
+        "x": {
+            "field": "${field:x}",
+            "type": "nominal",
+            "title": None,
+            "axis": {"labelAngle": 0},
+        }
     }
+    if stacked:
+        position["y"] = {"field": "${field:y}", "type": "nominal", "title": None}
+
+    tooltip = [{"field": f"${{field:{axis}}}", "type": "nominal"} for axis in position]
     return [
         {
             "mark": {"type": "rect"},
@@ -48,14 +70,13 @@ def _cells(scheme: str, reverse: bool) -> list[dict]:
                     # and for a spec-wide `config.legend.disable`.
                     "legend": False,
                 },
-                "tooltip": [
-                    {"field": "${field:x}", "type": "nominal"},
-                    {"field": "${field:y}", "type": "nominal"},
+                "tooltip": tooltip
+                + [
                     {
                         "field": "${field:value}",
                         "type": "quantitative",
                         "format": ".4f",
-                    },
+                    }
                 ],
             },
         },
@@ -79,14 +100,29 @@ def _cells(scheme: str, reverse: bool) -> list[dict]:
     ]
 
 
-def _heatmap(scheme: str, reverse: bool = False, *, rows=False, columns=False) -> dict:
+def _heatmap(
+    scheme: str,
+    reverse: bool = False,
+    *,
+    rows: bool = False,
+    columns: bool = False,
+    stacked: bool = True,
+) -> dict:
     """One heatmap, optionally repeated over a row and/or a column field."""
-    panel: dict = {"layer": _cells(scheme, reverse)}
-    facet = {}
-    if rows:
-        facet["row"] = {"field": "${field:row_facet}", "type": "nominal"}
-    if columns:
-        facet["column"] = {"field": "${field:col_facet}", "type": "nominal"}
+    panel: dict = {
+        "layer": _cells(scheme, reverse, stacked),
+        "width": {"step": CELL},
+        "height": {"step": CELL} if stacked else CELL,
+    }
+    facet = {
+        side: {
+            "field": f"${{field:{side[:3]}_facet}}",
+            "type": "nominal",
+            "title": None,
+        }
+        for side, wanted in (("row", rows), ("column", columns))
+        if wanted
+    }
 
     return {
         "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
@@ -105,6 +141,7 @@ SLOT_WEIGHTS = "dias-slot-weights-heatmap"
 
 SPECS = {
     SCHEMA: _heatmap("redyellowblue", reverse=True, rows=True, columns=True),
+    # One strip per action, rather than one matrix with the actions down its side.
+    SLOT_WEIGHTS: _heatmap("viridis", rows=True, stacked=False),
     SELECTION: _heatmap("viridis", rows=True, columns=True),
-    SLOT_WEIGHTS: _heatmap("viridis"),
 }
