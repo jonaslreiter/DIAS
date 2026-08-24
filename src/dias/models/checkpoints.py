@@ -1,11 +1,18 @@
 """Reading checkpoints written before the format was versioned.
 
-The published format is version 1. Everything older is the single layout that
+The current format is version 1. Everything older is the single layout that
 came before it -- what the paper's runs were written with, which carried no
 stamp at all -- so an absent stamp means "older than 1" and one rule brings it
 up to date. The refactor that produced version 1 passed through several
 intermediate layouts, but none of them left the branch, so there is no format
 between the two and no rule for one.
+
+**Version 1 is still being written.** Until this work reaches main, another
+change to the layout belongs in `_from_unversioned` beside the rest; nothing
+carries a version-1 stamp that anyone else has to keep reading. After the
+merge that stops being true, and a change to what the model stores needs
+version 2 and a rule of its own -- editing this one would change what an
+already-published checkpoint means.
 
 Loading is driven by the stamp rather than by a failed load, because Lightning
 drops hyper-parameters it does not recognise instead of raising: a renamed one

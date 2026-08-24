@@ -4,11 +4,10 @@ The paper's trained checkpoints carry no format stamp and have exactly the keys
 listed below. Nothing here reads a real checkpoint: the dict is built by hand,
 so the layout stays documented even after the code that produced it is gone.
 
-That layout is the only one older than the published version 1, so it is the
-only one the migration has a rule for. Anything that renames a state-dict key
-or regroups a hyper-parameter from here on introduces a *second* older format,
-and needs a version of its own -- extending this rule in place would quietly
-change what an archived run means.
+That layout is the only one older than version 1, so it is the only one the
+migration has a rule for. While version 1 is still unmerged, a further rename
+or regrouping extends that rule and this record; once it is released, such a
+change makes a second older format and needs version 2 instead.
 """
 
 import unittest
