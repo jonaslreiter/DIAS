@@ -9,7 +9,7 @@ from dias.adjacency import dense_from_edges
 from dias.hparams import to_mapping
 from dias.schedules import Schedule, as_schedule
 
-from .checkpoints import CHECKPOINT_VERSION, VERSION_KEY, migrate
+from .checkpoints import CHECKPOINT_VERSION, UNVERSIONED, VERSION_KEY, migrate
 from .edges import EdgeTypeLayout
 from .encoder import DEFAULT_HIDDEN_DIMS, RelationalEncoder
 from .objectives import DiasObjective, Losses
@@ -129,7 +129,7 @@ class DIAS(L.LightningModule):
         archived run means.
         """
         checkpoint = torch.load(checkpoint_path, map_location="cpu")
-        version = checkpoint.get(VERSION_KEY, 1)
+        version = checkpoint.get(VERSION_KEY, UNVERSIONED)
         if version != CHECKPOINT_VERSION:
             logger.info("Reading a checkpoint written in format %d.", version)
             checkpoint = migrate(checkpoint)

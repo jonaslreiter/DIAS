@@ -1,10 +1,11 @@
-"""Reading checkpoints written before the models/ split.
+"""Reading checkpoints written before the format was versioned.
 
-Version 1 is what the paper's runs are: everything written before the models/
-split, which stamped nothing. Later versions each retire something a
-constructor no longer accepts. The intermediate numbers the refactor passed
-through never left the branch that produced them, so there is nothing to
-migrate from and no rule for them.
+The published format is version 1. Everything older is the single layout that
+came before it -- what the paper's runs were written with, which carried no
+stamp at all -- so an absent stamp means "older than 1" and one rule brings it
+up to date. The refactor that produced version 1 passed through several
+intermediate layouts, but none of them left the branch, so there is no format
+between the two and no rule for one.
 
 Loading is driven by the stamp rather than by a failed load, because Lightning
 drops hyper-parameters it does not recognise instead of raising: a renamed one
@@ -18,17 +19,18 @@ changed again, which is precisely the situation it exists to handle.
 from __future__ import annotations
 
 import re
-from typing import Callable
 
-CHECKPOINT_VERSION = 4
+CHECKPOINT_VERSION = 1
 VERSION_KEY = "dias_checkpoint_version"
+# What an absent stamp means: written before the stamp existed.
+UNVERSIONED = 0
 
 EXPONENTIAL = "dias.schedules.Exponential"
 CONSTANT = "dias.schedules.Constant"
 PIECEWISE_LINEAR = "dias.schedules.PiecewiseLinear"
 
-# v1 kept the whole schema flat on the prediction module and declared the
-# encoder's layers one attribute at a time.
+# The unversioned layout kept the whole schema flat on the prediction module
+# and declared the encoder's layers one attribute at a time.
 _SCHEMA_RENAMES = {
     "graph_edit.slot_encodings": "graph_edit.selector.slot_encodings",
     "graph_edit.slot_weight_logits": "graph_edit.selector.slot_weight_logits",
@@ -37,19 +39,45 @@ _SCHEMA_RENAMES = {
 }
 _ENCODER_LAYER = re.compile(r"^dynamics_model\.(conv|ln)(\d+)\.")
 _ENCODER_LISTS = {"conv": "convs", "ln": "norms"}
-# Post-rename encoder convolutions, for locating the last one.
+# Encoder convolutions after the rename, for locating the last one.
 _ENCODER_CONV = re.compile(r"^state_encoder\.convs\.(\d+)\.")
 
 # Derived from the constructor arguments, and rebuilt from them on load.
 _DROPPED_KEYS = ("graph_edit.action_arities_t", "_action_rel_lookup")
+
+# Hyper-parameters the constructor no longer takes. Plotting is a callback's
+# business now, and it affected no weights.
+_DROPPED_HPARAMS = ("parameter_plotting",)
 
 
 def _spec(class_path: str, **init_args) -> dict:
     return {"class_path": class_path, "init_args": init_args}
 
 
+def _drop_final_encoder_bias(state: dict) -> None:
+    """Remove the last convolution's bias, which the loss never saw.
+
+    Nothing is normalised after that convolution, so its bias added the same
+    vector to every object embedding; the slot scores are a plain inner
+    product, so it reached the assignment as a per-slot constant, which
+    Sinkhorn's row scaling removes exactly. Its gradient was therefore float32
+    round-off, which Adam normalised into a random walk. Discarding a learned
+    value is safe precisely because no learning ever reached it.
+
+    Which convolution is last follows `encoder_hidden_dims`, so the index is
+    read off the state dict rather than assumed.
+    """
+    indices = [
+        int(match.group(1))
+        for key in state
+        if (match := _ENCODER_CONV.match(key)) is not None
+    ]
+    if indices:
+        state.pop(f"state_encoder.convs.{max(indices)}.bias", None)
+
+
 def _migrate_state_dict(state: dict) -> None:
-    """Rename v1's parameters and drop what is no longer stored."""
+    """Rename the unversioned parameters and drop what is no longer stored."""
     if any(key.startswith("graph_edit.effects_mlp.") for key in state):
         raise ValueError(
             "This MLP-baseline checkpoint predates the activations between the "
@@ -69,17 +97,19 @@ def _migrate_state_dict(state: dict) -> None:
         state[renamed] = state.pop(key)
     for key in _DROPPED_KEYS:
         state.pop(key, None)
+    # After the rename, so it sees the current spelling either way.
+    _drop_final_encoder_bias(state)
 
 
 def _migrate_tau_schedule(hparams: dict) -> None:
-    """Rebuild tau from v1's schedule dictionary and its separate offset.
+    """Rebuild tau from the unversioned schedule dictionary and its offset.
 
-    v1 held a collection of named loss-weight schedules that only ever had one
-    member, and added `gmean_offset` to whatever it returned. The offset was an
-    asymptote the schedule had to be pre-scaled around, so it becomes the
-    floor; the decay itself was anchored on its value at step T rather than
-    stated as a rate, so ``factor`` per ``every`` steps replaces it. The
-    trajectory is identical, which is what the noise runs depend on.
+    That layout held a collection of named loss-weight schedules that only ever
+    had one member, and added `gmean_offset` to whatever it returned. The
+    offset was an asymptote the schedule had to be pre-scaled around, so it
+    becomes the floor; the decay itself was anchored on its value at step T
+    rather than stated as a rate, so ``factor`` per ``every`` steps replaces it.
+    The trajectory is identical, which is what the noise runs depend on.
     """
     if "loss_weight_schedule" not in hparams and "gmean_offset" not in hparams:
         return
@@ -108,68 +138,33 @@ def _migrate_tau_schedule(hparams: dict) -> None:
             else _spec(PIECEWISE_LINEAR, keypoints=keypoints)
         )
         return
-    raise ValueError(f"Unknown v1 schedule type {kind!r}")
+    raise ValueError(f"Unknown schedule type {kind!r}")
 
 
-def _from_v1(checkpoint: dict) -> None:
-    """Bring the layout the paper's runs were written with up to date."""
+def _from_unversioned(checkpoint: dict) -> None:
+    """Bring the layout the paper's runs were written with up to date.
+
+    Finding nothing to change is not an error: not every old checkpoint
+    contains everything version 1 renamed.
+    """
     if checkpoint.get("state_dict") is not None:
         _migrate_state_dict(checkpoint["state_dict"])
-    if checkpoint.get("hyper_parameters") is not None:
-        _migrate_tau_schedule(checkpoint["hyper_parameters"])
-
-
-def _from_v2(checkpoint: dict) -> None:
-    """Drop the plotting switches; reporting is a callback's business now."""
-    (checkpoint.get("hyper_parameters") or {}).pop("parameter_plotting", None)
-
-
-def _from_v3(checkpoint: dict) -> None:
-    """Drop the last encoder convolution's bias, which the loss never saw.
-
-    Nothing is normalised after that convolution, so its bias added the same
-    vector to every object embedding; the slot scores are a plain inner
-    product, so it reached the assignment as a per-slot constant, which
-    Sinkhorn's row scaling removes exactly. Its gradient was therefore float32
-    round-off, which Adam normalised into a random walk. Discarding a learned
-    value is safe precisely because no learning ever reached it.
-
-    The index of that convolution follows `encoder_hidden_dims`, so it is read
-    off the state dict rather than assumed.
-    """
-    state = checkpoint.get("state_dict")
-    if not state:
-        return
-    indices = [
-        int(match.group(1))
-        for key in state
-        if (match := _ENCODER_CONV.match(key)) is not None
-    ]
-    if indices:
-        state.pop(f"state_encoder.convs.{max(indices)}.bias", None)
-
-
-MIGRATIONS: tuple[tuple[int, str, Callable[[dict], None]], ...] = (
-    (2, "the models/ split: one module per part of the schema", _from_v1),
-    (3, "plotting left the model for a callback", _from_v2),
-    (4, "the final encoder convolution lost its unused bias", _from_v3),
-)
+    hparams = checkpoint.get("hyper_parameters")
+    if hparams is not None:
+        _migrate_tau_schedule(hparams)
+        for key in _DROPPED_HPARAMS:
+            hparams.pop(key, None)
 
 
 def migrate(checkpoint: dict) -> dict:
-    """Bring `checkpoint` up to the current version, in place.
-
-    A rule that finds nothing to change is not an error: not every older
-    checkpoint contains everything a later version renamed.
-    """
-    version = checkpoint.get(VERSION_KEY, 1)
+    """Bring `checkpoint` up to the current version, in place."""
+    version = checkpoint.get(VERSION_KEY, UNVERSIONED)
     if version > CHECKPOINT_VERSION:
         raise ValueError(
             f"This checkpoint was written by a newer version of dias "
             f"(format {version}, this one reads {CHECKPOINT_VERSION})."
         )
-    for target, _description, apply in MIGRATIONS:
-        if target > version:
-            apply(checkpoint)
+    if version < CHECKPOINT_VERSION:
+        _from_unversioned(checkpoint)
     checkpoint[VERSION_KEY] = CHECKPOINT_VERSION
     return checkpoint
