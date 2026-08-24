@@ -15,8 +15,8 @@ DEFAULT_HIDDEN_DIMS = (32, 64, 64, 64, 64)
 class RelationalEncoder(nn.Module):
     """Relational graph convolutions with LayerNorm + SiLU between layers.
 
-    One convolution per hidden dimension, plus a final one back down to
-    `latent_dim`. Each convolution has its own weights per edge type, which is
+    One convolution per hidden dimension, plus a final, bias-free one back down
+    to `latent_dim`. Each convolution has its own weights per edge type, which is
     what lets the encoder distinguish a relation from its reverse and both from
     an action self-loop.
     """
@@ -33,9 +33,22 @@ class RelationalEncoder(nn.Module):
         self.random_node_embeddings = random_node_embeddings
 
         widths = [latent_dim, *hidden_dims, latent_dim]
+        last = len(widths) - 2
         self.convs = nn.ModuleList(
-            FastRGCNConv(in_dim, out_dim, num_edge_types, aggr="add")
-            for in_dim, out_dim in zip(widths, widths[1:])
+            FastRGCNConv(
+                in_dim,
+                out_dim,
+                num_edge_types,
+                aggr="add",
+                # The last convolution has no bias. Nothing is normalised after
+                # it, so its bias would add the same vector to every object;
+                # the slot scores are a plain inner product, so that arrives at
+                # the assignment as a per-slot constant, which Sinkhorn's row
+                # scaling removes exactly. The loss could not see it, and Adam
+                # would turn its round-off gradient into a random walk.
+                bias=index != last,
+            )
+            for index, (in_dim, out_dim) in enumerate(zip(widths, widths[1:]))
         )
         self.norms = nn.ModuleList(nn.LayerNorm(dim) for dim in hidden_dims)
 

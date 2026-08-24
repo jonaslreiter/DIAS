@@ -20,7 +20,7 @@ from __future__ import annotations
 import re
 from typing import Callable
 
-CHECKPOINT_VERSION = 3
+CHECKPOINT_VERSION = 4
 VERSION_KEY = "dias_checkpoint_version"
 
 EXPONENTIAL = "dias.schedules.Exponential"
@@ -37,6 +37,8 @@ _SCHEMA_RENAMES = {
 }
 _ENCODER_LAYER = re.compile(r"^dynamics_model\.(conv|ln)(\d+)\.")
 _ENCODER_LISTS = {"conv": "convs", "ln": "norms"}
+# Post-rename encoder convolutions, for locating the last one.
+_ENCODER_CONV = re.compile(r"^state_encoder\.convs\.(\d+)\.")
 
 # Derived from the constructor arguments, and rebuilt from them on load.
 _DROPPED_KEYS = ("graph_edit.action_arities_t", "_action_rel_lookup")
@@ -122,9 +124,35 @@ def _from_v2(checkpoint: dict) -> None:
     (checkpoint.get("hyper_parameters") or {}).pop("parameter_plotting", None)
 
 
+def _from_v3(checkpoint: dict) -> None:
+    """Drop the last encoder convolution's bias, which the loss never saw.
+
+    Nothing is normalised after that convolution, so its bias added the same
+    vector to every object embedding; the slot scores are a plain inner
+    product, so it reached the assignment as a per-slot constant, which
+    Sinkhorn's row scaling removes exactly. Its gradient was therefore float32
+    round-off, which Adam normalised into a random walk. Discarding a learned
+    value is safe precisely because no learning ever reached it.
+
+    The index of that convolution follows `encoder_hidden_dims`, so it is read
+    off the state dict rather than assumed.
+    """
+    state = checkpoint.get("state_dict")
+    if not state:
+        return
+    indices = [
+        int(match.group(1))
+        for key in state
+        if (match := _ENCODER_CONV.match(key)) is not None
+    ]
+    if indices:
+        state.pop(f"state_encoder.convs.{max(indices)}.bias", None)
+
+
 MIGRATIONS: tuple[tuple[int, str, Callable[[dict], None]], ...] = (
     (2, "the models/ split: one module per part of the schema", _from_v1),
     (3, "plotting left the model for a callback", _from_v2),
+    (4, "the final encoder convolution lost its unused bias", _from_v3),
 )
 
 

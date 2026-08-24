@@ -75,6 +75,13 @@ V1_ENCODER_KEYS = tuple(
     for suffix in ("weight", "bias")
 )
 
+# The last convolution's bias, which v1 stored and the current encoder does not
+# declare: the loss could never see it (nothing is normalised after that layer,
+# so it shifted every object embedding alike, and Sinkhorn removes a per-slot
+# constant exactly). Archived runs carry a learned value for it, and dropping
+# that on load is what this key is here to pin.
+RETIRED_ENCODER_KEY = "dynamics_model.conv6.bias"
+
 
 # Hyper-parameters v1 had that the current constructor no longer takes. Each
 # refactor step that renames or regroups one adds it here and a rule to
@@ -118,6 +125,10 @@ def build_v1_checkpoint(marker: float = 0.125) -> dict:
         V1_HPARAMS["action_arities"]
     )
     state_dict["_action_rel_lookup"] = torch.tensor([[0, 1], [2, -1]])
+    # Not produced by the current model, so it is put back by hand -- with a
+    # value no zero-initialised bias would have, so a migration that kept it
+    # would be visible rather than plausible.
+    state_dict[RETIRED_ENCODER_KEY] = torch.full((V1_HPARAMS["object_dim"],), 0.75)
     for key in V1_SCHEMA_KEYS:
         state_dict[key] = torch.full_like(state_dict[key], marker)
     return {
@@ -146,7 +157,7 @@ class CheckpointLayoutTest(unittest.TestCase):
         model = DIAS(**constructor_args())
         self.assertEqual(
             {pre_split_name(key) for key in model.state_dict()},
-            set(V1_SCHEMA_KEYS + V1_ENCODER_KEYS),
+            set(V1_SCHEMA_KEYS + V1_ENCODER_KEYS) - {RETIRED_ENCODER_KEY},
         )
 
     def test_v1_checkpoint_loads_and_preserves_schema_values(self):
@@ -165,6 +176,17 @@ class CheckpointLayoutTest(unittest.TestCase):
                 rtol=0,
                 atol=0,
             )
+
+    def test_the_final_encoder_bias_is_dropped_on_load(self):
+        """A parameter no gradient ever reached, so nothing is lost with it."""
+        model = DIAS.load_from_checkpoint(
+            self.write_v1_checkpoint(), map_location="cpu"
+        )
+        state = model.state_dict()
+        self.assertNotIn(RETIRED_ENCODER_KEY, {pre_split_name(k) for k in state})
+        self.assertFalse([k for k in state if k.endswith("convs.5.bias")])
+        # The convolution itself is still there, weights and all.
+        self.assertIn("state_encoder.convs.5.weight", state)
 
     def test_v1_hparams_migrate_to_the_current_layout(self):
         path = self.write_v1_checkpoint()
