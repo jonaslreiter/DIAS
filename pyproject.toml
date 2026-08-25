@@ -63,3 +63,7 @@ extend-exclude = "/\\.venv-delivery/"
 profile = "black"
 src_paths = ["src", "tests", "scripts", "scaling"]
 extend_skip_glob = ["*/.venv-delivery/*"]
+# isort walks what it is pointed at and does not honour .gitignore (black does),
+# so `isort .` in a working checkout descends into thousands of run directories
+# and takes minutes. Skipping them by name keeps it under a second.
+extend_skip = ["logs", "local"]
