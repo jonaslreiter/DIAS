@@ -53,6 +53,12 @@ def sample_reachable_states(
         )
         num_samples = len(population)
 
+    logger.info(
+        "Sampling %d of the %d reachable states found%s.",
+        num_samples,
+        len(population),
+        "" if seed is None else f", seeded {seed}",
+    )
     return random.Random(seed).sample(population, num_samples)
 
 

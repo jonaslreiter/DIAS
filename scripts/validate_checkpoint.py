@@ -42,10 +42,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # for `import pipeline`
 
-from pipeline import (  # noqa: E402
+from pipeline import configure_logging  # noqa: E402
+from pipeline import (
     LOGS_DIR,
     VALIDATION_CONFIG,
     VALIDATORS,
+    add_logging_arguments,
     load_yaml,
     validator_class,
 )
@@ -131,7 +133,9 @@ def main() -> int:
     p.add_argument("--num-workers", type=int, default=1, help="mlp only.")
     p.add_argument("--batch-size", type=int, default=4096, help="mlp only.")
     p.add_argument("--out", type=Path, default=None, help="Write the result JSON here.")
+    add_logging_arguments(p)
     args = p.parse_args()
+    configure_logging(args)
 
     validation = validator_class(args.validator)(**_construction_kwargs(args))
     validation.setup(

@@ -237,6 +237,13 @@ class PddlGraphDataModule(L.LightningDataModule):
             self.metadata["num_objects"],
             [a["name"] for a in self.metadata["actions"]],
         )
+        logger.info(
+            "Sampling transitions: at least %d per action%s, walking at most "
+            "%d steps. This is the slow part on a large instance.",
+            self.quota.min_total,
+            f" and {self.quota.num_total} in total" if self.quota.num_total else "",
+            self.max_steps,
+        )
         samples = generate_random_walk(
             problem=self.problem,
             min_num_samples=self.quota.num_total,

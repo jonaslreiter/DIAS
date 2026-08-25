@@ -95,7 +95,8 @@ from typing import Callable
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # for `import pipeline`
 
-from pipeline import (  # noqa: E402
+from pipeline import configure_logging  # noqa: E402
+from pipeline import (
     EXPERIMENT_TYPES,
     EXPERIMENT_VALIDATOR,
     EXPERIMENTS_DIR,
@@ -103,6 +104,7 @@ from pipeline import (  # noqa: E402
     SLURM_RESOURCES,
     SLURM_RESOURCES_VALIDATION,
     add_domain_arguments,
+    add_logging_arguments,
     add_path_arguments,
     format_array,
     load_yaml,
@@ -662,7 +664,9 @@ def run_domain(plan: LaunchPlan, point: SweepPoint, domain: str) -> None:
         ]
         print(f"\n[{domain} seed={seed}] train  (run_id={run_id})", flush=True)
         try:
-            run_command(train_cmd, plan.dry_run)
+            # Not captured: this is the step that takes hours, and watching it
+            # is the only way to see where it is.
+            run_command(train_cmd, plan.dry_run, capture=False)
         except subprocess.CalledProcessError as error:
             print(f"[skip] {domain} seed={seed}: training failed ({error})", flush=True)
             continue
@@ -776,6 +780,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Log neither training nor validation to W&B (both backends).",
     )
     add_path_arguments(p, train_config=True)
+    add_logging_arguments(p)
     p.add_argument("--slurm-resources", type=Path, default=SLURM_RESOURCES)
     p.add_argument(
         "--slurm-resources-validation",
@@ -786,7 +791,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
-    plan = build_plan(parse_args(argv))
+    args = parse_args(argv)
+    # The local backend runs training and validation in this process, so their
+    # log lines need a handler; the Slurm backend only prints what it submits.
+    configure_logging(args)
+    plan = build_plan(args)
     describe(plan)
     execute(plan)
     print("\nDone submitting." if plan.backend == "slurm" else "\nDone.")

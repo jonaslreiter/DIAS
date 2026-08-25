@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pymimir
@@ -23,6 +24,8 @@ from .successors import (
     sample_reachable_states,
     transfer_states,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class ModelValidation:
@@ -114,6 +117,16 @@ class ModelValidation:
         transpiler.generate_action_schemas()
         for schema in transpiler.action_schemas:
             schema.name = f"{LEARNED_ACTION_PREFIX}{schema.name}"
+        logger.info(
+            "Read %d schemas off the checkpoint at threshold %g: %s.",
+            len(transpiler.action_schemas),
+            threshold,
+            ", ".join(
+                f"{schema.name} ({len(schema.preconditions)} preconditions, "
+                f"{len(schema.effects)} effects)"
+                for schema in transpiler.action_schemas
+            ),
+        )
         return transpiler
 
     @staticmethod

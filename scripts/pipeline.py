@@ -15,6 +15,7 @@ node with nothing but PyYAML installed.
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import shlex
 import subprocess
@@ -45,12 +46,21 @@ def load_yaml(path: Path) -> dict:
     return yaml.safe_load(Path(path).read_text())
 
 
-def run_command(cmd: list[str], dry_run: bool) -> str | None:
-    """Print a command and run it, or only print it."""
+def run_command(cmd: list[str], dry_run: bool, capture: bool = True) -> str | None:
+    """Print a command and run it, or only print it.
+
+    ``capture`` is what an sbatch call needs -- the job id comes back on
+    stdout. A long-running child such as a training run wants the opposite:
+    with ``capture=False`` it inherits this terminal, so its progress appears
+    while it happens rather than being swallowed and thrown away at the end.
+    """
     # shlex.join keeps the printed command copy-pasteable: sweep overrides can
     # carry a JSON value, whose quotes a plain join would lose.
     print("  " + shlex.join(cmd), flush=True)
     if dry_run:
+        return None
+    if not capture:
+        subprocess.run(cmd, check=True)
         return None
     out = subprocess.run(cmd, check=True, capture_output=True, text=True)
     return out.stdout.strip()
@@ -248,6 +258,40 @@ def add_path_arguments(
     parser.add_argument("--log-dir", type=Path, default=LOGS_DIR)
     if train_config:
         parser.add_argument("--train-config", type=Path, default=TRAIN_CONFIG)
+
+
+def add_logging_arguments(parser: argparse.ArgumentParser) -> None:
+    """``-v`` / ``-q``, which every script's entry point resolves the same way."""
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Report per-step detail as well as state changes.",
+    )
+    group.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Report only warnings and errors.",
+    )
+
+
+def configure_logging(args: argparse.Namespace | None = None) -> None:
+    """Install the one log handler a script gets.
+
+    Only entry points may do this -- the library reports through ``logging``
+    and configures nothing, which is what keeps ``dias`` importable inside
+    someone else's application. ``DIAS_LOG_LEVEL`` overrides the default for a
+    script whose CLI has no flag for it, such as a Slurm job.
+    """
+    level = logging.INFO
+    if getattr(args, "verbose", False):
+        level = logging.DEBUG
+    elif getattr(args, "quiet", False):
+        level = logging.WARNING
+    level = os.environ.get("DIAS_LOG_LEVEL", "").upper() or level
+    logging.basicConfig(level=level, format="%(name)s: %(message)s")
 
 
 def select_domains(domain_settings: dict, requested: list[str] | None) -> list[str]:

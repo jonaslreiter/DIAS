@@ -2,6 +2,7 @@
 
 import logging
 import random
+import time
 from collections import deque
 
 import torch
@@ -9,6 +10,26 @@ import torch
 from dias.schema.domain import tensor_relations
 
 logger = logging.getLogger(__name__)
+
+# How often a long exploration says where it is. Sampling a large instance can
+# run for minutes with nothing else on screen; anything shorter than this stays
+# silent, so short runs are not narrated.
+PROGRESS_INTERVAL_SECONDS = 10.0
+
+
+class _Progress:
+    """Report at most every ``PROGRESS_INTERVAL_SECONDS``, and only if asked twice."""
+
+    def __init__(self, message: str):
+        self.message = message
+        self.due = time.monotonic() + PROGRESS_INTERVAL_SECONDS
+
+    def report(self, *values) -> None:
+        now = time.monotonic()
+        if now < self.due:
+            return
+        self.due = now + PROGRESS_INTERVAL_SECONDS
+        logger.info(self.message, *values)
 
 
 def state_to_dict(state, include_statics=False):
@@ -70,8 +91,15 @@ def generate_random_walk(
         )
 
     steps = 0
+    progress = _Progress("Random walk: %d steps, %d samples, %d/%d actions at quota.")
     while steps < max_steps:
         steps += 1
+        progress.report(
+            steps,
+            len(samples),
+            sum(per_label.get(a, 0) >= min_per_label for a in action_names),
+            len(action_names),
+        )
         app = list(current.generate_applicable_actions())
         if not app:
             deadlocks += 1
@@ -122,7 +150,9 @@ def reachable_states(problem, limit: int) -> list:
     initial = problem.get_initial_state()
     visited = {initial.get_index(): initial}
     queue = deque([initial])
+    progress = _Progress("Reachable states: %d of at most %d, %d still to expand.")
     while queue and len(visited) < limit:
+        progress.report(len(visited), limit, len(queue))
         current = queue.popleft()
         for action in current.generate_applicable_actions():
             successor = action.apply(current)

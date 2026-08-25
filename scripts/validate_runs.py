@@ -33,27 +33,31 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import numbers
 import re
 import sys
-import traceback
 from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # for `import pipeline`
 
-from pipeline import (  # noqa: E402
+from pipeline import configure_logging  # noqa: E402
+from pipeline import (
     EXPERIMENT_TYPES,
     EXPERIMENT_VALIDATOR,
     PROJECT_ROOT,
     VALIDATORS,
     WANDB_ENTITY,
     WANDB_PROJECT,
+    add_logging_arguments,
     add_path_arguments,
     load_yaml,
     select_domains,
     validator_class,
 )
+
+logger = logging.getLogger("dias.validate")
 
 
 def run_id_for(experiment: str, domain: str, seed: int) -> str:
@@ -104,7 +108,14 @@ def validate_run(
     per_problem: dict[str, dict[str, Any]] = {}
     for problem in val_problems:
         stem = Path(problem).stem
-        print(f"--- validate {domain} seed={seed} problem={stem} ---", flush=True)
+        logger.info(
+            "Validating %s seed %d on %s (%d states of at most %d reachable).",
+            domain,
+            seed,
+            stem,
+            num_samples,
+            sample_population,
+        )
         try:
             v = ModelValidation(
                 model_id=run_id,
@@ -119,10 +130,19 @@ def validate_run(
             )
             result = v.validate()
         except Exception as e:  # noqa: BLE001 - one bad problem shouldn't sink the rest
-            traceback.print_exc()
+            logger.exception("Validation of %s failed.", stem)
             per_problem[stem] = {"error": str(e)}
             continue
         per_problem[stem] = {k: _plain(val) for k, val in result.items()}
+        logger.info(
+            "%s: precision %.3f, recall %.3f (tp=%s fp=%s fn=%s).",
+            stem,
+            result.get("precision", float("nan")),
+            result.get("recall", float("nan")),
+            result.get("tp", "?"),
+            result.get("fp", "?"),
+            result.get("fn", "?"),
+        )
 
     _write_json(
         logs_dir,
@@ -185,7 +205,7 @@ def _write_json(
             default=str,
         )
     )
-    print(f"wrote {out}", flush=True)
+    logger.info("Wrote %s.", out)
 
 
 def _log_to_wandb(
@@ -218,7 +238,7 @@ def _log_to_wandb(
     except (
         Exception
     ) as e:  # noqa: BLE001 - W&B is optional; JSON is the source of truth
-        print(f"[warn] W&B logging skipped: {e}", file=sys.stderr)
+        logger.warning("W&B logging skipped: %s", e)
 
 
 def main() -> int:
@@ -249,8 +269,10 @@ def main() -> int:
         "re-validation at another --threshold leaves the original JSONs alone.",
     )
     add_path_arguments(p)
+    add_logging_arguments(p)
     p.add_argument("--no-wandb", action="store_true", help="Skip W&B logging.")
     args = p.parse_args()
+    configure_logging(args)
 
     domain_settings = load_yaml(args.domain_settings)
     select_domains(domain_settings, [args.domain])

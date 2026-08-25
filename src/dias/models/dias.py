@@ -116,6 +116,38 @@ class DIAS(L.LightningModule):
 
         self.automatic_optimization = False
 
+        # What the ablation flags actually did. They are otherwise visible only
+        # in the saved config, which is not where anyone looks when a run is
+        # behaving unlike its neighbours.
+        auxiliary = [
+            name
+            for name, active in (
+                ("effects", use_effect_loss),
+                ("preconditions", use_precondition_loss),
+            )
+            if active
+        ]
+        logger.info(
+            "DIAS: %d slots over %d objects, %d relations, %d actions, "
+            "%s parameters.",
+            self.num_slots,
+            num_objects,
+            self.num_relations,
+            num_actions,
+            f"{sum(p.numel() for p in self.parameters()):,}",
+        )
+        logger.info(
+            "Effects are %s; auxiliary losses %s at weight %g, combined by %s.",
+            (
+                "predicted from the state"
+                if state_dependent_effects
+                else "a lifted tensor"
+            ),
+            ", ".join(auxiliary) if auxiliary else "off",
+            aux_loss_weight,
+            type(self.gradients).__name__,
+        )
+
     def on_save_checkpoint(self, checkpoint: dict) -> None:
         checkpoint[VERSION_KEY] = CHECKPOINT_VERSION
 

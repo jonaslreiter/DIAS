@@ -12,6 +12,8 @@ from lightning.pytorch.loggers import Logger
 from dias.data.datamodule import PddlGraphDataModule  # noqa: F401  (registered for CLI)
 from dias.models.dias import DIAS  # noqa: F401  (registered for CLI)
 
+logger = logging.getLogger("dias.run")
+
 warnings.filterwarnings("ignore", message=".*Can't initialize NVML.*")
 warnings.filterwarnings("ignore", message=".*Lightning on SLURM.*")
 
@@ -34,6 +36,28 @@ class CLI(LightningCLI):
                 apply_on="instantiate",
             )
 
+    def before_instantiate_classes(self):
+        """Say what this run is, before anything slow starts.
+
+        A run is composed from two or three config files and then overridden on
+        the command line, so which domain it ended up on is not something a
+        reader can see from the command they typed. Reported from the parsed
+        config rather than from the datamodule, so it comes first.
+        """
+        super().before_instantiate_classes()
+        config = self.config.get(self.subcommand, self.config)
+        logger.info(
+            "Composed from %s.",
+            ", ".join(str(path) for path in config.get("config") or []) or "defaults",
+        )
+        data = config.get("data", {}).get("init_args", {})
+        logger.info(
+            "Training on %s / %s, seed %s.",
+            data.get("domain_path"),
+            data.get("problem_path"),
+            config.get("seed_everything"),
+        )
+
 
 class SaveAndLogConfigCallback(SaveConfigCallback):
     """Save config to the logger run directory and log all hyper-parameters."""
@@ -44,6 +68,10 @@ class SaveAndLogConfigCallback(SaveConfigCallback):
             os.makedirs(Path(trainer.log_dir) / run_dir, exist_ok=True)
             self.config_filename = run_dir / self.config_filename
             super().setup(trainer, pl_module, stage)
+            # The one line a user needs when a run lands somewhere unexpected.
+            logger.info("Writing this run to %s.", Path(trainer.log_dir) / run_dir)
+        else:
+            logger.info("Writing this run to %s.", trainer.default_root_dir)
 
     def save_config(self, trainer, pl_module, stage):
         if isinstance(trainer.logger, Logger):

@@ -44,10 +44,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # for `import pipeline`
 
-from pipeline import (  # noqa: E402
+from pipeline import configure_logging  # noqa: E402
+from pipeline import (
     PROJECT_ROOT,
     SLURM_RESOURCES_VALIDATION,
     add_domain_arguments,
+    add_logging_arguments,
     add_path_arguments,
     format_array,
     load_yaml,
@@ -221,12 +223,14 @@ def main() -> int:
         help="Submit even when some (domain, seed) has no checkpoint yet.",
     )
     add_path_arguments(p)
+    add_logging_arguments(p)
     p.add_argument(
         "--slurm-resources-validation",
         type=Path,
         default=SLURM_RESOURCES_VALIDATION,
     )
     args = p.parse_args()
+    configure_logging(args)
 
     domain_settings = load_yaml(args.domain_settings)
     domains = select_domains(domain_settings, args.domains)

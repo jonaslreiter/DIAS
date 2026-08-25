@@ -60,10 +60,12 @@ from launch_threshold_validation import (  # noqa: E402
     THRESHOLD_VALUES,
     threshold_experiment_name,
 )
-from pipeline import (  # noqa: E402
+from pipeline import configure_logging  # noqa: E402
+from pipeline import (
     LOGS_DIR,
     WANDB_ENTITY,
     WANDB_PROJECT,
+    add_logging_arguments,
 )
 
 ONE = 1.0 - 1e-9
@@ -541,7 +543,9 @@ def main() -> int:
         help="Also write the tables to this markdown file: one table per metric "
         "with --sweep / --threshold-sweep, one table per experiment otherwise.",
     )
+    add_logging_arguments(p)
     args = p.parse_args()
+    configure_logging(args)
 
     experiments = list(dict.fromkeys(args.experiment))
     sweeping = args.sweep is not None or args.threshold_sweep is not None
