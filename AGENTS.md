@@ -15,7 +15,7 @@ The core problem setting is:
 
 ## Repository Truths
 
-- The installable package is `dias`, defined via `pyproject.toml` with console entry point `dias-train = dias.main:main`. Dev tooling is a PEP 735 `[dependency-groups] dev` table, not an extra (`pip install -e . --group dev`), so it stays out of the published wheel metadata. `configs/` and `pddl/` are **not** package data: `pip install dias` gives the library and the CLI, and reproducing the paper means cloning the repository.
+- The installable package is `dias`, defined via `pyproject.toml` with console entry point `dias-train = dias.main:main`. **It is installed from a clone (`pip install -e .`), never from PyPI** -- the name is taken there by an unrelated project -- so `pyproject.toml` carries only what pip itself uses and no index-only metadata (no classifiers, keywords or project URLs); do not re-add them without a decision to publish. Dev tooling is a PEP 735 `[dependency-groups] dev` table, not an extra (`pip install -e . --group dev`), so it stays out of the installed metadata. `configs/` and `pddl/` are **not** package data: the library and the CLI are what gets installed, and every documented command runs from inside the checkout.
 - Main source code lives under `src/dias/`.
 - PDDL assets live under `pddl/`.
 - The per-domain manifest is `pddl/domain-settings.yaml`: a domain file and its problem list, nothing else. It holds neither `data_overrides` nor `strips_yaml` — `schema/domain.py` finds `strips+.yaml` beside the domain file by convention.

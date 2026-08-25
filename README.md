@@ -47,19 +47,17 @@ none.
 
 ## Install
 
-```bash
-pip install dias
-```
-
-That gives you the library and the `dias-train` command. The 13 PDDL domains and
-the config chain used in the paper live in this repository rather than in the
-wheel, so to reproduce anything, clone it:
+DIAS is installed from a clone, not from a package index:
 
 ```bash
 git clone https://github.com/jonaslreiter/DIAS.git
 cd DIAS
 pip install -e .
 ```
+
+That gives you the library and the `dias-train` command. The 13 PDDL domains,
+the config chain and the experiment scripts are the repository itself, so
+everything below is run from inside the checkout.
 
 Python 3.10+. A CUDA GPU for full-size runs; the quickstart below is CPU-only.
 [pymimir](https://pypi.org/project/pymimir/) does the PDDL parsing and grounding

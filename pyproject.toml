@@ -2,6 +2,11 @@
 requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
 
+# This project is installed from a clone (`pip install -e .`), not from PyPI --
+# the name is taken there by an unrelated package. What is left below is what
+# pip itself uses: the name and version it records, the interpreter and
+# dependency requirements it enforces, and the console script it creates.
+# Index-only metadata (classifiers, keywords, project URLs) is deliberately absent.
 [project]
 name = "dias"
 description = "Differentiable induction of lifted STRIPS action schemas from state transitions"
@@ -12,26 +17,6 @@ license-files = ["LICENSE"]
 authors = [
     { name = "Jonas Reiter" },
     { name = "Jakob Elias Gebler" },
-]
-keywords = [
-    "classical planning",
-    "action model learning",
-    "PDDL",
-    "STRIPS",
-    "graph neural networks",
-    "neuro-symbolic",
-]
-classifiers = [
-    # No license classifier: PEP 639 supersedes it with the `license` expression
-    # above, and setuptools now refuses a project that carries both.
-    "Development Status :: 4 - Beta",
-    "Intended Audience :: Science/Research",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 # Lower bounds are the oldest release the code is written against; the upper
 # bound on pymimir is a compatible-release clause because it is pre-1.0 and
@@ -49,20 +34,14 @@ dependencies = [
 ]
 dynamic = ["version"]
 
-[project.urls]
-Homepage = "https://github.com/jonaslreiter/DIAS"
-Repository = "https://github.com/jonaslreiter/DIAS"
-Paper = "https://arxiv.org/abs/2605.13282"
-Issues = "https://github.com/jonaslreiter/DIAS/issues"
-
 [project.scripts]
 dias-train = "dias.main:main"
 
-# PEP 735 groups rather than an extra: extras are published in the wheel's
-# metadata, which would make `pip install dias[dev]` part of the public API.
-# Groups stay local to the repository. Needs pip >= 25.1.
+# PEP 735 groups rather than an extra: an extra is recorded in the installed
+# metadata and travels with the package, while a group is a property of this
+# checkout -- which is what dev tooling is. Needs pip >= 25.1.
 [dependency-groups]
-dev = ["pytest>=8", "coverage>=7", "black>=24", "isort>=5.13", "build>=1.2"]
+dev = ["pytest>=8", "coverage>=7", "black>=24", "isort>=5.13"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
