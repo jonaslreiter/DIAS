@@ -51,6 +51,12 @@ version = { attr = "dias.__version__" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+filterwarnings = [
+    # Raised once per config chain the test suite parses: Lightning objects to
+    # `args=` while sys.argv also holds pytest's own arguments. Passing args is
+    # exactly how a CLI is driven from a test.
+    "ignore:.*args parameter is intended.*",
+]
 
 [tool.black]
 # Without this, black targets the newest Python it knows and warns that the
