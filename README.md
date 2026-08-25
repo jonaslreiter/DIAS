@@ -89,18 +89,18 @@ steps will not recover gripper; the paper's runs take 10 000. Drop
 
 ### Choosing a domain
 
-`configs/main.yaml` names one `(domain_path, problem_path)` pair. Override it
-rather than editing the file:
+Compose that domain's config. It carries both the domain's files and its tuned
+hyperparameters, and it is layered after the base config, so it wins:
 
 ```bash
-dias-train fit --config configs/main.yaml --config pddl/hanoi/config.yaml \
-    --data.init_args.domain_path=pddl/hanoi/domain.pddl \
-    --data.init_args.problem_path=pddl/hanoi/train.pddl
+dias-train fit --config configs/main.yaml --config pddl/hanoi/config.yaml
 ```
 
-Note that `pddl/<domain>/config.yaml` carries only that domain's *tuned
-hyperparameters* — it does not select the domain. `scripts/launch.py` composes
-both for you; see [docs/experiments.md](docs/experiments.md).
+`configs/main.yaml` names a domain of its own (gripper) so that it can be run
+on its own, as the quickstart above does. Any single value is still overridable
+on the command line — `--data.init_args.problem_path=...` to train on a
+different instance of the same domain, for example — because command-line
+arguments are applied last of all.
 
 ### Weights & Biases
 
@@ -115,9 +115,12 @@ slot weights, with a step slider.
 ### Your own PDDL
 
 Point `domain_path` / `problem_path` at any domain whose predicates are unary or
-binary and whose actions are STRIPS with injective parameter binding. Adding it
-to `pddl/domain-settings.yaml` (a domain file plus its problem list) is what
-makes it available to the sweep launcher.
+binary and whose actions are STRIPS with injective parameter binding. To make it
+a domain like the 13 below, give it a `pddl/<name>/` folder with its own
+`config.yaml` (the paths, plus whatever it needs tuned) and an entry in
+`pddl/domain-settings.yaml` (the domain file and its problem list). The two must
+agree — the test suite checks that they do — and the manifest entry is what
+makes the domain available to the sweep launcher.
 
 ## The 13 domains
 

@@ -1,6 +1,13 @@
-# Per-domain overrides for 'delivery', composed after configs/main.yaml.
+# Per-domain config for 'delivery', composed after configs/main.yaml:
+#   dias-train fit --config configs/main.yaml --config pddl/delivery/config.yaml
+#
+# The paths below are what make that command train delivery rather than
+# whichever domain the base config happens to name. They must agree with
+# pddl/domain-settings.yaml, which the test suite checks.
 data:
   init_args:
+    domain_path: pddl/delivery/domain.pddl
+    problem_path: pddl/delivery/train.pddl
     min_per_label_train: 1000
     min_per_label_valid: 500
     max_per_label_train: 2000

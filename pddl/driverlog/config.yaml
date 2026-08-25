@@ -1,6 +1,13 @@
-# Per-domain overrides for 'driverlog', composed after configs/main.yaml.
+# Per-domain config for 'driverlog', composed after configs/main.yaml:
+#   dias-train fit --config configs/main.yaml --config pddl/driverlog/config.yaml
+#
+# The paths below are what make that command train driverlog rather than
+# whichever domain the base config happens to name. They must agree with
+# pddl/domain-settings.yaml, which the test suite checks.
 data:
   init_args:
+    domain_path: pddl/driverlog/domain.pddl
+    problem_path: pddl/driverlog/train.pddl
     min_per_label_train: 2000
     min_per_label_valid: 1000
     max_per_label_train: 3000

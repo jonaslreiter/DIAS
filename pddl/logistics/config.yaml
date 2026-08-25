@@ -1,5 +1,15 @@
-# Per-domain overrides for 'logistics', composed after configs/main.yaml.
-# Sampling is main.yaml's default; only the auxiliary weight is tuned.
+# Per-domain config for 'logistics', composed after configs/main.yaml:
+#   dias-train fit --config configs/main.yaml --config pddl/logistics/config.yaml
+#
+# The paths below are what make that command train logistics rather than
+# whichever domain the base config happens to name. They must agree with
+# pddl/domain-settings.yaml, which the test suite checks.
+#
+# Sampling stays at main.yaml's default; only the auxiliary weight is tuned.
+data:
+  init_args:
+    domain_path: pddl/logistics/domain.pddl
+    problem_path: pddl/logistics/train.pddl
 model:
   init_args:
     aux_loss_weight: 0.3
