@@ -21,6 +21,7 @@ from .decoding import process_model_logits
 from .successors import (
     LEARNED_ACTION_PREFIX,
     compare_successors,
+    resolve_sample_seed,
     sample_reachable_states,
     transfer_states,
 )
@@ -160,8 +161,10 @@ class ModelValidation:
         sample_population: int = 500,
         seed: int | None = None,
     ):
+        # Recorded, so a result drawn without a fixed seed can still be redrawn.
+        self.sample_seed = resolve_sample_seed(seed)
         states = sample_reachable_states(
-            self.original_problem, num_samples, sample_population, seed
+            self.original_problem, num_samples, sample_population, self.sample_seed
         )
         self.state_set = transfer_states(
             states, self.merged_problem, self.original_domain, self.merged_domain

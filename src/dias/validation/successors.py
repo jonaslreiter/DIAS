@@ -22,19 +22,29 @@ logger = logging.getLogger(__name__)
 LEARNED_ACTION_PREFIX = "learned_"
 
 
+def resolve_sample_seed(seed: int | None) -> int:
+    """The seed to draw with, drawn itself when the caller named none.
+
+    An *unfixed* draw and an *unrecorded* one are different things. The states
+    a result is computed on stay a fresh sample per run -- nothing in this
+    pipeline pins a draw to a constant -- but the seed that produced them is
+    written into the result, so passing it back reproduces those exact states.
+    """
+    return random.randrange(2**32) if seed is None else seed
+
+
 def sample_reachable_states(
     problem,
     num_samples: int,
     sample_population: int,
-    seed: int | None = None,
+    seed: int,
 ) -> list:
     """Draw `num_samples` distinct states from a BFS over `problem`.
 
-    Unseeded by default, so repeated runs see different states. Passing a
-    `seed` fixes which ones, which is what makes a result reproducible later
-    and lets two validators be compared on the same states. Either way the
-    draw comes from a generator of its own, never the global one, so it
-    neither depends on nor disturbs anything else's random state.
+    `seed` decides which ones, and callers get it from `resolve_sample_seed`,
+    so there is no path here that draws without a seed something recorded. The
+    draw comes from a generator of its own, never the global one, so it neither
+    depends on nor disturbs anything else's random state.
     """
     if num_samples > sample_population:
         logger.warning(
@@ -54,10 +64,10 @@ def sample_reachable_states(
         num_samples = len(population)
 
     logger.info(
-        "Sampling %d of the %d reachable states found%s.",
+        "Sampling %d of the %d reachable states found, seeded %d.",
         num_samples,
         len(population),
-        "" if seed is None else f", seeded {seed}",
+        seed,
     )
     return random.Random(seed).sample(population, num_samples)
 

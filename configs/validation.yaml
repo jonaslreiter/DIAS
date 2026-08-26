@@ -17,6 +17,10 @@ sample_population: 500
 # a sweep varies the training sample from seed to seed -- so fixing only the
 # validation states would claim a reproducibility the reported numbers do not
 # have. Each run scores on its own sample.
+#
+# Unfixed is not unrecorded: when this is null a seed is drawn and written into
+# the result JSON, and setting it back here scores the next run on exactly
+# those states.
 sample_seed: null
 
 # Which problems (from the manifest's `problems` list) to validate on.

@@ -114,6 +114,32 @@ class ValidationCharacterizationTest(unittest.TestCase):
         """Which states are drawn is seeded, so a result can be reproduced."""
         self.assertEqual(self.validate(), self.validate())
 
+    def test_an_unseeded_run_records_the_seed_that_reproduces_it(self):
+        """Unfixed is not the same as unrecorded.
+
+        `configs/validation.yaml` leaves `sample_seed` unset, so each run scores
+        on its own sample. What makes such a result checkable afterwards is
+        that the seed it drew with is written into the result JSON and, passed
+        back, redraws exactly those states.
+        """
+        directory = temp_dir(self)
+        model_id = build_checkpoint(directory)
+
+        def run(seed):
+            validation = ModelValidation(
+                model_id, str(directory), problem_path=str(TEST_PROBLEM)
+            )
+            validation.setup(
+                num_samples=NUM_SAMPLES,
+                sample_population=SAMPLE_POPULATION,
+                seed=seed,
+            )
+            return validation.sample_seed, validation.validate()
+
+        drawn, result = run(None)
+        self.assertIsInstance(drawn, int)
+        self.assertEqual(run(drawn), (drawn, result))
+
 
 if __name__ == "__main__":
     unittest.main()

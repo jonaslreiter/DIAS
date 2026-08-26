@@ -121,7 +121,8 @@ def main() -> int:
         "--sample-seed",
         type=int,
         default=defaults.get("sample_seed"),
-        help="Fix the state draw. Unset means a fresh, unreproducible sample.",
+        help="Fix the state draw. Unset draws freshly; either way the seed "
+        "used is reported and reproduces the same states.",
     )
     p.add_argument(
         "--threshold",
@@ -144,6 +145,9 @@ def main() -> int:
         seed=args.sample_seed,
     )
     result = validation.validate()
+    # The seed the states were drawn with, configured or drawn: passing it back
+    # as --sample-seed scores the next run on exactly these states.
+    result = {"sample_seed": validation.sample_seed, **result}
 
     text = json.dumps(result, indent=2, default=str)
     print(text)

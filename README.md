@@ -154,6 +154,27 @@ sensitivity study and the aggregation options are all in
 **[docs/experiments.md](docs/experiments.md)**. The separate instance-size
 scaling study has its own [scaling/README.md](scaling/README.md).
 
+### What is and is not reproducible
+
+Validation scores a learned schema on states sampled from each held-out
+problem, and that draw is **not** fixed to a constant: `sample_seed` in
+`configs/validation.yaml` is unset, so every run scores on its own sample, the
+way every run also trains on its own. Each result JSON records the seed its
+states were drawn with, so any number can be re-derived afterwards by putting
+that seed back into `configs/validation.yaml`.
+
+Training itself is reproducible from `(domain, seed)` only if you ask for it.
+Float addition is not associative, so a parallel reduction's result depends on
+how the work was split, and on a GPU the encoder's scatter-add is nondeterministic
+by default: two runs of one seed give slightly different weights. Pass
+`--trainer.deterministic=true` (Lightning's own flag; it selects deterministic
+kernels and sets `CUBLAS_WORKSPACE_CONFIG`) and a run becomes bit-identical on
+re-run, at no measurable throughput cost here — 82–94 ms/step on gripper either
+way, which is inside the run-to-run spread. It is off by default because it
+raises on any operation without a deterministic implementation, which is a poor
+way for a 130-run sweep to fail; `--trainer.deterministic=warn` is the middle
+setting.
+
 ### Running on your own cluster
 
 `scripts/slurm/train.sh`, `scripts/slurm/validate.sh` and

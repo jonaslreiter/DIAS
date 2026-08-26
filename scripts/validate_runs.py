@@ -85,6 +85,10 @@ def validate_run(
     (default: *experiment*) only picks the directory the JSON is written to, so
     a re-validation at another *threshold* can be kept apart from the original.
     """
+    # Imported here, not at module scope: submitting jobs must not need torch
+    # or pymimir, and this is the compute side of the script.
+    from dias.validation.successors import resolve_sample_seed
+
     run_id = run_id or run_id_for(experiment, domain, seed)
     results_experiment = results_experiment or experiment
     spec = domain_settings[domain]
@@ -102,7 +106,11 @@ def validate_run(
     num_samples = int(val_cfg["num_samples"])
     sample_population = int(val_cfg["sample_population"])
     configured_seed = val_cfg.get("sample_seed")
-    sample_seed = None if configured_seed is None else int(configured_seed)
+    # Resolved once for the whole run, so every problem of a seed is drawn from
+    # one seed and re-running with it reproduces all of them together.
+    sample_seed = resolve_sample_seed(
+        None if configured_seed is None else int(configured_seed)
+    )
     extra_kwargs = {"threshold": threshold} if validator.binarizes_schema else {}
 
     per_problem: dict[str, dict[str, Any]] = {}
@@ -195,8 +203,9 @@ def _write_json(
                 "seed": seed,
                 "run_id": run_id,
                 "threshold": threshold,
-                # null means the states were drawn unseeded, so these numbers
-                # are one sample and not reproducible.
+                # Always a number, whether it was configured or drawn: passing
+                # it back as configs/validation.yaml's sample_seed reproduces
+                # exactly the states these numbers were computed on.
                 "sample_seed": sample_seed,
                 "status": "ok" if ok else "validation_failed",
                 "per_problem": per_problem,
