@@ -1,5 +1,5 @@
 # Per-domain config for 'blocks-3', composed after configs/main.yaml:
-#   dias-train fit --config configs/main.yaml --config pddl/blocks-3/config.yaml
+#   dias fit --config configs/main.yaml --config pddl/blocks-3/config.yaml
 #
 # The paths below are what make that command train blocks-3 rather than
 # whichever domain the base config happens to name. They must agree with

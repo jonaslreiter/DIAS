@@ -35,7 +35,7 @@ dependencies = [
 dynamic = ["version"]
 
 [project.scripts]
-dias-train = "dias.main:main"
+dias = "dias.main:main"
 
 # PEP 735 groups rather than an extra: an extra is recorded in the installed
 # metadata and travels with the package, while a group is a property of this

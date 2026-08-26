@@ -2,10 +2,10 @@
 #
 # Composed last, after `configs/main.yaml` and `pddl/<domain>/config.yaml`:
 #
-#   dias-train fit --config configs/main.yaml \
-#                  --config pddl/blocks-3/config.yaml \
-#                  --config scaling/configs/scaling.yaml \
-#                  --data.init_args.problem_path scaling/instances/blocks-3/n0068.pddl
+#   dias fit --config configs/main.yaml \
+#            --config pddl/blocks-3/config.yaml \
+#            --config scaling/configs/scaling.yaml \
+#            --data.init_args.problem_path scaling/instances/blocks-3/n0068.pddl
 #
 # scaling/benchmark.py builds exactly that chain and adds the timing callback,
 # so what is measured is the ordinary DIAS training step, not a stand-in.

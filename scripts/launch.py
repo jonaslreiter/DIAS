@@ -651,7 +651,7 @@ def run_domain(plan: LaunchPlan, point: SweepPoint, domain: str) -> None:
     for seed in plan.seeds:
         run_id = run_id_for(point.experiment, domain, seed)
         train_cmd = [
-            "dias-train",
+            "dias",
             "fit",
             *plan.train_args(point, domain),
             "--seed_everything",

@@ -55,7 +55,7 @@ cd DIAS
 pip install -e .
 ```
 
-That gives you the library and the `dias-train` command. The 13 PDDL domains,
+That gives you the library and the `dias` command. The 13 PDDL domains,
 the config chain and the experiment scripts are the repository itself, so
 everything below is run from inside the checkout.
 
@@ -68,7 +68,7 @@ and is held to `~=0.13.62`.
 Train on the smallest domain, on CPU, with no Weights & Biases account:
 
 ```bash
-dias-train fit --config configs/main.yaml \
+dias fit --config configs/main.yaml \
     --trainer.accelerator=cpu --trainer.max_steps=300 \
     --trainer.val_check_interval=100 --trainer.logger=false \
     --trainer.default_root_dir=logs/dias/quickstart
@@ -95,7 +95,7 @@ Compose that domain's config. It carries both the domain's files and its tuned
 hyperparameters, and it is layered after the base config, so it wins:
 
 ```bash
-dias-train fit --config configs/main.yaml --config pddl/hanoi/config.yaml
+dias fit --config configs/main.yaml --config pddl/hanoi/config.yaml
 ```
 
 `configs/main.yaml` names a domain of its own (gripper) so that it can be run
@@ -196,7 +196,7 @@ GRES; change it to `gpu:1` if your site does not define it.
 
 ```
 src/dias/
-├── main.py           LightningCLI entry point (also `dias-train`)
+├── main.py           LightningCLI entry point (also `dias`)
 ├── models/           the model: selection, preconditions, effects, encoder,
 │                       objectives, PCGrad, checkpoint migration
 ├── data/             PDDL datamodule, transition sampling, adjacency noise

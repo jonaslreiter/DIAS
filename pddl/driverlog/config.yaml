@@ -1,5 +1,5 @@
 # Per-domain config for 'driverlog', composed after configs/main.yaml:
-#   dias-train fit --config configs/main.yaml --config pddl/driverlog/config.yaml
+#   dias fit --config configs/main.yaml --config pddl/driverlog/config.yaml
 #
 # The paths below are what make that command train driverlog rather than
 # whichever domain the base config happens to name. They must agree with

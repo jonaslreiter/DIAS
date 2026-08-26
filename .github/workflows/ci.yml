@@ -59,7 +59,7 @@ jobs:
           "$RUNNER_TEMP/fresh/bin/pip" install torch --index-url https://download.pytorch.org/whl/cpu
           "$RUNNER_TEMP/fresh/bin/pip" install .
       - name: The console script exists
-        run: "$RUNNER_TEMP/fresh/bin/dias-train --help"
+        run: "$RUNNER_TEMP/fresh/bin/dias --help"
       - name: The package imports from outside the source tree
         # From another directory, so a module missing from the installed copy
         # cannot be covered up by `src/` sitting in the working directory.

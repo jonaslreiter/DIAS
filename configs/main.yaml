@@ -65,8 +65,8 @@ trainer:
   # Weights & Biases. `entity: null` means "whichever account is logged in"
   # (or $WANDB_ENTITY), so a clone of this repository logs to its own account
   # and needs no edit here. To train without W&B at all, either
-  #   --trainer.logger=false          (no logging)
-  #   WANDB_MODE=offline dias-train   (log to logs/wandb, upload later)
+  #   --trainer.logger=false    (no logging)
+  #   WANDB_MODE=offline dias   (log to logs/wandb, upload later)
   logger:
     class_path: lightning.pytorch.loggers.WandbLogger
     init_args:

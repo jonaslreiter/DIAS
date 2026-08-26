@@ -1,5 +1,5 @@
 # Per-domain config for 'sokoban-pull', composed after configs/main.yaml:
-#   dias-train fit --config configs/main.yaml --config pddl/sokoban-pull/config.yaml
+#   dias fit --config configs/main.yaml --config pddl/sokoban-pull/config.yaml
 #
 # The paths below are what make that command train sokoban-pull rather than
 # whichever domain the base config happens to name. They must agree with
