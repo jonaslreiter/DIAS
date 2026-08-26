@@ -1,8 +1,9 @@
 # Config consumed by `scripts/launch.py` / `scripts/validate_runs.py`.
 #
-# Each domain trains on its `problems[0]` from the manifest, then validates
-# on `problems[problem_offset : problem_offset + num_problems]`. The pipeline
-# runs once per (domain, seed) pair. `seeds` also sets the default `--num-runs`.
+# Each domain trains on `pddl/<domain>/train.pddl` and validates on that
+# folder's `test-1.pddl` .. `test-3.pddl`; which files those are is the folder
+# layout, not a setting. The pipeline runs once per (domain, seed) pair, and
+# `seeds` also sets the default `--num-runs`.
 
 # Validation knobs (forwarded to ModelValidation.setup / validate).
 num_samples: 250
@@ -22,10 +23,6 @@ sample_population: 500
 # the result JSON, and setting it back here scores the next run on exactly
 # those states.
 sample_seed: null
-
-# Which problems (from the manifest's `problems` list) to validate on.
-num_problems: 3
-problem_offset: 1
 
 # Seeds to run per domain. The paper uses 0..9 (10 seeds per domain).
 seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]

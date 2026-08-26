@@ -2,8 +2,8 @@
 #   dias fit --config configs/main.yaml --config pddl/miconic/config.yaml
 #
 # The paths below are what make that command train miconic rather than
-# whichever domain the base config happens to name. They must agree with
-# pddl/domain-settings.yaml, which the test suite checks.
+# whichever domain the base config happens to name. They are this folder's
+# standard filenames, which the test suite checks.
 #
 # Sampling stays at main.yaml's default; only the auxiliary weight is tuned.
 data:

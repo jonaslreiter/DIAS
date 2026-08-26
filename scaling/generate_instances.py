@@ -66,6 +66,11 @@ SIZES_CONFIG = SCALING_DIR / "configs" / "sizes.yaml"
 INSTANCES_DIR = SCALING_DIR / "instances"
 DEFAULT_DELIVERY_VENV = SCALING_DIR / ".venv-delivery"
 
+# The repo's own domain file, which generated instances are rewritten into and
+# checked against. Imported rather than re-derived (see scaling/README.md).
+sys.path.append(str(PROJECT_ROOT / "scripts"))
+from pipeline import domain_pddl  # noqa: E402
+
 # Number of objects implied by a size entry, per generator. Checked against the
 # generated instance; the id (n<count>) is built from it.
 OBJECT_COUNT = {
@@ -328,7 +333,7 @@ REWRITERS = {
 # ── verification ───────────────────────────────────────────────────────────────
 
 
-def _verify(domain_pddl: Path, problem_pddl: Path, expected_objects: int) -> dict:
+def _verify(domain_file: Path, problem_pddl: Path, expected_objects: int) -> dict:
     """Load the instance with pymimir and confirm the derived object count.
 
     Returns the metadata that goes into ``index.json`` (object / predicate /
@@ -345,7 +350,7 @@ def _verify(domain_pddl: Path, problem_pddl: Path, expected_objects: int) -> dic
         )
         return {}
 
-    domain = pymimir.Domain(domain_pddl)
+    domain = pymimir.Domain(domain_file)
     problem = pymimir.Problem(domain, problem_pddl)
     num_objects = len(problem.get_objects())
     if num_objects != expected_objects:
@@ -368,7 +373,6 @@ def _verify(domain_pddl: Path, problem_pddl: Path, expected_objects: int) -> dic
 def generate_domain(
     domain: str,
     spec: dict,
-    domain_settings: dict,
     force: bool,
     generators: Path,
     delivery_venv: Path,
@@ -378,7 +382,7 @@ def generate_domain(
     sizes = spec["sizes"]
     out_dir = INSTANCES_DIR / domain
     out_dir.mkdir(parents=True, exist_ok=True)
-    domain_pddl = PROJECT_ROOT / domain_settings[domain]["domain"]
+    domain_file = domain_pddl(domain)
 
     delivery_tree = (
         _gen_delivery_tree(generators, sizes, seed, delivery_venv)
@@ -403,7 +407,7 @@ def generate_domain(
             path.write_text(REWRITERS[generator](raw, num_objects))
             print(f"[{domain}] {iid}: wrote {path.relative_to(PROJECT_ROOT)}")
 
-        meta = _verify(domain_pddl, path, num_objects)
+        meta = _verify(domain_file, path, num_objects)
         entries.append(
             {
                 "id": iid,
@@ -432,11 +436,6 @@ def main() -> int:
         "because the instances they produce are committed.",
     )
     p.add_argument("--sizes-config", type=Path, default=SIZES_CONFIG)
-    p.add_argument(
-        "--domain-settings",
-        type=Path,
-        default=PROJECT_ROOT / "pddl/domain-settings.yaml",
-    )
     p.add_argument("--domains", nargs="+", default=None, help="Subset of domains.")
     p.add_argument(
         "--force", action="store_true", help="Regenerate instances that already exist."
@@ -451,7 +450,6 @@ def main() -> int:
 
     generators = require_generators(args.generators_dir)
     cfg = yaml.safe_load(args.sizes_config.read_text())
-    domain_settings = yaml.safe_load(args.domain_settings.read_text())
     domains = args.domains or list(cfg["domains"])
     unknown = [d for d in domains if d not in cfg["domains"]]
     if unknown:
@@ -462,7 +460,6 @@ def main() -> int:
         index[domain] = generate_domain(
             domain,
             cfg["domains"][domain],
-            domain_settings,
             args.force,
             generators,
             args.delivery_venv,

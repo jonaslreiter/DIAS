@@ -29,7 +29,6 @@ CONFIGS_DIR = PROJECT_ROOT / "configs"
 EXPERIMENTS_DIR = CONFIGS_DIR / "experiments"
 PDDL_DIR = PROJECT_ROOT / "pddl"
 
-DOMAIN_SETTINGS = PDDL_DIR / "domain-settings.yaml"
 TRAIN_CONFIG = CONFIGS_DIR / "main.yaml"
 VALIDATION_CONFIG = CONFIGS_DIR / "validation.yaml"
 SLURM_RESOURCES = CONFIGS_DIR / "slurm-resources.yaml"
@@ -44,6 +43,51 @@ WANDB_ENTITY = os.environ.get("WANDB_ENTITY") or None
 
 def load_yaml(path: Path) -> dict:
     return yaml.safe_load(Path(path).read_text())
+
+
+# ── where a domain's files are ────────────────────────────────────────────────
+#
+# A domain is a folder under pddl/ with standardized filenames in it, and the
+# folder name is the domain name. There is no manifest: a list repeating what
+# the layout already says is a second source of truth, and the two drift.
+
+DOMAIN_FILE = "domain.pddl"
+TRAIN_PROBLEM = "train.pddl"
+# Held out from training, and validated on in this order.
+TEST_PROBLEMS = ("test-1.pddl", "test-2.pddl", "test-3.pddl")
+DOMAIN_CONFIG = "config.yaml"
+
+
+def domain_dir(domain: str) -> Path:
+    return PDDL_DIR / domain
+
+
+def domain_pddl(domain: str) -> Path:
+    return domain_dir(domain) / DOMAIN_FILE
+
+
+def train_problem(domain: str) -> Path:
+    """The single instance a domain's transitions are sampled from."""
+    return domain_dir(domain) / TRAIN_PROBLEM
+
+
+def validation_problems(domain: str) -> list[Path]:
+    """The held-out instances every validator scores against."""
+    return [domain_dir(domain) / name for name in TEST_PROBLEMS]
+
+
+def domain_config(domain: str) -> Path:
+    """The Lightning partial config composed after configs/main.yaml."""
+    return domain_dir(domain) / DOMAIN_CONFIG
+
+
+def available_domains() -> list[str]:
+    """Every domain folder under pddl/, in name order."""
+    return sorted(
+        path.name
+        for path in PDDL_DIR.iterdir()
+        if path.is_dir() and (path / DOMAIN_FILE).is_file()
+    )
 
 
 def run_command(cmd: list[str], dry_run: bool, capture: bool = True) -> str | None:
@@ -230,7 +274,7 @@ def add_domain_arguments(parser: argparse.ArgumentParser) -> None:
         "--domains",
         nargs="+",
         default=None,
-        help="Domain keys to run (default: all in the manifest).",
+        help="Domain folders under pddl/ to run (default: all of them).",
     )
     parser.add_argument(
         "--num-runs",
@@ -252,8 +296,7 @@ def add_domain_arguments(parser: argparse.ArgumentParser) -> None:
 def add_path_arguments(
     parser: argparse.ArgumentParser, *, train_config: bool = False
 ) -> None:
-    """The manifest / config / logs paths every pipeline script accepts."""
-    parser.add_argument("--domain-settings", type=Path, default=DOMAIN_SETTINGS)
+    """The config / logs paths every pipeline script accepts."""
     parser.add_argument("--validation-config", type=Path, default=VALIDATION_CONFIG)
     parser.add_argument("--log-dir", type=Path, default=LOGS_DIR)
     if train_config:
@@ -294,13 +337,13 @@ def configure_logging(args: argparse.Namespace | None = None) -> None:
     logging.basicConfig(level=level, format="%(name)s: %(message)s")
 
 
-def select_domains(domain_settings: dict, requested: list[str] | None) -> list[str]:
-    """Validate ``--domains`` against the manifest; default to all of them."""
-    domains = requested or list(domain_settings)
-    unknown = [d for d in domains if d not in domain_settings]
+def select_domains(requested: list[str] | None) -> list[str]:
+    """Validate ``--domains`` against pddl/; default to every domain there."""
+    available = available_domains()
+    domains = requested or available
+    unknown = [d for d in domains if d not in available]
     if unknown:
         raise SystemExit(
-            f"unknown domain(s) {unknown}; the manifest has "
-            f"{', '.join(domain_settings)}"
+            f"unknown domain(s) {unknown}; {PDDL_DIR} holds {', '.join(available)}"
         )
     return domains

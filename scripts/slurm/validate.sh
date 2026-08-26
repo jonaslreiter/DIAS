@@ -46,6 +46,5 @@ python "${DIAS_ROOT}/scripts/validate_runs.py" \
   --seed "$SEED" \
   --experiment-type "$EXP_TYPE" \
   --log-dir "$LOGS_DIR" \
-  --domain-settings "$DOMAIN_SETTINGS" \
   --validation-config "$VALIDATION_CONFIG" \
   "${EXTRA[@]}"

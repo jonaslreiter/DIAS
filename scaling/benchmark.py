@@ -47,6 +47,12 @@ import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCALING_DIR = PROJECT_ROOT / "scaling"
+
+# Where a domain's files live is the main pipeline's business, not this
+# study's; imported rather than re-derived, as the sbatch helpers are.
+sys.path.append(str(PROJECT_ROOT / "scripts"))
+from pipeline import domain_config, domain_pddl  # noqa: E402
+
 SIZES_CONFIG = SCALING_DIR / "configs" / "sizes.yaml"
 SCALING_OVERLAY = SCALING_DIR / "configs" / "scaling.yaml"
 INSTANCES_DIR = SCALING_DIR / "instances"
@@ -163,7 +169,7 @@ def _build_callback():
 
 def _lightning_args(
     domain: str,
-    domain_pddl: Path,
+    domain_file: Path,
     problem_pddl: Path,
     seed: int,
     max_steps: int,
@@ -174,11 +180,11 @@ def _lightning_args(
         "--config",
         str(PROJECT_ROOT / "configs" / "main.yaml"),
         "--config",
-        str(PROJECT_ROOT / "pddl" / domain / "config.yaml"),
+        str(domain_config(domain)),
         "--config",
         str(SCALING_OVERLAY),
         "--data.init_args.domain_path",
-        str(domain_pddl),
+        str(domain_file),
         "--data.init_args.problem_path",
         str(problem_pddl),
         "--data.init_args.seed",
@@ -197,7 +203,6 @@ def run_benchmark(
     seed: int,
     warmup: int,
     measure: int,
-    domain_settings: dict,
     accelerator: str | None = None,
 ) -> dict:
     """Run one benchmark point and return its record (never raises on OOM)."""
@@ -207,7 +212,7 @@ def run_benchmark(
 
     torch.set_float32_matmul_precision("medium")
 
-    domain_pddl = PROJECT_ROOT / domain_settings[domain]["domain"]
+    domain_file = domain_pddl(domain)
     problem_pddl = instance_path(domain, instance)
     if not problem_pddl.exists():
         raise SystemExit(
@@ -244,7 +249,7 @@ def run_benchmark(
             cli = CLI(
                 args=_lightning_args(
                     domain,
-                    domain_pddl,
+                    domain_file,
                     problem_pddl,
                     seed,
                     warmup + measure,
@@ -326,11 +331,6 @@ def main() -> int:
     p.add_argument("--results-dir", type=Path, default=DEFAULT_RESULTS_DIR)
     p.add_argument("--sizes-config", type=Path, default=SIZES_CONFIG)
     p.add_argument(
-        "--domain-settings",
-        type=Path,
-        default=PROJECT_ROOT / "pddl/domain-settings.yaml",
-    )
-    p.add_argument(
         "--accelerator", default=None, help="Override trainer.accelerator (e.g. cpu)."
     )
     p.add_argument("--out", type=Path, default=None, help="Override the output path.")
@@ -339,7 +339,6 @@ def main() -> int:
     cfg = yaml.safe_load(args.sizes_config.read_text())
     warmup = args.warmup if args.warmup is not None else int(cfg["warmup_steps"])
     measure = args.measure if args.measure is not None else int(cfg["measure_steps"])
-    domain_settings = yaml.safe_load(args.domain_settings.read_text())
 
     record = run_benchmark(
         domain=args.domain,
@@ -347,7 +346,6 @@ def main() -> int:
         seed=args.seed,
         warmup=warmup,
         measure=measure,
-        domain_settings=domain_settings,
         accelerator=args.accelerator,
     )
     record["experiment"] = args.experiment

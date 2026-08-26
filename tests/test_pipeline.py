@@ -15,9 +15,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from pipeline import (
     EXPERIMENT_VALIDATOR,
+    PDDL_DIR,
     VALIDATORS,
     add_domain_arguments,
     add_path_arguments,
+    available_domains,
+    domain_config,
+    domain_pddl,
     format_array,
     parse_seeds,
     prepare_slurm_logs,
@@ -25,6 +29,8 @@ from pipeline import (
     resolve_seeds,
     sbatch_resource_opts,
     select_domains,
+    train_problem,
+    validation_problems,
 )
 
 
@@ -113,15 +119,41 @@ class SlurmLogTest(unittest.TestCase):
 
 
 class DomainTest(unittest.TestCase):
-    settings = {"gripper": {}, "hanoi": {}}
+    """A domain is a folder under pddl/; nothing lists them.
 
-    def test_no_selection_means_every_domain_in_the_manifest(self):
-        self.assertEqual(select_domains(self.settings, None), ["gripper", "hanoi"])
+    Every file of a domain follows from its name, so these check that the
+    layout the whole pipeline assumes actually holds for all of them. The
+    manifest that used to state it is gone, and with it the drift between the
+    two; what is left to get wrong is a folder missing a file.
+    """
+
+    def test_no_selection_means_every_domain_folder(self):
+        domains = available_domains()
+        self.assertIn("gripper", domains)
+        self.assertEqual(select_domains(None), domains)
 
     def test_an_unknown_domain_names_the_ones_that_exist(self):
         with self.assertRaises(SystemExit) as raised:
-            select_domains(self.settings, ["grippre"])
+            select_domains(["grippre"])
         self.assertIn("gripper", str(raised.exception))
+
+    def test_every_domain_has_the_files_the_pipeline_asks_it_for(self):
+        for domain in available_domains():
+            with self.subTest(domain=domain):
+                for path in (
+                    domain_pddl(domain),
+                    train_problem(domain),
+                    domain_config(domain),
+                    *validation_problems(domain),
+                ):
+                    self.assertTrue(path.is_file(), path)
+
+    def test_the_validation_problems_are_the_held_out_ones(self):
+        self.assertEqual(
+            validation_problems("gripper"),
+            [PDDL_DIR / "gripper" / f"test-{i}.pddl" for i in (1, 2, 3)],
+        )
+        self.assertNotIn(train_problem("gripper"), validation_problems("gripper"))
 
 
 class ValidatorRegistryTest(unittest.TestCase):
@@ -158,7 +190,7 @@ class SharedArgumentTest(unittest.TestCase):
         args = parser.parse_args([])
         for name in ("domains", "num_runs", "seeds"):
             self.assertTrue(hasattr(args, name))
-        for name in ("domain_settings", "validation_config", "log_dir", "train_config"):
+        for name in ("validation_config", "log_dir", "train_config"):
             self.assertIsInstance(getattr(args, name), Path)
         self.assertFalse(hasattr(args, "logs_dir"))
 

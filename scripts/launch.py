@@ -106,6 +106,8 @@ from pipeline import (
     add_domain_arguments,
     add_logging_arguments,
     add_path_arguments,
+    domain_config,
+    domain_pddl,
     format_array,
     load_yaml,
     prepare_slurm_logs,
@@ -115,6 +117,7 @@ from pipeline import (
     sbatch_output_opt,
     sbatch_resource_opts,
     select_domains,
+    train_problem,
 )
 
 EXPERIMENT_OVERLAYS = {
@@ -289,7 +292,6 @@ def _check_sweep_config(
     axis: SweepAxis,
     axis_name: str,
     domains: list[str],
-    domain_settings: dict,
     train_cfg: dict,
     train_config: Path,
     overlays: list[Path],
@@ -307,10 +309,7 @@ def _check_sweep_config(
             f"{axis_name} axis default is {axis.default:g}; '{reuse_default}' "
             "therefore did not run that point"
         )
-    paths = [
-        (PROJECT_ROOT / domain_settings[domain]["domain"]).parent / "config.yaml"
-        for domain in domains
-    ]
+    paths = [domain_config(domain) for domain in domains]
     # Overlays are composed after the domain config and can carry the same
     # parameters (the noise overlay replaces the whole schedule, for instance).
     for path in paths + overlays:
@@ -356,7 +355,6 @@ class LaunchPlan:
     threshold: float
     domains: list[str]
     seeds: list[int]
-    domain_settings: dict
     overlays: list[Path]
     points: list[SweepPoint]
     axis: SweepAxis | None
@@ -369,7 +367,6 @@ class LaunchPlan:
     log_dir: Path
     train_config: Path
     validation_config: Path
-    domain_settings_path: Path
     train_resources: dict
     validation_resources: dict
 
@@ -377,22 +374,19 @@ class LaunchPlan:
     def submitted(self) -> list[SweepPoint]:
         return [point for point in self.points if not point.reused]
 
-    def domain_config(self, domain: str) -> Path:
-        return (PROJECT_ROOT / self.domain_settings[domain]["domain"]).parent / (
-            "config.yaml"
-        )
-
     def train_args(self, point: SweepPoint, domain: str) -> list[str]:
         """Seed-independent Lightning args shared by all runs of a domain."""
-        spec = self.domain_settings[domain]
         args = ["--config", str(self.train_config)]
-        for path in [self.domain_config(domain), *self.overlays]:
+        for path in [domain_config(domain), *self.overlays]:
             args += ["--config", str(path)]
+        # Absolute, and appended after the config chain: a Slurm job does not
+        # run from the repository root, where the configs' relative paths
+        # resolve.
         args += [
             "--data.init_args.domain_path",
-            str(PROJECT_ROOT / spec["domain"]),
+            str(domain_pddl(domain)),
             "--data.init_args.problem_path",
-            str(PROJECT_ROOT / spec["problems"][0]),
+            str(train_problem(domain)),
         ]
         if self.log_wandb:
             args += [
@@ -470,7 +464,6 @@ def _sweep_points(args: argparse.Namespace, plan_context: dict) -> tuple:
         axis,
         axis_name,
         plan_context["domains"],
-        plan_context["domain_settings"],
         load_yaml(args.train_config),
         args.train_config,
         plan_context["overlays"],
@@ -492,8 +485,7 @@ def _sweep_points(args: argparse.Namespace, plan_context: dict) -> tuple:
 
 def build_plan(args: argparse.Namespace) -> LaunchPlan:
     """Resolve command-line arguments into a launch, or refuse them."""
-    domain_settings = load_yaml(args.domain_settings)
-    domains = select_domains(domain_settings, args.domains)
+    domains = select_domains(args.domains)
     seeds = resolve_seeds(args)
 
     overlays = []
@@ -518,7 +510,7 @@ def build_plan(args: argparse.Namespace) -> LaunchPlan:
 
     points, axis, axis_name, values = _sweep_points(
         args,
-        {"domains": domains, "domain_settings": domain_settings, "overlays": overlays},
+        {"domains": domains, "overlays": overlays},
     )
 
     on_slurm = args.backend == "slurm"
@@ -530,7 +522,6 @@ def build_plan(args: argparse.Namespace) -> LaunchPlan:
         threshold=threshold,
         domains=domains,
         seeds=seeds,
-        domain_settings=domain_settings,
         overlays=overlays,
         points=points,
         axis=axis,
@@ -543,7 +534,6 @@ def build_plan(args: argparse.Namespace) -> LaunchPlan:
         log_dir=args.log_dir,
         train_config=args.train_config,
         validation_config=args.validation_config,
-        domain_settings_path=args.domain_settings,
         train_resources=load_yaml(args.slurm_resources) if on_slurm else {},
         validation_resources=(
             load_yaml(args.slurm_resources_validation) if on_slurm else {}
@@ -601,7 +591,6 @@ def submit_domain(plan: LaunchPlan, point: SweepPoint, domain: str) -> None:
         f"DOMAIN={domain}",
         f"EXP_TYPE={plan.validator}",
         f"LOGS_DIR={plan.log_dir}",
-        f"DOMAIN_SETTINGS={plan.domain_settings_path}",
         f"VALIDATION_CONFIG={plan.validation_config}",
     ]
     if not plan.log_wandb:
@@ -675,7 +664,6 @@ def run_domain(plan: LaunchPlan, point: SweepPoint, domain: str) -> None:
             domain=domain,
             seed=seed,
             experiment_type=plan.experiment_type,
-            domain_settings=plan.domain_settings,
             val_cfg=val_cfg,
             logs_dir=plan.log_dir,
             run_id=run_id,

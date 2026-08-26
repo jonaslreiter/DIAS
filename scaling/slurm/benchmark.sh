@@ -41,5 +41,4 @@ python "${DIAS_ROOT}/scaling/run_scaling.py" \
   --experiment "$EXPERIMENT" \
   --results-dir "$RESULTS_DIR" \
   --sizes-config "$SIZES_CONFIG" \
-  --domain-settings "$DOMAIN_SETTINGS" \
   "${EXTRA[@]}"

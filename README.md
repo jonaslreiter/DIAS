@@ -118,11 +118,12 @@ slot weights, with a step slider.
 
 Point `domain_path` / `problem_path` at any domain whose predicates are unary or
 binary and whose actions are STRIPS with injective parameter binding. To make it
-a domain like the 13 below, give it a `pddl/<name>/` folder with its own
-`config.yaml` (the paths, plus whatever it needs tuned) and an entry in
-`pddl/domain-settings.yaml` (the domain file and its problem list). The two must
-agree — the test suite checks that they do — and the manifest entry is what
-makes the domain available to the sweep launcher.
+a domain like the 13 below, give it a `pddl/<name>/` folder holding
+`domain.pddl`, `train.pddl`, `test-1.pddl` .. `test-3.pddl` and a `config.yaml`
+(those first two paths, plus whatever it needs tuned). Nothing lists the
+domains: the folder is the domain, so `--domains <name>` works in the sweep
+launcher as soon as the folder exists. The test suite checks that every folder
+holds all six files and that its config selects its own domain.
 
 ## The 13 domains
 
@@ -206,7 +207,7 @@ src/dias/
 └── reporting/        the W&B custom charts the learned schema is logged as
 
 configs/              main.yaml, validation.yaml, Slurm resources, experiments/
-pddl/                 the 13 domains + domain-settings.yaml
+pddl/                 the 13 domains, one folder each
 scripts/              launch.py, validate_runs.py, validate_checkpoint.py,
                         collect_results.py, pipeline.py, slurm/
 scaling/              the one-off runtime / GPU-memory vs instance-size study

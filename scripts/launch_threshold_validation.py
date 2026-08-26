@@ -121,7 +121,6 @@ def _submit_slurm(
             f"DOMAIN={domain}",
             f"EXP_TYPE={args.experiment_type}",
             f"LOGS_DIR={logs_dir}",
-            f"DOMAIN_SETTINGS={args.domain_settings}",
             f"VALIDATION_CONFIG={args.validation_config}",
         ]
     )
@@ -151,7 +150,6 @@ def _run_local(
     # Imported here so Slurm submission never needs torch/pymimir installed.
     from validate_runs import validate_run
 
-    domain_settings = load_yaml(args.domain_settings)
     val_cfg = load_yaml(args.validation_config)
     for seed in seeds:
         print(f"\n[{domain} seed={seed} @ {threshold:g}] validate", flush=True)
@@ -162,7 +160,6 @@ def _run_local(
             domain=domain,
             seed=seed,
             experiment_type=args.experiment_type,
-            domain_settings=domain_settings,
             val_cfg=val_cfg,
             logs_dir=logs_dir,
             log_wandb=False,
@@ -232,8 +229,7 @@ def main() -> int:
     args = p.parse_args()
     configure_logging(args)
 
-    domain_settings = load_yaml(args.domain_settings)
-    domains = select_domains(domain_settings, args.domains)
+    domains = select_domains(args.domains)
     seeds = resolve_seeds(args)
 
     thresholds = list(args.thresholds or THRESHOLD_VALUES)

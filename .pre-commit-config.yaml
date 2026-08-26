@@ -17,6 +17,6 @@ repos:
       - id: end-of-file-fixer
       - id: trailing-whitespace
       - id: check-yaml
-        # The Lightning configs are plain YAML; the PDDL manifests too.
+        # The Lightning configs and the per-domain configs are plain YAML.
         exclude: ^\.pre-commit-config\.yaml$
       - id: check-merge-conflict

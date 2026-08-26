@@ -76,7 +76,6 @@ def _submit_domain(
             f"DOMAIN={domain}",
             f"RESULTS_DIR={args.results_dir}",
             f"SIZES_CONFIG={args.sizes_config}",
-            f"DOMAIN_SETTINGS={args.domain_settings}",
             f"SKIP_EXISTING={1 if args.skip_existing else 0}",
         ]
     )
@@ -108,11 +107,6 @@ def main() -> int:
     p.add_argument("--backend", choices=["slurm", "local"], default="slurm")
     p.add_argument("--results-dir", type=Path, default=DEFAULT_RESULTS_DIR)
     p.add_argument("--sizes-config", type=Path, default=SIZES_CONFIG)
-    p.add_argument(
-        "--domain-settings",
-        type=Path,
-        default=PROJECT_ROOT / "pddl/domain-settings.yaml",
-    )
     p.add_argument("--time", default=None, help="Override the Slurm --time.")
     p.add_argument("--mem", default=None, help="Override the Slurm --mem.")
     p.add_argument(
@@ -176,7 +170,6 @@ def main() -> int:
                 experiment=args.experiment,
                 cfg=cfg,
                 results_dir=args.results_dir,
-                domain_settings=args.domain_settings,
                 skip_existing=args.skip_existing,
                 accelerator=args.accelerator,
             )

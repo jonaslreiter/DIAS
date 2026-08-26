@@ -67,7 +67,6 @@ def run_ladder(
     experiment: str,
     cfg: dict,
     results_dir: Path,
-    domain_settings: Path,
     skip_existing: bool,
     accelerator: str | None = None,
 ) -> int:
@@ -103,7 +102,6 @@ def run_ladder(
             "--warmup", str(cfg["warmup_steps"]),
             "--measure", str(cfg["measure_steps"]),
             "--results-dir", str(results_dir),
-            "--domain-settings", str(domain_settings),
         ]  # fmt: skip
         if accelerator:
             cmd += ["--accelerator", accelerator]
@@ -134,11 +132,6 @@ def main() -> int:
     p.add_argument("--results-dir", type=Path, default=DEFAULT_RESULTS_DIR)
     p.add_argument("--sizes-config", type=Path, default=SIZES_CONFIG)
     p.add_argument(
-        "--domain-settings",
-        type=Path,
-        default=PROJECT_ROOT / "pddl/domain-settings.yaml",
-    )
-    p.add_argument(
         "--skip-existing",
         action="store_true",
         help="Leave points that already have a result JSON alone (resume a task).",
@@ -158,7 +151,6 @@ def main() -> int:
         experiment=args.experiment,
         cfg=cfg,
         results_dir=args.results_dir,
-        domain_settings=args.domain_settings,
         skip_existing=args.skip_existing,
         accelerator=args.accelerator,
     )

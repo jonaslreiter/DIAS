@@ -21,7 +21,6 @@ from pathlib import Path
 
 import numpy as np
 import torch
-import yaml
 
 from dias.main import CLI
 
@@ -29,7 +28,6 @@ ROOT = Path(__file__).resolve().parents[1]
 DOMAIN_CONFIGS = sorted((ROOT / "pddl").glob("*/config.yaml"))
 OVERLAYS = sorted((ROOT / "configs" / "experiments").glob("*.yaml"))
 MAIN = ROOT / "configs" / "main.yaml"
-MANIFEST = yaml.safe_load((ROOT / "pddl" / "domain-settings.yaml").read_text())
 # A domain to carry the overlays. They are domain-independent, so the whole
 # cross product would parse the same files again for no extra cover.
 A_DOMAIN = ROOT / "pddl" / "gripper" / "config.yaml"
@@ -90,35 +88,28 @@ class CompositionTest(unittest.TestCase):
         parse(MAIN, A_DOMAIN, ROOT / "scaling" / "configs" / "scaling.yaml")
 
 
-class ManifestTest(unittest.TestCase):
-    """The manifest and the domain configs name the same files.
+class DomainSelectionTest(unittest.TestCase):
+    """Each domain config names its own folder's files.
 
-    ``pddl/domain-settings.yaml`` is the source of truth for where a domain
-    lives, and each ``pddl/<domain>/config.yaml`` repeats two lines of it so
-    that composing that config trains that domain. Repetition nothing checks is
-    how the two drift apart, and the drift is invisible: the run trains the
-    wrong domain under the right name.
+    A domain's files follow from its folder name, and ``pddl/<domain>/
+    config.yaml`` repeats two of them so that composing that config trains
+    that domain. Repetition nothing checks is how the two drift apart, and the
+    drift is invisible: the run trains the wrong domain under the right name.
     """
 
     def test_every_domain_config_selects_its_own_domain(self):
         for config in DOMAIN_CONFIGS:
             name = config.parent.name
             with self.subTest(domain=name):
-                self.assertIn(name, MANIFEST, "domain is missing from the manifest")
                 data = parse(MAIN, config).data.init_args
-                self.assertEqual(data.domain_path, MANIFEST[name]["domain"])
-                self.assertEqual(data.problem_path, MANIFEST[name]["problems"][0])
+                self.assertEqual(data.domain_path, f"pddl/{name}/domain.pddl")
+                self.assertEqual(data.problem_path, f"pddl/{name}/train.pddl")
 
-    def test_every_domain_in_the_manifest_has_a_config(self):
-        self.assertEqual(
-            sorted(MANIFEST), sorted(c.parent.name for c in DOMAIN_CONFIGS)
+    def test_every_domain_folder_has_a_config(self):
+        folders = sorted(
+            path.parent.name for path in (ROOT / "pddl").glob("*/domain.pddl")
         )
-
-    def test_every_path_the_manifest_names_exists(self):
-        for name, entry in MANIFEST.items():
-            with self.subTest(domain=name):
-                for path in [entry["domain"], *entry["problems"]]:
-                    self.assertTrue((ROOT / path).is_file(), path)
+        self.assertEqual(folders, sorted(c.parent.name for c in DOMAIN_CONFIGS))
 
 
 class PrecedenceTest(unittest.TestCase):

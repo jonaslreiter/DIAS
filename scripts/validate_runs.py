@@ -15,9 +15,9 @@ The training run is located by a *deterministic* run id
 (``<experiment>-<domain>-s<seed>``) so no job-to-job id handoff is needed:
 its checkpoint lives at ``<logs>/dias/<run_id>/checkpoints/best-*.ckpt``.
 
-Validation problems come from ``pddl/domain-settings.yaml``
-(``problems[problem_offset : problem_offset + num_problems]``); the sampling
-knobs come from ``configs/validation.yaml``. Results are written to
+Validation problems are the domain folder's held-out instances
+(``pddl/<domain>/test-{1,2,3}.pddl``); the sampling knobs come from
+``configs/validation.yaml``. Results are written to
 ``<logs>/validation/<experiment>/<domain>/seed<seed>.json`` and, when W&B is
 reachable, also logged to the resumed run under ``validation/<stem>/<metric>``.
 
@@ -46,7 +46,6 @@ from pipeline import configure_logging  # noqa: E402
 from pipeline import (
     EXPERIMENT_TYPES,
     EXPERIMENT_VALIDATOR,
-    PROJECT_ROOT,
     VALIDATORS,
     WANDB_ENTITY,
     WANDB_PROJECT,
@@ -54,6 +53,7 @@ from pipeline import (
     add_path_arguments,
     load_yaml,
     select_domains,
+    validation_problems,
     validator_class,
 )
 
@@ -71,7 +71,6 @@ def validate_run(
     domain: str,
     seed: int,
     experiment_type: str,
-    domain_settings: dict,
     val_cfg: dict,
     logs_dir: Path,
     run_id: str | None = None,
@@ -91,10 +90,7 @@ def validate_run(
 
     run_id = run_id or run_id_for(experiment, domain, seed)
     results_experiment = results_experiment or experiment
-    spec = domain_settings[domain]
-    offset = int(val_cfg["problem_offset"])
-    n = int(val_cfg["num_problems"])
-    val_problems = spec["problems"][offset : offset + n]
+    val_problems = validation_problems(domain)
 
     validator = VALIDATORS[EXPERIMENT_VALIDATOR[experiment_type]]
     ModelValidation = validator_class(validator.name)
@@ -115,7 +111,7 @@ def validate_run(
 
     per_problem: dict[str, dict[str, Any]] = {}
     for problem in val_problems:
-        stem = Path(problem).stem
+        stem = problem.stem
         logger.info(
             "Validating %s seed %d on %s (%d states of at most %d reachable).",
             domain,
@@ -128,7 +124,7 @@ def validate_run(
             v = ModelValidation(
                 model_id=run_id,
                 logs_path_abs=str(logs_dir.resolve()),
-                problem_path=str((PROJECT_ROOT / problem).resolve()),
+                problem_path=str(problem.resolve()),
                 **extra_kwargs,
             )
             v.setup(
@@ -253,9 +249,7 @@ def _log_to_wandb(
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--experiment", required=True, help="Experiment name (= W&B group).")
-    p.add_argument(
-        "--domain", required=True, help="Domain key in domain-settings.yaml."
-    )
+    p.add_argument("--domain", required=True, help="Domain folder under pddl/.")
     p.add_argument("--seed", type=int, required=True)
     p.add_argument(
         "--experiment-type", default="dias", choices=sorted(EXPERIMENT_TYPES)
@@ -283,15 +277,13 @@ def main() -> int:
     args = p.parse_args()
     configure_logging(args)
 
-    domain_settings = load_yaml(args.domain_settings)
-    select_domains(domain_settings, [args.domain])
+    select_domains([args.domain])
 
     per_problem = validate_run(
         experiment=args.experiment,
         domain=args.domain,
         seed=args.seed,
         experiment_type=args.experiment_type,
-        domain_settings=domain_settings,
         val_cfg=load_yaml(args.validation_config),
         logs_dir=args.log_dir,
         run_id=args.run_id,
