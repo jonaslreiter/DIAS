@@ -47,12 +47,47 @@ class MlpBaselineTest(unittest.TestCase):
         return validation.validate()
 
     def test_result_matches_the_shared_validation_contract(self):
+        """The same payload the symbolic validators return, keys and all.
+
+        All three now finish through `successors.score_successors`, so this is
+        one scorer's output rather than three that happen to agree -- including
+        `action_stats`, which this validator used to be alone in not emitting.
+        """
         result = self.validate()
         self.assertEqual(
             set(result),
-            {"matches", "total", "accuracy", "precision", "recall", "tp", "fp", "fn"},
+            {
+                "matches",
+                "total",
+                "accuracy",
+                "precision",
+                "recall",
+                "tp",
+                "fp",
+                "fn",
+                "action_stats",
+            },
         )
         self.assertEqual(result["total"], NUM_SAMPLES)
+
+    def test_the_per_action_counts_relate_to_the_pooled_ones_as_they_should(self):
+        """Two views of one scoring, which legitimately disagree.
+
+        The pooled counts take the union across actions; attributing each
+        successor to the action that reached it can only *split* that union --
+        one successor reached by two actions is counted once pooled and twice
+        per action, and one reached by the right action under the wrong name is
+        a pooled hit and a per-action miss. So per-action hits can never exceed
+        pooled hits, and per-action errors can never fall below pooled errors.
+        """
+        result = self.validate()
+        stats = result["action_stats"].values()
+
+        self.assertLessEqual(sum(s["tp"] for s in stats), result["tp"])
+        self.assertGreaterEqual(sum(s["fp"] for s in stats), result["fp"])
+        self.assertGreaterEqual(sum(s["fn"] for s in stats), result["fn"])
+        # Nothing is invented: every attributed error is an error pooled too.
+        self.assertGreater(sum(s["fn"] for s in stats), 0)
 
     def test_counts_agree_with_the_rates_they_are_reported_beside(self):
         result = self.validate()

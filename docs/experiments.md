@@ -252,4 +252,13 @@ python scripts/validate_checkpoint.py --validator l1 \
 
 Its sampling defaults come from `configs/validation.yaml`, so it draws the same
 way the sweep does. `--sample-seed` fixes the draw; unset, the states are drawn
-fresh and the numbers are one sample, not reproducible.
+fresh — and either way the seed used comes back in the result, so passing it
+again scores the next run on exactly those states.
+
+**Why L1 has no `--experiment-type`.** The other two validators score a model
+this pipeline trained, found by run id. L1 scores a learned domain *another*
+system produced, handed to it as a PDDL file: there is no checkpoint and no
+`(domain, seed)` pair for `launch.py` to iterate over, so it lives here rather
+than in the sweep. All three return the same result payload — pooled
+`tp`/`fp`/`fn`, the rates, and per-action counts — because all three finish
+through the same scorer.

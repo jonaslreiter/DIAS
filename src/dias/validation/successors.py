@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import random
 from collections import defaultdict
+from typing import Iterable, Mapping
 
 from tqdm import tqdm
 
@@ -20,6 +21,10 @@ logger = logging.getLogger(__name__)
 # Learned actions are merged into the original domain under this prefix,
 # which is the only thing telling the two apart when scoring.
 LEARNED_ACTION_PREFIX = "learned_"
+
+# One state's successors: what the original domain reaches, and what the
+# learned one reached, each keyed by action name.
+SuccessorSets = tuple[Mapping[str, set], Mapping[str, set]]
 
 
 def resolve_sample_seed(seed: int | None) -> int:
@@ -98,53 +103,54 @@ def transfer_states(states: list, target_problem, source_domain, target_domain) 
     return transferred
 
 
-def compare_successors(states: list, learned_action_prefix: str) -> dict:
-    """Score the learned actions of a merged domain against the original ones.
+def score_successors(per_state: Iterable[SuccessorSets]) -> dict:
+    """Score produced successors against expected ones, state by state.
 
-    Every state carries both sets of actions, so applying all of them and
-    comparing the successors needs no planning. Precision and recall are
-    micro-averaged: one pooled tp/fp/fn over all states, so a state with many
-    successors weighs more than one with few.
+    Each element is one state's ``(expected, produced)`` pair, both keyed by
+    action name. A successor is whatever identifies one -- a pymimir state
+    index where the learned domain is symbolic, a binarized adjacency where a
+    network produced it -- so this is the one scorer for every validator, and
+    the only thing they have to agree on is that equal states compare equal.
+
+    Two views of the same counts, and they differ on purpose. The pooled
+    precision and recall pool over the *union* across actions, because what
+    matters behaviourally is which successors the learned domain can reach at
+    all; ``action_stats`` attributes them, so a successor the right action
+    reaches under the wrong name is a state-level hit and a per-action miss.
+    Both are micro-averaged: one pooled tp/fp/fn over all states, so a state
+    with many successors weighs more than one with few.
     """
+    states = 0
     matches = 0
     tp_total = fp_total = fn_total = 0
     action_tp: dict[str, int] = defaultdict(int)
     action_fp: dict[str, int] = defaultdict(int)
     action_fn: dict[str, int] = defaultdict(int)
-    prefix_length = len(learned_action_prefix)
 
-    for state in tqdm(states, total=len(states), desc="Validating states"):
-        original_by_action = defaultdict(set)
-        learned_by_action = defaultdict(set)
-        for action in state.generate_applicable_actions():
-            successor = action.apply(state).get_index()
-            name = action.get_action().get_name()
-            if name.startswith(learned_action_prefix):
-                learned_by_action[name[prefix_length:]].add(successor)
-            else:
-                original_by_action[name].add(successor)
+    for expected_by_action, produced_by_action in per_state:
+        states += 1
+        expected = set().union(*expected_by_action.values(), set())
+        produced = set().union(*produced_by_action.values(), set())
 
-        original = set().union(*original_by_action.values())
-        learned = set().union(*learned_by_action.values())
-
-        true_positives = len(original & learned)
+        true_positives = len(expected & produced)
         tp_total += true_positives
-        fp_total += len(learned) - true_positives
-        fn_total += len(original) - true_positives
-        matches += original == learned
+        fp_total += len(produced) - true_positives
+        fn_total += len(expected) - true_positives
+        matches += expected == produced
 
-        for name in set(original_by_action) | set(learned_by_action):
-            expected = original_by_action.get(name, set())
-            produced = learned_by_action.get(name, set())
-            hits = len(expected & produced)
+        for name in set(expected_by_action) | set(produced_by_action):
+            hits = len(
+                expected_by_action.get(name, set())
+                & produced_by_action.get(name, set())
+            )
             action_tp[name] += hits
-            action_fp[name] += len(produced) - hits
-            action_fn[name] += len(expected) - hits
+            action_fp[name] += len(produced_by_action.get(name, set())) - hits
+            action_fn[name] += len(expected_by_action.get(name, set())) - hits
 
     return {
         "matches": matches,
-        "total": len(states),
-        "accuracy": matches / len(states),
+        "total": states,
+        "accuracy": matches / states if states else 0.0,
         "precision": _ratio(tp_total, fp_total),
         "recall": _ratio(tp_total, fn_total),
         # Pooled counts, so several problems can be micro-averaged downstream
@@ -162,6 +168,33 @@ def compare_successors(states: list, learned_action_prefix: str) -> dict:
             for name in set(action_tp) | set(action_fp) | set(action_fn)
         },
     }
+
+
+def compare_successors(states: list, learned_action_prefix: str) -> dict:
+    """Score a merged domain's learned actions against its original ones.
+
+    Every state carries both sets of actions, so applying all of them and
+    comparing the successors needs no planning. A successor is its pymimir
+    state index; the scoring itself is `score_successors`.
+    """
+    prefix_length = len(learned_action_prefix)
+
+    def sets_for(state) -> SuccessorSets:
+        expected: dict[str, set] = defaultdict(set)
+        produced: dict[str, set] = defaultdict(set)
+        for action in state.generate_applicable_actions():
+            successor = action.apply(state).get_index()
+            name = action.get_action().get_name()
+            if name.startswith(learned_action_prefix):
+                produced[name[prefix_length:]].add(successor)
+            else:
+                expected[name].add(successor)
+        return expected, produced
+
+    return score_successors(
+        sets_for(state)
+        for state in tqdm(states, total=len(states), desc="Validating states")
+    )
 
 
 def _ratio(true_positives: int, errors: int) -> float:

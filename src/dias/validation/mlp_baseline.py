@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import multiprocessing as _mp
+from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
@@ -26,6 +27,7 @@ from .successors import (
     LEARNED_ACTION_PREFIX,
     resolve_sample_seed,
     sample_reachable_states,
+    score_successors,
     transfer_states,
 )
 
@@ -114,7 +116,7 @@ def _phase1_worker(
 
     chunk_S = len(payloads)
     input_adjs_arr = np.zeros((chunk_S, R, num_objects, num_objects), dtype=np.uint8)
-    orig_sigs_list: list[set[bytes]] = []
+    orig_sigs_list: list[dict[str, set[bytes]]] = []
     state_idx_local: list[int] = []
     action_idx_local: list[int] = []
     binding_rows: list[np.ndarray] = []
@@ -125,10 +127,13 @@ def _phase1_worker(
 
         input_adjs_arr[i] = state_to_adj(orig_state)
 
-        sigs: set[bytes] = set()
+        # Keyed by action, as the symbolic validators are: the scorer wants
+        # both views, and the name is right here.
+        sigs: dict[str, set[bytes]] = defaultdict(set)
         for ga in orig_state.generate_applicable_actions():
-            sigs.add(adj_signature(state_to_adj(ga.apply(orig_state))))
-        orig_sigs_list.append(sigs)
+            signature = adj_signature(state_to_adj(ga.apply(orig_state)))
+            sigs[ga.get_action().get_name()].add(signature)
+        orig_sigs_list.append(dict(sigs))
 
         for ga in learned_state.generate_applicable_actions():
             name = ga.get_action().get_name()
@@ -465,7 +470,7 @@ class ModelValidation:
             chunk_results = list(zip([c[0] for c in chunks], ordered))
 
         # Concatenate worker outputs in original state order.
-        per_state_orig_sigs: list[set[bytes]] = []
+        per_state_orig_sigs: list[dict[str, set[bytes]]] = []
         input_adj_parts: list[np.ndarray] = []
         state_idx_parts: list[np.ndarray] = []
         action_idx_parts: list[np.ndarray] = []
@@ -506,12 +511,17 @@ class ModelValidation:
         self.model.eval()
 
         # ── Phase 2: GPU batched prediction ───────────────────────────────
-        per_state_pred_sigs: list[set[bytes]] = [set() for _ in range(S)]
+        per_state_pred_sigs: list[dict[str, set[bytes]]] = [
+            defaultdict(set) for _ in range(S)
+        ]
         total = int(flat_state_idx_np.shape[0])
 
-        # Cache python list once — we'll use it to assign signatures back per
-        # state in the predict loop without round-tripping through tensors.
+        # Cached once — used to assign signatures back per state and action in
+        # the predict loop without round-tripping through tensors.
         flat_state_idx_list = flat_state_idx_np.tolist()
+        flat_action_names = [
+            self.action_names[index] for index in flat_action_idx_np.tolist()
+        ]
 
         if total > 0:
             with torch.no_grad():
@@ -575,31 +585,17 @@ class ModelValidation:
                     sigs_np = adj_bin.contiguous().cpu().numpy()  # (B,R',N,N)
                     sigs_flat = sigs_np.reshape(B, -1)
                     s_chunk_cpu = flat_state_idx_list[chunk_start:chunk_end]
+                    names_chunk = flat_action_names[chunk_start:chunk_end]
                     for b in range(B):
-                        per_state_pred_sigs[s_chunk_cpu[b]].add(sigs_flat[b].tobytes())
+                        per_state_pred_sigs[s_chunk_cpu[b]][names_chunk[b]].add(
+                            sigs_flat[b].tobytes()
+                        )
 
         # ── Phase 3: metrics ──────────────────────────────────────────────
-        matches = tp_total = fp_total = fn_total = 0
-        for orig_sigs, pred_sigs in zip(per_state_orig_sigs, per_state_pred_sigs):
-            tp = len(orig_sigs & pred_sigs)
-            tp_total += tp
-            fp_total += len(pred_sigs) - tp
-            fn_total += len(orig_sigs) - tp
-            if orig_sigs == pred_sigs:
-                matches += 1
-
-        denom_p = tp_total + fp_total
-        denom_r = tp_total + fn_total
-        return {
-            "matches": matches,
-            "total": S,
-            "accuracy": matches / S if S else 0.0,
-            "precision": tp_total / denom_p if denom_p else 0.0,
-            "recall": tp_total / denom_r if denom_r else 0.0,
-            "tp": tp_total,
-            "fp": fp_total,
-            "fn": fn_total,
-        }
+        # The same scorer the symbolic validators use. All it needs is that
+        # equal successors compare equal, which a binarized adjacency does as
+        # well as a pymimir state index.
+        return score_successors(zip(per_state_orig_sigs, per_state_pred_sigs))
 
     @staticmethod
     def _format_learned_action(schema, slot_indices: list[int]) -> str:
