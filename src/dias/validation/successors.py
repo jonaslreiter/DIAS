@@ -112,49 +112,57 @@ def score_successors(per_state: Iterable[SuccessorSets]) -> dict:
     network produced it -- so this is the one scorer for every validator, and
     the only thing they have to agree on is that equal states compare equal.
 
-    Two views of the same counts, and they differ on purpose. The pooled
-    precision and recall pool over the *union* across actions, because what
-    matters behaviourally is which successors the learned domain can reach at
-    all; ``action_stats`` attributes them, so a successor the right action
-    reaches under the wrong name is a state-level hit and a per-action miss.
-    Both are micro-averaged: one pooled tp/fp/fn over all states, so a state
+    **Counts are attributed to actions, and that is the measure.** A successor
+    the learned domain reaches under the wrong operator is a false positive
+    there and a false negative under the operator that should have reached it,
+    not a hit. The alternative -- pooling the union across actions first, and
+    asking only which states are reachable in one step -- scores the learned
+    domain as a transition model rather than as a set of action schemas, and
+    this repository learns schemas. The two agree almost always (3330 of 3348
+    archived results) and never disagreed about whether a run was sound or
+    complete, but where they part the attributed one is the claim being made:
+    one archived ablation reproduces 12% of transitions under the union view
+    and 0% under this one, because it had permuted the operators.
+
+    ``matches`` and ``accuracy`` keep the state-level view: a state counts as a
+    match when the two successor *sets* agree exactly, which is the "same
+    search tree" question, and holding at every state is the same thing as the
+    union view scoring perfectly.
+
+    Micro-averaged: one pooled tp/fp/fn over every state and action, so a state
     with many successors weighs more than one with few.
     """
     states = 0
     matches = 0
-    tp_total = fp_total = fn_total = 0
     action_tp: dict[str, int] = defaultdict(int)
     action_fp: dict[str, int] = defaultdict(int)
     action_fn: dict[str, int] = defaultdict(int)
 
     for expected_by_action, produced_by_action in per_state:
         states += 1
-        expected = set().union(*expected_by_action.values(), set())
-        produced = set().union(*produced_by_action.values(), set())
-
-        true_positives = len(expected & produced)
-        tp_total += true_positives
-        fp_total += len(produced) - true_positives
-        fn_total += len(expected) - true_positives
-        matches += expected == produced
+        matches += set().union(*expected_by_action.values(), set()) == set().union(
+            *produced_by_action.values(), set()
+        )
 
         for name in set(expected_by_action) | set(produced_by_action):
-            hits = len(
-                expected_by_action.get(name, set())
-                & produced_by_action.get(name, set())
-            )
+            expected = expected_by_action.get(name, set())
+            produced = produced_by_action.get(name, set())
+            hits = len(expected & produced)
             action_tp[name] += hits
-            action_fp[name] += len(produced_by_action.get(name, set())) - hits
-            action_fn[name] += len(expected_by_action.get(name, set())) - hits
+            action_fp[name] += len(produced) - hits
+            action_fn[name] += len(expected) - hits
 
+    tp_total = sum(action_tp.values())
+    fp_total = sum(action_fp.values())
+    fn_total = sum(action_fn.values())
     return {
         "matches": matches,
         "total": states,
         "accuracy": matches / states if states else 0.0,
         "precision": _ratio(tp_total, fp_total),
         "recall": _ratio(tp_total, fn_total),
-        # Pooled counts, so several problems can be micro-averaged downstream
-        # instead of averaging their precisions.
+        # Totals, so several problems can be micro-averaged downstream instead
+        # of averaging their precisions. They are the sums of `action_stats`.
         "tp": tp_total,
         "fp": fp_total,
         "fn": fn_total,

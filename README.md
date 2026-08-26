@@ -83,8 +83,10 @@ python scripts/validate_checkpoint.py --validator dias \
     --problem pddl/gripper/test-1.pddl
 ```
 
-which prints per-action `tp`/`fp`/`fn` and the pooled precision and recall. 300
-steps will not recover gripper; the paper's runs take 10 000. Drop
+which prints per-action `tp`/`fp`/`fn` and the precision and recall they sum
+to. A successor counts only when the learned schema of *that* action reaches
+it, so recovering the right state under the wrong operator is an error rather
+than a hit. 300 steps will not recover gripper; the paper's runs take 10 000. Drop
 `--trainer.max_steps` and point `--trainer.accelerator` at `gpu` for a real one.
 
 ### Choosing a domain

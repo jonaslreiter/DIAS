@@ -95,9 +95,14 @@ class ValidationCharacterizationTest(unittest.TestCase):
         result = self.validate()
 
         self.assertEqual(result["total"], NUM_SAMPLES)
-        # 54 of the original successors are reached, 8 spurious, 138 missed.
-        self.assertAlmostEqual(result["precision"], 54 / 62, places=12)
+        # 54 of the original successors are reached, 138 missed, and 16 are
+        # spurious: 8 states, each produced by both of the inert learned
+        # actions. Counts are attributed to the action that produced them, so
+        # those 8 count twice -- two operators, two wrong predictions.
+        self.assertAlmostEqual(result["precision"], 54 / 70, places=12)
         self.assertAlmostEqual(result["recall"], 54 / 192, places=12)
+        # No sampled state has both successor sets agreeing exactly, which is
+        # the state-level view the attributed counts do not carry.
         self.assertEqual(result["matches"], 0)
         self.assertEqual(result["accuracy"], 0.0)
 

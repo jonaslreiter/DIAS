@@ -74,15 +74,17 @@ ONE = 1.0 - 1e-9
 def _seed_precision_recall(per_problem: dict) -> tuple[float, float] | None:
     """Reduce one seed's per-problem results to a single (precision, recall).
 
-    Micro-averaged: the per-problem tp/fp/fn are pooled, so a problem with many
-    reachable successors counts for more than a small one. Every validator emits
-    those counts; `action_stats` covers results written before they did, and the
-    mean of per-problem precisions is a last resort for older W&B runs whose
-    summaries carry nothing else. The counts arrive as floats from JSON.
+    Micro-averaged: the per-problem tp/fp/fn are summed, so a problem with many
+    reachable successors counts for more than a small one. Those counts are
+    per-action -- a successor reached under the wrong operator is an error --
+    which is why summing `action_stats` gives the same answer and is what
+    results written before the totals existed are read through. The mean of
+    per-problem precisions is a last resort for older W&B runs whose summaries
+    carry nothing else. The counts arrive as floats from JSON.
     """
 
     def counts(result: dict) -> tuple[int, int, int] | None:
-        """The pooled tp/fp/fn of one problem, however that result was written."""
+        """The tp/fp/fn of one problem, however that result was written."""
         values = [result.get(k) for k in ("tp", "fp", "fn")]
         # JSON round-trips these as floats; they are counts either way.
         if all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in values):

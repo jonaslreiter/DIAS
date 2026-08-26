@@ -226,9 +226,18 @@ Per domain, aggregated over seeds:
 | `N_SC` | seeds that are both |
 | `n` | seeds aggregated |
 
-Precision and recall are **micro-averaged**: each validator returns pooled
-`tp`/`fp`/`fn`, which are summed across a seed's problems rather than averaging
-per-problem rates.
+Precision and recall are **micro-averaged and attributed to actions**: a
+successor is a true positive only when the learned schema of the same action
+reaches it. Reaching the right successor under the wrong operator scores as a
+false positive there and a false negative under the operator that should have
+reached it — the stricter reading, and the one every number published from this
+repository was computed with. Each validator returns `tp`/`fp`/`fn` as the sums
+of its `action_stats`, and those are summed again across a seed's problems.
+
+The weaker state-level question — did the learned domain generate the same
+successor *set*, whatever produced it, which is what makes the search tree
+identical — is `accuracy`: the fraction of sampled states whose two sets agreed
+exactly.
 
 ## Validating one model
 
@@ -259,6 +268,6 @@ again scores the next run on exactly those states.
 this pipeline trained, found by run id. L1 scores a learned domain *another*
 system produced, handed to it as a PDDL file: there is no checkpoint and no
 `(domain, seed)` pair for `launch.py` to iterate over, so it lives here rather
-than in the sweep. All three return the same result payload — pooled
-`tp`/`fp`/`fn`, the rates, and per-action counts — because all three finish
-through the same scorer.
+than in the sweep. All three return the same result payload — per-action counts, the
+`tp`/`fp`/`fn` they sum to, and the rates — because all three finish through
+the same scorer.

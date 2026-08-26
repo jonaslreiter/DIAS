@@ -70,33 +70,20 @@ class MlpBaselineTest(unittest.TestCase):
         )
         self.assertEqual(result["total"], NUM_SAMPLES)
 
-    def test_the_per_action_counts_relate_to_the_pooled_ones_as_they_should(self):
-        """Two views of one scoring, which legitimately disagree.
+    def test_the_reported_counts_are_the_per_action_counts(self):
+        """One measure, not two views that have to be kept in agreement.
 
-        The pooled counts take the union across actions; attributing each
-        successor to the action that reached it can only *split* that union --
-        one successor reached by two actions is counted once pooled and twice
-        per action, and one reached by the right action under the wrong name is
-        a pooled hit and a per-action miss. So per-action hits can never exceed
-        pooled hits, and per-action errors can never fall below pooled errors.
+        `tp`/`fp`/`fn` are the sums of `action_stats`: a successor reached
+        under the wrong operator is an error, and a successor two operators
+        both reach is two predictions. There is no second, union-level count
+        beside them to be confused with them.
         """
         result = self.validate()
         stats = result["action_stats"].values()
 
-        self.assertLessEqual(sum(s["tp"] for s in stats), result["tp"])
-        self.assertGreaterEqual(sum(s["fp"] for s in stats), result["fp"])
-        self.assertGreaterEqual(sum(s["fn"] for s in stats), result["fn"])
-        # Nothing is invented: every attributed error is an error pooled too.
-        self.assertGreater(sum(s["fn"] for s in stats), 0)
-
-    def test_counts_agree_with_the_rates_they_are_reported_beside(self):
-        result = self.validate()
-        tp, fp, fn = result["tp"], result["fp"], result["fn"]
-        self.assertEqual(result["precision"], tp / (tp + fp) if tp + fp else 0.0)
-        self.assertEqual(result["recall"], tp / (tp + fn) if tp + fn else 0.0)
-        # An untrained MLP recovers nothing, so every original successor is missed.
-        self.assertGreater(fn, 0)
-        self.assertEqual(tp, 0)
+        for key in ("tp", "fp", "fn"):
+            self.assertEqual(sum(s[key] for s in stats), result[key], key)
+        self.assertGreater(result["fn"], 0, "an untrained MLP misses everything")
 
     def test_worker_processes_do_not_change_the_result(self):
         """The phase-1 fan-out reloads the domain in each worker and rebuilds
