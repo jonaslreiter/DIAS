@@ -72,19 +72,6 @@ class DIAS(L.LightningModule):
         self.learning_rate = learning_rate
         self.aux_loss_weight = aux_loss_weight
 
-        self.graph_edit = PredictionModule(
-            arity_relations=arity_relations,
-            num_actions=num_actions,
-            num_slots=self.num_slots,
-            object_dim=object_dim,
-            force_action_args=force_action_args,
-            per_action_slots=per_action_slots,
-            learn_preconditions=learn_preconditions,
-            action_arities=action_arities,
-            state_dependent_effects=state_dependent_effects,
-            use_slot_weights=use_slot_weights,
-        )
-
         self.edges = EdgeTypeLayout(
             num_relations=self.num_relations,
             num_actions=num_actions,
@@ -96,6 +83,19 @@ class DIAS(L.LightningModule):
             self.edges.num_edge_types,
             hidden_dims=encoder_hidden_dims or DEFAULT_HIDDEN_DIMS,
             random_node_embeddings=random_node_embeddings,
+        )
+
+        self.graph_edit = PredictionModule(
+            arity_relations=arity_relations,
+            num_actions=num_actions,
+            num_slots=self.num_slots,
+            object_dim=object_dim,
+            force_action_args=force_action_args,
+            per_action_slots=per_action_slots,
+            learn_preconditions=learn_preconditions,
+            action_arities=action_arities,
+            state_dependent_effects=state_dependent_effects,
+            use_slot_weights=use_slot_weights,
         )
 
         self.objective = DiasObjective(

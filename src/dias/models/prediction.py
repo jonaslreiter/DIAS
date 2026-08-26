@@ -25,10 +25,6 @@ class PredictionModule(nn.Module):
     preconditions are projected onto that binding, and the resulting change is
     applied to the state: ``A' = A + pre * delta``, where ``pre`` is how well
     the preconditions hold (when ``learn_preconditions=True``).
-
-    Construction order is load-bearing. ``slot_encodings``,
-    ``slot_weight_logits``, ``preconditions`` and ``effects`` consume the global
-    RNG in that order, which is what lets an archived seed be re-run.
     """
 
     def __init__(
@@ -81,14 +77,9 @@ class PredictionModule(nn.Module):
         selection, selection_logits = self.selector(
             node_embeddings.view(batch, num_objects, -1), y_action, y_action_args
         )
+
+        # Do the preconditions hold?
         preconditions = Channels.from_logits(self.preconditions(y_action))
-        effects = Channels.from_logits(self.effects(y_action, adjacency, selection))
-
-        # Before the preconditions, because `selection` feeds all four
-        # projections and autograd sums their gradients in the order the
-        # forward pass built them -- which an archived seed reproduces.
-        delta = self.delta(adjacency, effects, selection)
-
         required = project(preconditions.positive, selection)
         forbidden = project(preconditions.negative, selection)
         # An atom satisfies the preconditions unless it is required and absent,
@@ -99,6 +90,10 @@ class PredictionModule(nn.Module):
         fulfilled = soft_conjunction(
             satisfaction, dim=-1, temperature=gmean_temperature
         )
+
+        # What would the action change?
+        effects = Channels.from_logits(self.effects(y_action, adjacency, selection))
+        delta = self.delta(adjacency, effects, selection)
 
         if self.learn_preconditions:
             successor = adjacency + fulfilled[:, None, None, None] * delta

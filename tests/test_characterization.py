@@ -1,13 +1,22 @@
-"""Golden tests pinning the DIAS training path across the refactor.
+"""Golden tests pinning the DIAS training path.
 
-These are the guard for "the refactored code computes the same thing". They are
+These are the guard for "this change computes the same thing". They are
 deliberately coarse-grained: a full forward pass and a full three-step training
 trajectory, compared against a stored fixture.
 
-The training-step golden is the one that matters most. A forward-only golden
-cannot see a change in the order in which module construction consumes the
-global RNG -- which would leave every archived seed irreproducible while every
-forward test still passed.
+The training-step golden is the one that matters most: it sees changes a
+forward-only golden cannot -- the order in which module construction consumes
+the global RNG, the order the losses are summed in, drift in the PCGrad
+projection.
+
+**What the fixture is, and is not.** It is the trajectory this code produces in
+a pinned environment, and any unintended change to it shows up here. It is not
+a claim about the runs behind the paper: the fixture was regenerated once,
+deliberately, when construction started drawing in the order the data flows
+through the model, so a pre-refactor seed no longer builds the same weights.
+Nothing was lost by that -- a GPU run was never reproducible from its seed
+either, unless it asked for `--trainer.deterministic=true`, which no archived
+run did.
 
 To regenerate after an intended change:
 
@@ -34,9 +43,18 @@ REGENERATE = os.environ.get("DIAS_REGENERATE_GOLDEN") == "1"
 # Above float32 accumulation error, below anything a real behaviour change moves.
 TOLERANCE = 1e-6
 
-# Required, not tidiness: the encoder's scatter-add reductions are parallelised,
-# so a multi-threaded run of the same seed drifts by ~1e-4 over three steps and
-# no golden trajectory can hold. Single-threaded it is bit-reproducible.
+# Required, not tidiness, and `torch.use_deterministic_algorithms` does not
+# replace it. The two settle different halves of the problem: deterministic
+# kernels make a run repeat *on this machine at this thread count*, while the
+# thread count decides how a parallel reduction is split, and float addition is
+# not associative. Measured on the production-width model: three runs at 8
+# threads give three different results, deterministic mode makes them one --
+# but 1, 2, 4 and 8 threads still give four different answers, with or without
+# it. A golden has to hold on machines with different core counts, so the
+# thread count is what has to be pinned. Single-threaded is then already
+# repeatable without deterministic mode; the trajectory test asks for it anyway,
+# below, so a future operation that is nondeterministic even on one thread
+# cannot slip in unnoticed.
 torch.set_num_threads(1)
 
 
@@ -204,11 +222,15 @@ class TrainingTrajectoryTest(unittest.TestCase):
         torch.manual_seed(11)
         model = DIAS(**(MODEL_DEFAULTS | flags))
         self.addCleanup(model.teardown, "test")
+        # Lightning's `deterministic` sets a *global* torch flag and never
+        # unsets it, so it is put back before the next test module runs.
+        self.addCleanup(torch.use_deterministic_algorithms, False)
 
         # batch_size=None disables collation, so each item arrives as the
         # (batch_s1, batch_s2) tuple DIAS.step expects.
         batches = DataLoader([make_batch(shift=i) for i in range(3)], batch_size=None)
         trainer = L.Trainer(
+            deterministic=True,
             max_steps=3,
             accelerator="cpu",
             devices=1,
