@@ -6,6 +6,11 @@ __pycache__/
 build/
 dist/
 .pytest_cache/
+# `coverage run` writes .coverage beside the tests, `--parallel` writes
+# .coverage.<host>.<pid>, and `coverage html` writes htmlcov/.
+.coverage
+.coverage.*
+htmlcov/
 
 .vscode/
 logs/

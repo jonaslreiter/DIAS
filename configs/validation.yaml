@@ -12,6 +12,11 @@ sample_population: 500
 # run; set it to a number to fix the draw, which makes a result reproducible
 # and scores every seed of a domain on the same states. The seed used is
 # recorded in each result JSON.
+#
+# Left unset deliberately. No draw in this pipeline is pinned to a constant --
+# a sweep varies the training sample from seed to seed -- so fixing only the
+# validation states would claim a reproducibility the reported numbers do not
+# have. Each run scores on its own sample.
 sample_seed: null
 
 # Which problems (from the manifest's `problems` list) to validate on.
