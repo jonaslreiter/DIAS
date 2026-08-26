@@ -26,7 +26,6 @@ class CLI(LightningCLI):
             "num_actions",
             "action_arities",
             "action_arg_positions",
-            "batch_size",
         ):
             parser.link_arguments(
                 f"data.{name}",

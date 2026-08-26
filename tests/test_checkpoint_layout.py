@@ -91,6 +91,8 @@ UNVERSIONED_ONLY_HPARAMS = {
     "loss_weight_schedule",
     "gmean_offset",
     "parameter_plotting",
+    # Stored by the model, read only by the datamodule.
+    "batch_size",
 }
 
 # What it becomes after migration.

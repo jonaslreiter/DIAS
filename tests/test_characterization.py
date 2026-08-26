@@ -72,7 +72,6 @@ MODEL_DEFAULTS = dict(
     action_arities=[2, 2],
     action_arg_positions=[[0, 1], [0]],
     successor_relations=True,
-    batch_size=2,
     # Production widths would make the stored trajectory 2.6 MB of encoder
     # weights. Narrow layers exercise the same code for ~50 KB.
     encoder_hidden_dims=[4, 8, 8],

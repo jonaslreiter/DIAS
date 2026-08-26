@@ -53,8 +53,9 @@ _ENCODER_CONV = re.compile(r"^state_encoder\.convs\.(\d+)\.")
 _DROPPED_KEYS = ("graph_edit.action_arities_t", "_action_rel_lookup")
 
 # Hyper-parameters the constructor no longer takes. Plotting is a callback's
-# business now, and it affected no weights.
-_DROPPED_HPARAMS = ("parameter_plotting",)
+# business now, and the batch size was the datamodule's all along -- the model
+# stored it and never read it. Neither affected any weights.
+_DROPPED_HPARAMS = ("parameter_plotting", "batch_size")
 
 
 def _spec(class_path: str, **init_args) -> dict:

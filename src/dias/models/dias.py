@@ -29,7 +29,6 @@ class DIAS(L.LightningModule):
         num_actions: int,
         object_dim: int,
         num_slots: int | None = None,
-        batch_size: int = 100,
         learning_rate: float = 0.01,
         aux_loss_weight: float = 1.0,
         force_action_args: bool = False,
