@@ -1,4 +1,4 @@
-# Per-domain Slurm resources consumed by scripts/launch.py.
+# Per-domain Slurm resources consumed by experiments/launch.py.
 #
 # Each domain inherits `defaults` for any field it does not set. Fields:
 #   time  -> --time   (HH:MM:SS)
@@ -11,7 +11,7 @@
 # Fill in real per-domain values as needed; an empty {} means "use defaults".
 #
 # These configure the TRAINING array. Validation-array resources are configured
-# separately in configs/slurm-resources-validation.yaml.
+# separately in experiments/configs/slurm-resources-validation.yaml.
 
 defaults:
   time: "04:00:00"

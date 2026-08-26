@@ -122,8 +122,8 @@ class ValidationCharacterizationTest(unittest.TestCase):
     def test_an_unseeded_run_records_the_seed_that_reproduces_it(self):
         """Unfixed is not the same as unrecorded.
 
-        `configs/validation.yaml` leaves `sample_seed` unset, so each run scores
-        on its own sample. What makes such a result checkable afterwards is
+        `experiments/configs/validation.yaml` leaves `sample_seed` unset, so
+        each run scores on its own sample. What makes such a result checkable is
         that the seed it drew with is written into the result JSON and, passed
         back, redraws exactly those states.
         """

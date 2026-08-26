@@ -78,7 +78,7 @@ A few minutes later `logs/dias/quickstart/checkpoints/` holds the trained model.
 the schema it learned back as PDDL and score it on a held-out problem:
 
 ```bash
-python scripts/validate_checkpoint.py --validator dias \
+python experiments/validate_checkpoint.py --validator dias \
     --model-id quickstart --log-dir logs \
     --problem pddl/gripper/test-1.pddl
 ```
@@ -139,32 +139,34 @@ in `strips+.yaml`, and the tuned `config.yaml`.
 The main table is one command per experiment type, plus a collection step:
 
 ```bash
-python scripts/launch.py --experiment dias-full                      # DIAS
-python scripts/launch.py --experiment mlp --experiment-type mlp      # MLP baseline
-python scripts/launch.py --experiment noise --experiment-type noise  # noisy input
+python experiments/launch.py --experiment dias-full                      # DIAS
+python experiments/launch.py --experiment mlp --experiment-type mlp      # MLP baseline
+python experiments/launch.py --experiment noise --experiment-type noise  # noisy input
 
-python scripts/collect_results.py --experiment dias-full
+python experiments/collect_results.py --experiment dias-full
 ```
 
 Each launch submits, per domain, a training array over the seeds plus a
 validation array that depends on it. **This assumes Slurm**, and the job scripts
-under `scripts/slurm/` are a worked example for one cluster — see "Running on
-your own cluster" below. `--backend local` runs the same steps sequentially on
-this machine instead.
+under `experiments/slurm/` are a worked example for one cluster — see
+"Running on your own cluster" below. `--backend local` runs the same steps
+sequentially on this machine instead.
 
 The ablations, the hyperparameter and dataset-size sweeps, the threshold
 sensitivity study and the aggregation options are all in
-**[docs/experiments.md](docs/experiments.md)**. The separate instance-size
-scaling study has its own [scaling/README.md](scaling/README.md).
+**[experiments/README.md](experiments/README.md)** — the folder that is the
+entry point for all of it. The separate instance-size scaling study has its own
+[README](experiments/scaling/README.md).
 
 ### What is and is not reproducible
 
 Validation scores a learned schema on states sampled from each held-out
 problem, and that draw is **not** fixed to a constant: `sample_seed` in
-`configs/validation.yaml` is unset, so every run scores on its own sample, the
-way every run also trains on its own. Each result JSON records the seed its
+`experiments/configs/validation.yaml` is unset, so every run scores on its own
+sample, the way every run also trains on its own. Each result JSON records the
+seed its
 states were drawn with, so any number can be re-derived afterwards by putting
-that seed back into `configs/validation.yaml`.
+that seed back into `experiments/configs/validation.yaml`.
 
 Training itself is reproducible from `(domain, seed)` only if you ask for it.
 Float addition is not associative, so a parallel reduction's result depends on
@@ -180,17 +182,18 @@ setting.
 
 ### Running on your own cluster
 
-`scripts/slurm/train.sh`, `scripts/slurm/validate.sh` and
-`scaling/slurm/benchmark.sh` each begin with a block marked
+`experiments/slurm/train.sh`, `experiments/slurm/validate.sh` and
+`experiments/scaling/slurm/benchmark.sh` each begin with a block marked
 `── site configuration ──`. It holds every line specific to one cluster: the
 partition and QoS fallbacks, and `DIAS_ENV_SETUP`, the shell snippet that puts a
 Python with `dias` importable on `PATH`. Edit that block, or export
 `DIAS_ENV_SETUP` before submitting. Nothing below the end marker is
 site-specific.
 
-Per-domain resources come from `configs/slurm-resources.yaml` (training) and
-`configs/slurm-resources-validation.yaml` (validation, CPU-only). The training
-defaults request GPU shards (`gres: shard:N`), which is **not** a standard Slurm
+Per-domain resources come from `experiments/configs/slurm-resources.yaml`
+(training) and `experiments/configs/slurm-resources-validation.yaml`
+(validation, CPU-only). The training defaults request GPU shards
+(`gres: shard:N`), which is **not** a standard Slurm
 GRES; change it to `gpu:1` if your site does not define it.
 
 ## Repository layout
@@ -206,13 +209,17 @@ src/dias/
 ├── validation/       the three validators + shared successor scoring
 └── reporting/        the W&B custom charts the learned schema is logged as
 
-configs/              main.yaml, validation.yaml, Slurm resources, experiments/
+experiments/          everything you run to reproduce the paper -- start here
+├── README.md         the full experiment recipes
+├── launch.py         the sweep launcher; validate_runs.py, collect_results.py,
+│                       validate_checkpoint.py, pipeline.py beside it
+├── configs/          validation.yaml, Slurm resources
+├── slurm/            the array job scripts
+└── scaling/          the one-off runtime / GPU-memory vs instance-size study
+
+configs/              main.yaml and the `dias fit` overlays in experiments/
 pddl/                 the 13 domains, one folder each
-scripts/              launch.py, validate_runs.py, validate_checkpoint.py,
-                        collect_results.py, pipeline.py, slurm/
-scaling/              the one-off runtime / GPU-memory vs instance-size study
 tests/
-docs/experiments.md   the full experiment recipes
 ```
 
 ## Development

@@ -8,12 +8,13 @@ This is a one-off analysis and is deliberately kept out of the main pipeline —
 it trains no model, learns no schema, and writes nothing to W&B. Everything it
 needs lives in this directory; the only things it borrows from the repository
 are the training config chain, the domain files, and the sbatch helpers in
-`scripts/pipeline.py`.
+`experiments/pipeline.py`.
 
 ## What is measured
 
 Each point is a real DIAS training run — the ordinary Lightning config chain
-(`configs/main.yaml` → `pddl/<domain>/config.yaml` → `scaling/configs/scaling.yaml`)
+(`configs/main.yaml` → `pddl/<domain>/config.yaml` →
+`experiments/scaling/configs/scaling.yaml`)
 instantiated through `dias.main.CLI`, with a timing callback attached. Nothing is
 stubbed. It is cut short, though: **20 warm-up + 100 measured steps** per point,
 not the 10 000 steps of a real run. Throughput and memory reach steady state
@@ -28,22 +29,24 @@ numbers.
 * GPU memory is reported both as `max_memory_allocated` (live tensors) and
   `max_memory_reserved` (allocator pool) — the run sets
   `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` exactly as
-  `scripts/slurm/train.sh` does, so the reserved figure is the one real training
+  `experiments/slurm/train.sh` does, so the reserved figure is the one real
+  training
   would see;
 * transition sampling, peak host RSS, and the size of the pre-computed sample
   pool are recorded separately — they are host-side costs, not part of the
   step time.
 
-`scaling/configs/scaling.yaml` holds everything but the instance fixed, which is
-the whole point: **100 train + 50 valid transitions per action** for every domain
-and every size (delivery would otherwise sample 10× more than blocks-3), batch
-size 200 throughout, and no validation, logging or checkpointing inside the
-measured window.
+`experiments/scaling/configs/scaling.yaml` holds everything but the instance
+fixed, which is the whole point: **100 train + 50 valid transitions per
+action** for every domain and every size (delivery would otherwise sample 10×
+more than blocks-3), batch size 200 throughout, and no validation, logging or
+checkpointing inside the measured window.
 
 ## The ladder
 
 Six sizes per domain, aligned on a common target of ≈12 / 20 / 40 / 68 / 100 /
-150 objects so the three curves are comparable (`scaling/configs/sizes.yaml`):
+150 objects so the three curves are comparable
+(`experiments/scaling/configs/sizes.yaml`):
 
 | domain | scaled by | object counts |
 |---|---|---|
@@ -64,9 +67,9 @@ not treated as a crash, and shows up as `oom` in the aggregated table.
 
 ## Instances
 
-`scaling/instances/<domain>/n<objects>.pddl` are generated once from the
-[upstream PDDL generators](https://github.com/AI-Planning/pddl-generators) and
-committed, together with `index.json` (parameters + object/action/predicate
+`experiments/scaling/instances/<domain>/n<objects>.pddl` are generated once from
+the [upstream PDDL generators](https://github.com/AI-Planning/pddl-generators)
+and committed, together with `index.json` (parameters + object/action/predicate
 counts per instance). **Running the study needs neither the generators nor this
 section** — they are only needed to change the ladder, which is why they are not
 vendored here.
@@ -77,8 +80,8 @@ make -C ../pddl-generators/blocksworld/bwstates.1
 make -C ../pddl-generators/blocksworld/3ops/2pddl
 make -C ../pddl-generators/logistics
 
-python scaling/generate_instances.py --generators-dir ../pddl-generators
-python scaling/generate_instances.py --generators-dir ../pddl-generators \
+python experiments/scaling/generate_instances.py --generators-dir ../pddl-generators
+python experiments/scaling/generate_instances.py --generators-dir ../pddl-generators \
     --domains delivery --force
 ```
 
@@ -88,7 +91,8 @@ their output to match the repository's `pddl/<domain>/domain.pddl` — the
 `(not (eq ?x ?y))` preconditions need, and the `logistics-strips` instances get
 `OBJ` → `object`, `in-city` → `loc` and the missing `(vehicle ?v)` facts. The
 delivery generator already emits the repo's domain, but needs `tarski`, so it
-runs out of a throwaway venv created on demand at `scaling/.venv-delivery`
+runs out of a throwaway venv created on demand at
+`experiments/scaling/.venv-delivery`
 (gitignored). Every generated instance is loaded with pymimir and its object
 count checked against the ladder before it is written.
 
@@ -96,17 +100,17 @@ count checked against the ladder before it is written.
 
 ```bash
 # Full grid: 3 domains x 6 sizes x 3 seeds = 54 points.
-python scaling/launch_scaling.py --experiment scaling-a10
+python experiments/scaling/launch_scaling.py --experiment scaling-a10
 
 # What would be submitted:
-python scaling/launch_scaling.py --dry-run
+python experiments/scaling/launch_scaling.py --dry-run
 
 # Re-run seeds that died, keeping the finished points:
-python scaling/launch_scaling.py --experiment scaling-a10 --domains delivery \
+python experiments/scaling/launch_scaling.py --experiment scaling-a10 --domains delivery \
     --seeds 1 2 --skip-existing
 
 # Sequentially, here (smoke test):
-python scaling/launch_scaling.py --backend local --domains blocks-3 --seeds 0 \
+python experiments/scaling/launch_scaling.py --backend local --domains blocks-3 --seeds 0 \
     --experiment smoke
 ```
 
@@ -115,7 +119,8 @@ domain's whole ladder. Sizes share a task on purpose: a curve stitched together
 across different physical GPUs would not mean anything. For the same reason the
 task asks for an **exclusive** GPU (`--gres=gpu:1`) on a **pinned** partition —
 unlike the main training arrays, which take `shard:N` slices of a shared GPU.
-Both come from the `slurm:` block of `scaling/configs/sizes.yaml`; it currently
+Both come from the `slurm:` block of
+`experiments/scaling/configs/sizes.yaml`; it currently
 pins `rleap_gpu_24gb` (A10, 24 GB). Changing the card changes where the ladder
 hits OOM, so re-runs on a different partition belong in a different
 `--experiment`.
@@ -127,9 +132,9 @@ One JSON per point at
 gitignored `logs/`, like the rest of the pipeline's outputs).
 
 ```bash
-python scaling/collect_scaling.py --experiment scaling-a10
-python scaling/collect_scaling.py --experiment scaling-a10 --markdown logs/scaling.md
-python scaling/collect_scaling.py --experiment scaling-a10 --csv logs/scaling.csv
+python experiments/scaling/collect_scaling.py --experiment scaling-a10
+python experiments/scaling/collect_scaling.py --experiment scaling-a10 --markdown experiments/results/scaling.md
+python experiments/scaling/collect_scaling.py --experiment scaling-a10 --csv experiments/results/scaling.csv
 ```
 
 Prints a domain × object-count matrix per metric (iterations/second, peak GPU
@@ -141,11 +146,11 @@ per-run rows for plotting.
 
 | file | role | main-pipeline analogue |
 |---|---|---|
-| `configs/sizes.yaml` | the ladder, seeds, step counts, Slurm resources | `configs/slurm-resources.yaml` |
+| `configs/sizes.yaml` | the ladder, seeds, step counts, Slurm resources | `experiments/configs/slurm-resources.yaml` |
 | `configs/scaling.yaml` | Lightning overlay, composed last | `configs/experiments/*.yaml` |
 | `generate_instances.py` | drives the upstream generators, rewrites their output | — |
-| `benchmark.py` | one (domain, size, seed) point → one JSON | `scripts/validate_checkpoint.py` |
-| `run_scaling.py` | walks one domain's ladder for one seed | `scripts/validate_runs.py` |
-| `launch_scaling.py` | submits the arrays / runs locally | `scripts/launch.py` |
-| `collect_scaling.py` | aggregates the JSONs into tables | `scripts/collect_results.py` |
-| `slurm/benchmark.sh` | the array task | `scripts/slurm/train.sh` |
+| `benchmark.py` | one (domain, size, seed) point → one JSON | `experiments/validate_checkpoint.py` |
+| `run_scaling.py` | walks one domain's ladder for one seed | `experiments/validate_runs.py` |
+| `launch_scaling.py` | submits the arrays / runs locally | `experiments/launch.py` |
+| `collect_scaling.py` | aggregates the JSONs into tables | `experiments/collect_results.py` |
+| `slurm/benchmark.sh` | the array task | `experiments/slurm/train.sh` |

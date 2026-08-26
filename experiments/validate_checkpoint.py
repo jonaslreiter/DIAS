@@ -1,6 +1,6 @@
 """Validate one learned action model on one PDDL problem.
 
-The counterpart of ``scripts/validate_runs.py``, which walks a whole
+The counterpart of ``experiments/validate_runs.py``, which walks a whole
 ``(experiment, domain, seed)`` grid: this validates a single model against a
 single problem and prints the result, which is what a debugging session or a
 one-off comparison wants.
@@ -16,18 +16,19 @@ one-off comparison wants.
 
 The first two locate their checkpoint under ``--log-dir`` by run id; ``l1``
 takes ``--original-domain`` and ``--learned-domain`` instead. Sampling defaults
-come from ``configs/validation.yaml``, so a single-problem check uses the same
+come from ``experiments/configs/validation.yaml``, so a single-problem check
+uses the same
 numbers the sweep does.
 
 Examples
 --------
-    python scripts/validate_checkpoint.py --validator dias \\
+    python experiments/validate_checkpoint.py --validator dias \\
         --model-id <run-id> --problem pddl/satellite/test-1.pddl
 
-    python scripts/validate_checkpoint.py --validator mlp \\
+    python experiments/validate_checkpoint.py --validator mlp \\
         --model-id <run-id> --problem pddl/satellite/test-1.pddl
 
-    python scripts/validate_checkpoint.py --validator l1 \\
+    python experiments/validate_checkpoint.py --validator l1 \\
         --original-domain pddl/satellite/domain.pddl \\
         --learned-domain  learned/satellite.pddl \\
         --problem         pddl/satellite/test-1.pddl
@@ -110,7 +111,8 @@ def main() -> int:
     p.add_argument("--original-domain", type=Path, default=None, help="l1 only.")
     p.add_argument("--learned-domain", type=Path, default=None, help="l1 only.")
     p.add_argument("--log-dir", type=Path, default=LOGS_DIR)
-    # Defaulted from configs/validation.yaml rather than repeated as literals,
+    # Defaulted from experiments/configs/validation.yaml rather than repeated
+    # as literals,
     # which is how the runners this replaced came to sample 250 of 500 states
     # while the config said something else.
     p.add_argument("--num-samples", type=int, default=int(defaults["num_samples"]))

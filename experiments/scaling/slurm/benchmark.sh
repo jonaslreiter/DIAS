@@ -1,6 +1,6 @@
 #!/usr/bin/env zsh
 # ── site configuration ────────────────────────────────────────────────────────
-# See scripts/slurm/train.sh for what this block is and how to adapt it.
+# See experiments/slurm/train.sh for what this block is and how to adapt it.
 #SBATCH --job-name=dias-scaling
 #SBATCH --partition=rleap_gpu_24gb
 #SBATCH --qos=rleap_deadline
@@ -11,17 +11,17 @@
 #
 # Scaling-study array task: one task = one (domain, seed) = the whole size
 # ladder of that domain, measured on one GPU. Do NOT run directly — submit via
-#   python scaling/launch_scaling.py ...
+#   python experiments/scaling/launch_scaling.py ...
 # which sets resources (--time/--mem/--gres/--array/--partition, overriding the
 # #SBATCH fallbacks above) and exports the variables read below.
 #
-# Unlike scripts/slurm/train.sh this asks for an exclusive GPU rather than a
+# Unlike experiments/slurm/train.sh this asks for an exclusive GPU rather than a
 # shard: co-tenants on a shared GPU would show up in the iterations/second.
 
 eval "$DIAS_ENV_SETUP"
 set -euo pipefail
 
-# Same allocator setting as scripts/slurm/train.sh, so the reserved-memory
+# Same allocator setting as experiments/slurm/train.sh, so the reserved-memory
 # numbers this study reports are the ones real training would see.
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
@@ -35,7 +35,7 @@ fi
 
 # DIAS_ROOT rather than a relative path: Slurm runs the batch script from a
 # spool copy, so nothing here may assume the submission directory.
-python "${DIAS_ROOT}/scaling/run_scaling.py" \
+python "${DIAS_ROOT}/experiments/scaling/run_scaling.py" \
   --domain "$DOMAIN" \
   --seed "$SEED" \
   --experiment "$EXPERIMENT" \

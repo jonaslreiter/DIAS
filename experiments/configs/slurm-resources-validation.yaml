@@ -1,5 +1,5 @@
 # Per-domain Slurm resources for the VALIDATION array, consumed by
-# scripts/launch.py. Same schema as configs/slurm-resources.yaml, resolved
+# experiments/launch.py. Same schema as experiments/configs/slurm-resources.yaml, resolved
 # independently (validation does NOT inherit anything from the training file).
 #
 # Each domain inherits `defaults` for any field it does not set. Fields:
@@ -12,7 +12,7 @@
 # The DIAS/noise validators run on CPU only; the MLP baseline uses a GPU if one
 # is present but falls back to CPU. So validation requests no GPU (no `gres`)
 # and targets the CPU partitions via `sbatch_extra`, overriding the GPU
-# partitions declared in scripts/slurm/validate.sh. Fill in real per-domain
+# partitions declared in experiments/slurm/validate.sh. Fill in real per-domain
 # values as needed; {} means "use defaults".
 
 defaults:

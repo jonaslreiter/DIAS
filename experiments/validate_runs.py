@@ -1,15 +1,15 @@
 """Validate one ``(experiment, domain, seed)`` run and write its results.
 
 This is the compute-side validation step. It is invoked once per seed by
-``slurm/validate.sh`` (as an array task) and directly by
-``scripts/launch.py --backend local``. The validator is chosen by experiment
-type:
+``slurm/validate.sh`` (as an array task) and directly by ``launch.py --backend
+local``. The validator is chosen by experiment type:
 
   dias / noise -> dias.validation.dias_validate.ModelValidation  (checkpoint)
   mlp          -> dias.validation.mlp_baseline.ModelValidation   (checkpoint)
 
 (The L1 baseline validates an externally-produced symbolic domain and has no
-training checkpoint; use ``scripts/validation/run_l1.py`` for it.)
+training checkpoint, so no sweep iterates over it; reach it through
+``validate_checkpoint.py --validator l1``.)
 
 The training run is located by a *deterministic* run id
 (``<experiment>-<domain>-s<seed>``) so no job-to-job id handoff is needed:
@@ -17,7 +17,7 @@ its checkpoint lives at ``<logs>/dias/<run_id>/checkpoints/best-*.ckpt``.
 
 Validation problems are the domain folder's held-out instances
 (``pddl/<domain>/test-{1,2,3}.pddl``); the sampling knobs come from
-``configs/validation.yaml``. Results are written to
+``experiments/configs/validation.yaml``. Results are written to
 ``<logs>/validation/<experiment>/<domain>/seed<seed>.json`` and, when W&B is
 reachable, also logged to the resumed run under ``validation/<stem>/<metric>``.
 
@@ -26,7 +26,7 @@ threshold (DIAS validator only; 0.5 is what the paper reports), and
 ``--results-experiment`` redirects only the *output* directory (and W&B group)
 while the checkpoint is still located via ``--experiment``. Together they let a
 finished experiment be re-validated into a sibling results directory without
-touching its original JSONs — see ``scripts/launch_threshold_validation.py``.
+touching its original JSONs — see ``experiments/launch_threshold_validation.py``.
 """
 
 from __future__ import annotations
@@ -199,9 +199,10 @@ def _write_json(
                 "seed": seed,
                 "run_id": run_id,
                 "threshold": threshold,
-                # Always a number, whether it was configured or drawn: passing
-                # it back as configs/validation.yaml's sample_seed reproduces
-                # exactly the states these numbers were computed on.
+                # Always a number, whether it was configured or drawn:
+                # passing it back as the sample_seed of
+                # experiments/configs/validation.yaml reproduces exactly the
+                # states these numbers were computed on.
                 "sample_seed": sample_seed,
                 "status": "ok" if ok else "validation_failed",
                 "per_problem": per_problem,
@@ -233,7 +234,7 @@ def _log_to_wandb(
             group=experiment,
             dir=str(logs_dir),
         )
-        # Tag with domain/seed so scripts/collect_results.py can group by domain.
+        # Tag with domain/seed so experiments/collect_results.py can group by domain.
         wandb.config.update({"domain": domain, "seed": seed}, allow_val_change=True)
         for stem, result in per_problem.items():
             for k, val in result.items():

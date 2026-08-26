@@ -31,6 +31,7 @@ MAIN = ROOT / "configs" / "main.yaml"
 # A domain to carry the overlays. They are domain-independent, so the whole
 # cross product would parse the same files again for no extra cover.
 A_DOMAIN = ROOT / "pddl" / "gripper" / "config.yaml"
+SCALING_OVERLAY = ROOT / "experiments" / "scaling" / "configs" / "scaling.yaml"
 
 
 class ParseOnlyCLI(CLI):
@@ -85,7 +86,7 @@ class CompositionTest(unittest.TestCase):
                 parse(MAIN, A_DOMAIN, overlay)
 
     def test_the_scaling_study_composes_the_same_way(self):
-        parse(MAIN, A_DOMAIN, ROOT / "scaling" / "configs" / "scaling.yaml")
+        parse(MAIN, A_DOMAIN, SCALING_OVERLAY)
 
 
 class DomainSelectionTest(unittest.TestCase):

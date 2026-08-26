@@ -24,15 +24,31 @@ from pathlib import Path
 
 import yaml
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+# ── where everything is ───────────────────────────────────────────────────────
+#
+# This file sits in experiments/, the folder you run the pipeline from: the
+# launchers, the Slurm scripts, the orchestration configs and the collected
+# tables are its siblings. What stays at the repository root is what is not
+# about running a sweep -- the Lightning configs `dias fit` reads (CONFIGS_DIR)
+# and the domains (PDDL_DIR).
+
+EXPERIMENTS_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = EXPERIMENTS_ROOT.parent
+
+SLURM_DIR = EXPERIMENTS_ROOT / "slurm"
+PIPELINE_CONFIGS = EXPERIMENTS_ROOT / "configs"
+RESULTS_DIR = EXPERIMENTS_ROOT / "results"
+
 CONFIGS_DIR = PROJECT_ROOT / "configs"
-EXPERIMENTS_DIR = CONFIGS_DIR / "experiments"
+# The `dias fit` overlays -- mlp, noise, ablation-*. Named for the --experiment
+# -type / --ablation flags that select them, not for the folder above.
+OVERLAYS_DIR = CONFIGS_DIR / "experiments"
 PDDL_DIR = PROJECT_ROOT / "pddl"
 
 TRAIN_CONFIG = CONFIGS_DIR / "main.yaml"
-VALIDATION_CONFIG = CONFIGS_DIR / "validation.yaml"
-SLURM_RESOURCES = CONFIGS_DIR / "slurm-resources.yaml"
-SLURM_RESOURCES_VALIDATION = CONFIGS_DIR / "slurm-resources-validation.yaml"
+VALIDATION_CONFIG = PIPELINE_CONFIGS / "validation.yaml"
+SLURM_RESOURCES = PIPELINE_CONFIGS / "slurm-resources.yaml"
+SLURM_RESOURCES_VALIDATION = PIPELINE_CONFIGS / "slurm-resources-validation.yaml"
 LOGS_DIR = PROJECT_ROOT / "logs"
 
 # Which W&B account and project the runs live in. An unset entity means
@@ -199,7 +215,8 @@ def parse_seeds(specs: list[str]) -> list[int]:
 def resolve_seeds(args: argparse.Namespace) -> list[int]:
     """The seeds a launch covers: an explicit subset, or ``0 .. num_runs-1``.
 
-    Without either flag the count comes from ``configs/validation.yaml``, which
+    Without either flag the count comes from
+    ``experiments/configs/validation.yaml``, which
     is what the paper's ten seeds per domain are declared in.
     """
     if args.seeds is not None:

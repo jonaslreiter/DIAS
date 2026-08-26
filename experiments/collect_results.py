@@ -1,6 +1,6 @@
 """Aggregate validation results for an experiment into a paper-style table.
 
-Reads per-run results (written by ``scripts/validate_runs.py``) from local JSON
+Reads per-run results (written by ``experiments/validate_runs.py``) from local JSON
 or the W&B API, keyed by the ``--experiment`` name (= W&B group). For each
 domain it aggregates over seeds and reports:
 
@@ -17,14 +17,14 @@ is sound iff every problem has zero false positives); when tp/fp/fn are absent
 (e.g. W&B summaries) it falls back to the mean of per-problem precision/recall.
 
 With ``--sweep AXIS`` it instead reads the sub-experiments written by
-``scripts/launch.py --sweep AXIS`` (``<experiment>-<tag><value>``) and prints one
+``experiments/launch.py --sweep AXIS`` (``<experiment>-<tag><value>``) and prints one
 domain x value matrix per metric; ``--markdown`` writes the same matrices as
 markdown tables. ``--reuse-default EXPERIMENT`` mirrors the launcher flag: the
 axis-default column is read from that existing experiment.
 
 ``--threshold-sweep`` does the same for the *validation* binarization threshold
 (sub-experiments ``<experiment>-thr<T>`` written by
-``scripts/launch_threshold_validation.py``). Those columns share one set of
+``experiments/launch_threshold_validation.py``). Those columns share one set of
 trained checkpoints, so they isolate the effect of the threshold alone.
 
 Without a sweep, ``--experiment`` takes any number of unrelated experiments (an
@@ -32,17 +32,19 @@ ablation set, say): each gets its own table, and ``--markdown`` writes them into
 one document with a cross-experiment summary on top.
 
 Usage:
-    python scripts/collect_results.py --experiment paper-main
-    python scripts/collect_results.py --experiment paper-main --source wandb
-    python scripts/collect_results.py --experiment noise-a2r2 --domains gripper hanoi
-    python scripts/collect_results.py --experiment dias-full abl-no-pcgrad \
-        --markdown logs/ablations-summary.md
-    python scripts/collect_results.py --experiment dias-full --threshold-sweep \
-        --markdown logs/threshold-sweep.md
-    python scripts/collect_results.py --experiment aux-sweep --sweep aux-loss-weight \
-        --markdown logs/aux-sweep.md
-    python scripts/collect_results.py --experiment dias --sweep num-slots \
-        --reuse-default dias-full --markdown logs/num-slots-sweep.md
+    python experiments/collect_results.py --experiment paper-main
+    python experiments/collect_results.py --experiment paper-main --source wandb
+    python experiments/collect_results.py --experiment noise-a2r2 \
+        --domains gripper hanoi
+    python experiments/collect_results.py --experiment dias-full abl-no-pcgrad \
+        --markdown experiments/results/ablations-summary.md
+    python experiments/collect_results.py --experiment dias-full --threshold-sweep \
+        --markdown experiments/results/threshold-sweep.md
+    python experiments/collect_results.py --experiment aux-sweep \
+        --sweep aux-loss-weight \
+        --markdown experiments/results/aux-sweep.md
+    python experiments/collect_results.py --experiment dias --sweep num-slots \
+        --reuse-default dias-full --markdown experiments/results/num-slots-sweep.md
 """
 
 from __future__ import annotations
@@ -531,7 +533,7 @@ def main() -> int:
         default=None,
         metavar="T",
         help="Aggregate the re-validations written by "
-        "scripts/launch_threshold_validation.py (sub-experiments "
+        "experiments/launch_threshold_validation.py (sub-experiments "
         f"<experiment>-{THRESHOLD_TAG}<T>) into a domain x threshold matrix per "
         "metric. "
         "The bare flag uses the default grid "

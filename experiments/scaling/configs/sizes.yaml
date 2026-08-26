@@ -1,12 +1,12 @@
 # Instance-size ladder for the runtime / GPU-memory scaling study.
 #
-# Consumed by scaling/generate_instances.py (to build the instances),
-# scaling/launch_scaling.py + scaling/run_scaling.py (to run them) and
-# scaling/collect_scaling.py (to aggregate).
+# Consumed by experiments/scaling/generate_instances.py (to build the instances),
+# experiments/scaling/launch_scaling.py + experiments/scaling/run_scaling.py (to run them) and
+# experiments/scaling/collect_scaling.py (to aggregate).
 #
 # Each size entry lists the *generator* parameters; the resulting object count
-# is derived from them (see scaling/generate_instances.py::OBJECT_COUNT) and
-# becomes the instance id, e.g. `n0068` -> scaling/instances/<domain>/n0068.pddl.
+# is derived from them (see experiments/scaling/generate_instances.py::OBJECT_COUNT) and
+# becomes the instance id, e.g. `n0068` -> experiments/scaling/instances/<domain>/n0068.pddl.
 # generate_instances.py cross-checks that count against the parsed instance and
 # fails if the two disagree, so the ids stay trustworthy.
 #
@@ -14,7 +14,7 @@
 # domains scale in different units (blocks / cities x locations / grid cells), so
 # they cannot all hit the same object count exactly — logistics lands on 21, 38,
 # 67, 103, 147 against targets 20, 40, 68, 100, 150. The target is what aligns
-# the columns of scaling/collect_scaling.py; the exact counts are reported in
+# the columns of experiments/scaling/collect_scaling.py; the exact counts are reported in
 # their own table there. Targets must be unique within a domain.
 
 # Seeds per (domain, size). The seed drives model init and transition sampling;
@@ -31,7 +31,7 @@ measure_steps: 100
 # Slurm resources for one array task = one (domain, seed), which walks the whole
 # size ladder of that domain sequentially on the same physical GPU.
 #
-# NOTE: unlike the main training arrays (configs/slurm-resources.yaml) this asks
+# NOTE: unlike the main training arrays (experiments/configs/slurm-resources.yaml) this asks
 # for a *whole* GPU (`gpu:1`, not a `shard:N` slice) and pins the partition. A
 # shared GPU would put co-tenant load into the iterations/second numbers, and a
 # free choice of partition would mix GPU models within one curve — the reported

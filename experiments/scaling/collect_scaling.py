@@ -9,9 +9,11 @@ ladder), with mean +/- population stdev over the seeds. OOM points show as
 Metrics: iterations/second, peak GPU memory (allocated and reserved, MiB),
 step time (ms), sampling time (s), and the seed count behind each cell.
 
-    python scaling/collect_scaling.py --experiment scaling-a10
-    python scaling/collect_scaling.py --experiment scaling-a10 --markdown logs/scaling.md
-    python scaling/collect_scaling.py --experiment scaling-a10 --csv logs/scaling.csv
+    python experiments/scaling/collect_scaling.py --experiment scaling-a10
+    python experiments/scaling/collect_scaling.py --experiment scaling-a10 \
+        --markdown experiments/results/scaling.md
+    python experiments/scaling/collect_scaling.py --experiment scaling-a10 \
+        --csv experiments/results/scaling.csv
 """
 
 from __future__ import annotations
@@ -27,7 +29,7 @@ import yaml
 from benchmark import DEFAULT_RESULTS_DIR, SIZES_CONFIG
 from run_scaling import ladder_for
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 # (json key, column header, format spec). Order defines the printed order.
 METRICS = [
@@ -132,7 +134,7 @@ def main() -> int:
     if not found:
         raise SystemExit(
             f"No results under {args.results_dir / args.experiment}. "
-            "Run scaling/launch_scaling.py first."
+            "Run experiments/scaling/launch_scaling.py first."
         )
     print(f"experiment={args.experiment}  runs={found}")
     gpus = {

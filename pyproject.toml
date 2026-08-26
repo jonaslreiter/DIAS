@@ -67,7 +67,10 @@ extend-exclude = "/\\.venv-delivery/"
 
 [tool.isort]
 profile = "black"
-src_paths = ["src", "tests", "scripts", "scaling"]
+# experiments/scaling as well as experiments/: its scripts import each other as
+# siblings (they insert their own directory on sys.path), and without it isort
+# files those imports under third-party.
+src_paths = ["src", "tests", "experiments", "experiments/scaling"]
 extend_skip_glob = ["*/.venv-delivery/*"]
 # isort walks what it is pointed at and does not honour .gitignore (black does),
 # so `isort .` in a working checkout descends into thousands of run directories

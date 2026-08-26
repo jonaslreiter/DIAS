@@ -1,4 +1,4 @@
-# Config consumed by `scripts/launch.py` / `scripts/validate_runs.py`.
+# Config consumed by `experiments/launch.py` / `experiments/validate_runs.py`.
 #
 # Each domain trains on `pddl/<domain>/train.pddl` and validates on that
 # folder's `test-1.pddl` .. `test-3.pddl`; which files those are is the folder

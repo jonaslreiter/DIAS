@@ -1,12 +1,44 @@
 # Running the paper's experiments
 
-Everything beyond the [README](../README.md)'s quickstart: the full grids, the
-ablations, the sweeps, and how results are aggregated into the paper's tables.
+This folder is the entry point for everything beyond the
+[README](../README.md)'s quickstart: the full grids, the ablations, the sweeps,
+the threshold study, the scaling study, and how results are aggregated into the
+paper's tables. Every command below is run from the repository root.
 
-All of it goes through **`scripts/launch.py`**. Per selected domain it submits a
-Slurm **training array** (one task per seed) and a **validation array** that
-depends on it (`--dependency=aftercorr`, so validation task *i* runs after
-training task *i*). `--backend local` runs the same steps here, sequentially.
+## What is in here
+
+```
+experiments/
+├── launch.py                       the sweep launcher — start here
+├── validate_runs.py                one (domain, seed); the arrays call it
+├── validate_checkpoint.py          one model by hand; the only route to L1
+├── collect_results.py              per-run JSON or W&B -> the paper's tables
+├── launch_threshold_validation.py  re-validate at other thresholds
+├── pipeline.py                     shared paths, sbatch flags, validators
+├── configs/                        validation.yaml, Slurm resources
+├── slurm/                          train.sh, validate.sh (the array jobs)
+├── scaling/                        the instance-size study (own README)
+└── results/                        collected tables land here (gitignored)
+```
+
+Three things this folder deliberately does *not* hold, because they are not
+about running a sweep:
+
+- **`configs/main.yaml` and `configs/experiments/*.yaml`** — the Lightning
+  configs `dias fit` reads. `launch.py` composes them into every run's command
+  line, but they train a single domain on their own, without this folder.
+- **`pddl/<domain>/`** — the 13 domains. A domain *is* its folder, so
+  `--domains <name>` works as soon as the folder exists.
+- **`logs/`** — what runs produce: `logs/dias/` (checkpoints),
+  `logs/validation/` (per-run result JSON), `logs/slurm/` (job output).
+
+## How a launch works
+
+Everything goes through **`experiments/launch.py`**. Per selected domain it
+submits a Slurm **training array** (one task per seed) and a **validation
+array** that depends on it (`--dependency=aftercorr`, so validation task *i*
+runs after training task *i*). `--backend local` runs the same steps here,
+sequentially.
 
 Runs are named deterministically, `<experiment>-<domain>-s<seed>`, so the two
 arrays need no id handoff: training writes
@@ -28,35 +60,35 @@ Each run composes, in order:
 
 Later layers win, which is why a sweep value beats a domain's tuned one. Global
 validation settings — how many problems, how many states sampled from each, the
-seed list — live in `configs/validation.yaml`.
+seed list — live in `experiments/configs/validation.yaml`.
 
 ## The main table
 
 ```bash
-python scripts/launch.py --experiment dias-full                      # DIAS
-python scripts/launch.py --experiment mlp --experiment-type mlp      # MLP baseline
-python scripts/launch.py --experiment noise --experiment-type noise  # noisy input
+python experiments/launch.py --experiment dias-full                      # DIAS
+python experiments/launch.py --experiment mlp --experiment-type mlp      # MLP baseline
+python experiments/launch.py --experiment noise --experiment-type noise  # noisy input
 ```
 
 `--experiment-type` picks the training overlay, the validator, and the
 schema-derivation threshold: 0.5, except 0.75 for `noise` as in the paper
 (`--validation-threshold T` overrides). Defaults are all 13 domains × the 10
-seeds in `configs/validation.yaml`.
+seeds in `experiments/configs/validation.yaml`.
 
 Useful narrowings:
 
 ```bash
 # Two domains, three seeds
-python scripts/launch.py --experiment dias-full --domains satellite hanoi --num-runs 3
+python experiments/launch.py --experiment dias-full --domains satellite hanoi --num-runs 3
 
 # Re-run only the seeds that died, into the same experiment
-python scripts/launch.py --experiment dias-full --domains gripper --seeds 3 7-8
+python experiments/launch.py --experiment dias-full --domains gripper --seeds 3 7-8
 
 # See exactly what would be submitted
-python scripts/launch.py --domains gripper --num-runs 3 --dry-run
+python experiments/launch.py --domains gripper --num-runs 3 --dry-run
 
 # Here instead of on Slurm, no W&B — the smoke test
-python scripts/launch.py --backend local --domains gripper --num-runs 1 \
+python experiments/launch.py --backend local --domains gripper --num-runs 1 \
     --experiment smoke --no-wandb
 ```
 
@@ -73,7 +105,7 @@ a floor of 0.1 on τ, and validation at threshold 0.75. Override the atom budget
 to move along the noise axis:
 
 ```bash
-python scripts/launch.py --experiment-type noise --experiment noise-a2r2 \
+python experiments/launch.py --experiment-type noise --experiment noise-a2r2 \
     --set data.init_args.noise.added_atoms=2 \
     --set data.init_args.noise.removed_atoms=2
 ```
@@ -109,15 +141,15 @@ experiment type. It is an orthogonal axis and always uses the DIAS validator.
 | `no-random-embeddings` | the random initial node features |
 
 ```bash
-python scripts/launch.py --ablation no-pcgrad --experiment abl-no-pcgrad --num-runs 3
+python experiments/launch.py --ablation no-pcgrad --experiment abl-no-pcgrad --num-runs 3
 ```
 
 Collect a baseline and its ablations into one document — a cross-experiment
 summary over the pooled seeds, then one table per experiment:
 
 ```bash
-python scripts/collect_results.py --experiment dias-full abl-no-pcgrad \
-    abl-no-effect-loss --markdown logs/ablations.md
+python experiments/collect_results.py --experiment dias-full abl-no-pcgrad \
+    abl-no-effect-loss --markdown experiments/results/ablations.md
 ```
 
 ## Hyperparameter sweeps
@@ -134,9 +166,9 @@ applied last so it beats the per-domain config.
 | `dataset-size` | transitions per action | `n` | 20 … 2000 | tuned per domain |
 
 ```bash
-python scripts/launch.py --experiment aux-sweep --sweep aux-loss-weight --num-runs 3
-python scripts/collect_results.py --experiment aux-sweep --sweep aux-loss-weight \
-    --markdown logs/aux-sweep.md
+python experiments/launch.py --experiment aux-sweep --sweep aux-loss-weight --num-runs 3
+python experiments/collect_results.py --experiment aux-sweep --sweep aux-loss-weight \
+    --markdown experiments/results/aux-sweep.md
 ```
 
 `--reuse-default EXPERIMENT` skips the point that equals the axis default and
@@ -144,10 +176,10 @@ maps that column onto an existing experiment, so this submits only `slots7` and
 `slots9`:
 
 ```bash
-python scripts/launch.py --experiment dias --sweep num-slots \
+python experiments/launch.py --experiment dias --sweep num-slots \
     --reuse-default dias-full --num-runs 3
-python scripts/collect_results.py --experiment dias --sweep num-slots \
-    --reuse-default dias-full --markdown logs/num-slots-sweep.md
+python experiments/collect_results.py --experiment dias --sweep num-slots \
+    --reuse-default dias-full --markdown experiments/results/num-slots-sweep.md
 ```
 
 It is refused when the axis has no reusable default, when `configs/main.yaml` no
@@ -170,18 +202,18 @@ clamping the 20/50/100 points back up.
 
 ```bash
 # Noiseless
-python scripts/launch.py --experiment datasize-clean --sweep dataset-size \
+python experiments/launch.py --experiment datasize-clean --sweep dataset-size \
     --domains blocks-3 delivery gripper hanoi logistics miconic --num-runs 3
 
 # 2 atom flips per transition (0.5 removed + 0.5 added per state)
-python scripts/launch.py --experiment datasize-noise --sweep dataset-size \
+python experiments/launch.py --experiment datasize-noise --sweep dataset-size \
     --experiment-type noise --num-runs 3 \
     --domains blocks-3 delivery gripper hanoi logistics miconic \
     --set data.init_args.noise.removed_atoms=0.5 \
     --set data.init_args.noise.added_atoms=0.5
 
-python scripts/collect_results.py --experiment datasize-clean \
-    --sweep dataset-size --markdown logs/datasize-clean.md
+python experiments/collect_results.py --experiment datasize-clean \
+    --sweep dataset-size --markdown experiments/results/datasize-clean.md
 ```
 
 The two launches therefore see identical dataset sizes and differ only in the
@@ -191,15 +223,16 @@ noise.
 
 Reading a schema off a checkpoint binarizes the slot activations and the
 add/delete/positive/negative tensors at one threshold (0.5 in the paper).
-`scripts/launch_threshold_validation.py` re-runs *only* the validation step of a
+`experiments/launch_threshold_validation.py` re-runs *only* the validation step
+of a
 finished experiment at other thresholds, on the very same checkpoints — no
 retraining. Each threshold writes to its own
 `logs/validation/<experiment>-thr<T>/`, so the original results are untouched.
 
 ```bash
-python scripts/launch_threshold_validation.py --experiment dias-full --num-runs 3
-python scripts/collect_results.py --experiment dias-full --threshold-sweep \
-    --markdown logs/threshold-sweep.md
+python experiments/launch_threshold_validation.py --experiment dias-full --num-runs 3
+python experiments/collect_results.py --experiment dias-full --threshold-sweep \
+    --markdown experiments/results/threshold-sweep.md
 ```
 
 The default grid is 0.1 / 0.25 / 0.5 / 0.75 / 0.9. 0.5 is re-run rather than
@@ -211,9 +244,15 @@ summary. The JSONs are the source of truth.
 ## Collecting results
 
 ```bash
-python scripts/collect_results.py --experiment dias-full                  # local JSON
-python scripts/collect_results.py --experiment dias-full --source wandb
+python experiments/collect_results.py --experiment dias-full                  # local JSON
+python experiments/collect_results.py --experiment dias-full --source wandb
 ```
+
+`--markdown <path>` also writes the tables out. The convention here is
+`experiments/results/<name>.md`, beside the launchers that produced them; the
+folder is gitignored, since every table in it is regenerated from `logs/` by
+the commands here. It is created on first write, so a fresh clone needs no
+setup.
 
 Per domain, aggregated over seeds:
 
@@ -242,24 +281,25 @@ exactly.
 ## Validating one model
 
 For a single checkpoint against a single problem — debugging, or a one-off
-comparison — use `scripts/validate_checkpoint.py`, which takes all three
+comparison — use `experiments/validate_checkpoint.py`, which takes all three
 validators:
 
 ```bash
-python scripts/validate_checkpoint.py --validator dias \
+python experiments/validate_checkpoint.py --validator dias \
     --model-id <run-id> --problem pddl/satellite/test-1.pddl
 
-python scripts/validate_checkpoint.py --validator mlp \
+python experiments/validate_checkpoint.py --validator mlp \
     --model-id <run-id> --problem pddl/satellite/test-1.pddl
 
 # L1 compares a learned PDDL domain produced outside this repository
-python scripts/validate_checkpoint.py --validator l1 \
+python experiments/validate_checkpoint.py --validator l1 \
     --original-domain pddl/satellite/domain.pddl \
     --learned-domain  learned/satellite.pddl \
     --problem         pddl/satellite/test-1.pddl
 ```
 
-Its sampling defaults come from `configs/validation.yaml`, so it draws the same
+Its sampling defaults come from `experiments/configs/validation.yaml`, so it
+draws the same
 way the sweep does. `--sample-seed` fixes the draw; unset, the states are drawn
 fresh — and either way the seed used comes back in the result, so passing it
 again scores the next run on exactly those states.

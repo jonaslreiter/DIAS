@@ -1,8 +1,9 @@
 #!/usr/bin/env python
 """Regenerate the scaling-study instances from the upstream PDDL generators.
 
-One instance per (domain, size) entry of ``scaling/configs/sizes.yaml``, written
-to ``scaling/instances/<domain>/n<num_objects>.pddl`` plus an ``index.json``
+One instance per (domain, size) entry of
+``experiments/scaling/configs/sizes.yaml``, written
+to ``experiments/scaling/instances/<domain>/n<num_objects>.pddl`` plus an ``index.json``
 describing the ladder. Both are committed, so the study is reproducible without
 re-running the generators, which is why the repository does not vendor them:
 running the scaling study needs neither this script nor its toolchain.
@@ -34,16 +35,17 @@ delivery
     ``delivery/generate.py`` already emits exactly the repo's ``delivery``
     domain, so only the problem name changes. It needs `tarski`, which is not in
     the training environment, so it runs out of a throwaway venv created on
-    demand under ``scaling/.venv-delivery`` (``--delivery-venv`` to reuse
+    demand under ``experiments/scaling/.venv-delivery`` (``--delivery-venv`` to reuse
     another one). Its CLI generates a whole (size x packages) tree in one go and
     seeds nothing, so it is invoked once per domain through a small wrapper that
     seeds ``random`` first, and the needed instances are picked out of the tree.
 
 Usage
 -----
-    python scaling/generate_instances.py --generators-dir ../pddl-generators
-    python scaling/generate_instances.py --generators-dir DIR --domains blocks-3
-    python scaling/generate_instances.py --generators-dir DIR --force
+    python experiments/scaling/generate_instances.py --generators-dir ../pddl-generators
+    python experiments/scaling/generate_instances.py --generators-dir DIR \
+        --domains blocks-3
+    python experiments/scaling/generate_instances.py --generators-dir DIR --force
 """
 
 from __future__ import annotations
@@ -60,15 +62,15 @@ from pathlib import Path
 
 import yaml
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SCALING_DIR = PROJECT_ROOT / "scaling"
+SCALING_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = SCALING_DIR.parents[1]
 SIZES_CONFIG = SCALING_DIR / "configs" / "sizes.yaml"
 INSTANCES_DIR = SCALING_DIR / "instances"
 DEFAULT_DELIVERY_VENV = SCALING_DIR / ".venv-delivery"
 
 # The repo's own domain file, which generated instances are rewritten into and
-# checked against. Imported rather than re-derived (see scaling/README.md).
-sys.path.append(str(PROJECT_ROOT / "scripts"))
+# checked against. Imported rather than re-derived (see experiments/scaling/README.md).
+sys.path.append(str(SCALING_DIR.parent))
 from pipeline import domain_pddl  # noqa: E402
 
 # Number of objects implied by a size entry, per generator. Checked against the
@@ -357,7 +359,7 @@ def _verify(domain_file: Path, problem_pddl: Path, expected_objects: int) -> dic
         raise SystemExit(
             f"{problem_pddl}: generated {num_objects} objects but the size entry "
             f"implies {expected_objects}. Fix OBJECT_COUNT in "
-            "scaling/generate_instances.py or the size entry."
+            "experiments/scaling/generate_instances.py or the size entry."
         )
     return {
         "num_objects": num_objects,

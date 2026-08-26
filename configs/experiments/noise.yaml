@@ -10,11 +10,11 @@
 #     The decay rate is the clean setup's; only the floor differs.
 #
 # The matching schema-derivation threshold of 0.75 (Eq. 14) is a validation-time
-# setting, not a training one: scripts/launch.py applies it automatically for
+# setting, not a training one: experiments/launch.py applies it automatically for
 # --experiment-type noise (VALIDATION_THRESHOLD).
 #
 # Composed last. Override the atom budgets per launch to sweep noise levels, e.g.:
-#   scripts/launch.py --experiment-type noise \
+#   experiments/launch.py --experiment-type noise \
 #       --set data.init_args.noise.added_atoms=2 \
 #       --set data.init_args.noise.removed_atoms=2
 model:

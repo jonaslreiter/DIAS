@@ -8,7 +8,7 @@ so the sensitivity of P / R / N_S / N_C / N_SC to that choice can be measured on
 exactly the runs the paper reports.
 
 Per (domain, threshold) it submits one Slurm array over the seeds — the same
-``scripts/slurm/validate.sh`` the normal pipeline uses, with ``THRESHOLD`` and
+``experiments/slurm/validate.sh`` the normal pipeline uses, with ``THRESHOLD`` and
 ``RESULTS_EXPERIMENT`` exported. Checkpoints are located via the *source*
 experiment's run id ``<experiment>-<domain>-s<seed>``, while results are written
 to a sibling directory ``logs/validation/<experiment>-thr<t>/<domain>/``, so the
@@ -20,19 +20,20 @@ W&B logging is always disabled here: ``validate_runs`` mirrors metrics by
 
 Validation is CPU-only (the DIAS validator runs the model on CPU and spends its
 time in pymimir successor generation), so resources come from
-``configs/slurm-resources-validation.yaml``, which requests no GPU.
+``experiments/configs/slurm-resources-validation.yaml``, which requests no GPU.
 
 Aggregate the result with::
 
-    python scripts/collect_results.py --experiment dias-full --threshold-sweep
+    python experiments/collect_results.py --experiment dias-full --threshold-sweep
 
 Examples
 --------
     # Default grid (0.1, 0.25, 0.5, 0.75, 0.9) over all domains x 3 seeds:
-    python scripts/launch_threshold_validation.py --experiment dias-full --num-runs 3
+    python experiments/launch_threshold_validation.py --experiment dias-full \
+        --num-runs 3
 
     # One domain, two thresholds, printed but not submitted:
-    python scripts/launch_threshold_validation.py --experiment dias-full \
+    python experiments/launch_threshold_validation.py --experiment dias-full \
         --domains gripper --thresholds 0.1 0.9 --num-runs 3 --dry-run
 """
 
@@ -47,6 +48,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))  # for `import pipeline
 from pipeline import configure_logging  # noqa: E402
 from pipeline import (
     PROJECT_ROOT,
+    SLURM_DIR,
     SLURM_RESOURCES_VALIDATION,
     add_domain_arguments,
     add_logging_arguments,
@@ -71,7 +73,7 @@ THRESHOLD_TAG = "thr"
 def threshold_experiment_name(experiment: str, threshold: float) -> str:
     """Results directory / group for one threshold of the sweep.
 
-    Also used by ``scripts/collect_results.py --threshold-sweep`` to rebuild the
+    Also used by ``experiments/collect_results.py --threshold-sweep`` to rebuild the
     per-threshold names, so keep the two in sync by importing this function
     rather than re-deriving it.
     """
@@ -132,7 +134,7 @@ def _submit_slurm(
         sbatch_output_opt(logs_dir),
         *sbatch_resource_opts(val_res),
         f"--export={export}",
-        str(PROJECT_ROOT / "scripts" / "slurm" / "validate.sh"),
+        str(SLURM_DIR / "validate.sh"),
     ]
     print(f"[{domain} @ {threshold:g}] submit validation array ({len(seeds)} seeds)")
     run_command(cmd, args.dry_run)
@@ -195,7 +197,8 @@ def main() -> int:
     )
     add_domain_arguments(p)
     p.add_argument("--backend", default="slurm", choices=["slurm", "local"])
-    # Overrides for configs/slurm-resources-validation.yaml, applied to every
+    # Overrides for experiments/configs/slurm-resources-validation.yaml,
+    # applied to every
     # array: the sweep is 5x the usual validation volume, so it is usually worth
     # trading the per-domain defaults for smaller, CPU-partition-friendly asks.
     p.add_argument(

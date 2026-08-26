@@ -10,10 +10,11 @@ Measures how the DIAS *training step* behaves as the instance grows:
 
 What runs is the ordinary training path: the Lightning config chain of a real
 run (``configs/main.yaml`` -> ``pddl/<domain>/config.yaml`` ->
-``scaling/configs/scaling.yaml``) instantiated through ``dias.main.CLI``, with a
+``experiments/scaling/configs/scaling.yaml``) instantiated through
+``dias.main.CLI``, with a
 callback that times the steps. Nothing about the model or the training step is
 stubbed; the overlay only pins the data pipeline and turns off validation,
-logging and checkpointing (see the comments in ``scaling/configs/scaling.yaml``).
+logging and checkpointing (see the comments in that overlay).
 
 The first ``--warmup`` steps are discarded and the CUDA peak-memory counters are
 reset right after them, so neither the CUDA context nor the first-step allocator
@@ -25,8 +26,9 @@ Out-of-memory is a result, not a crash: it is caught and written out as
 
 Usage
 -----
-    python scaling/benchmark.py --domain blocks-3 --instance n0068 --seed 0
-    python scaling/benchmark.py --domain delivery --instance n0150 --seed 0 \
+    python experiments/scaling/benchmark.py --domain blocks-3 --instance n0068 --seed 0
+    python experiments/scaling/benchmark.py --domain delivery --instance n0150 \
+        --seed 0 \
         --experiment scaling-l40s --warmup 20 --measure 100
 """
 
@@ -45,12 +47,12 @@ from pathlib import Path
 
 import yaml
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SCALING_DIR = PROJECT_ROOT / "scaling"
+SCALING_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = SCALING_DIR.parents[1]
 
 # Where a domain's files live is the main pipeline's business, not this
 # study's; imported rather than re-derived, as the sbatch helpers are.
-sys.path.append(str(PROJECT_ROOT / "scripts"))
+sys.path.append(str(SCALING_DIR.parent))
 from pipeline import domain_config, domain_pddl  # noqa: E402
 
 SIZES_CONFIG = SCALING_DIR / "configs" / "sizes.yaml"
@@ -216,7 +218,8 @@ def run_benchmark(
     problem_pddl = instance_path(domain, instance)
     if not problem_pddl.exists():
         raise SystemExit(
-            f"Missing instance {problem_pddl} — run scaling/generate_instances.py first."
+            f"Missing instance {problem_pddl} — run "
+            "experiments/scaling/generate_instances.py first."
         )
 
     record: dict = {

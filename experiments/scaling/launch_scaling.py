@@ -3,33 +3,37 @@
 
 Per selected domain this submits one array over the seeds (array task id =
 seed); each task walks that domain's whole size ladder on one exclusive GPU via
-``scaling/slurm/benchmark.sh`` -> ``scaling/run_scaling.py``. There is no second
+``experiments/scaling/slurm/benchmark.sh`` ->
+``experiments/scaling/run_scaling.py``. There is no second
 (validation) array: this study produces timings, not schemas.
 
-Unlike ``scripts/launch.py`` the arrays are *not* one-task-per-run — the sizes of
+Unlike ``experiments/launch.py`` the arrays are *not* one-task-per-run — the sizes of
 one (domain, seed) deliberately share a task so the whole curve is measured on
 the same card. Resources come from the ``slurm:`` block of
-``scaling/configs/sizes.yaml``, which asks for a whole GPU on a pinned partition
+``experiments/scaling/configs/sizes.yaml``, which asks for a whole GPU on a
+pinned partition
 (a shard would put co-tenant load into the throughput numbers, and an unpinned
 partition would mix GPU models within one curve).
 
 Results land in ``logs/scaling/<experiment>/<domain>/<instance>-s<seed>.json``;
-aggregate them with ``scaling/collect_scaling.py``.
+aggregate them with ``experiments/scaling/collect_scaling.py``.
 
 Examples
 --------
     # Full grid (3 domains x 6 sizes x 3 seeds) on Slurm:
-    python scaling/launch_scaling.py --experiment scaling-a10
+    python experiments/scaling/launch_scaling.py --experiment scaling-a10
 
     # One domain, see what would be submitted:
-    python scaling/launch_scaling.py --domains delivery --dry-run
+    python experiments/scaling/launch_scaling.py --domains delivery --dry-run
 
     # Re-run only the seeds that died, keeping the finished points:
-    python scaling/launch_scaling.py --experiment scaling-a10 --domains blocks-3 \
+    python experiments/scaling/launch_scaling.py --experiment scaling-a10 \
+        --domains blocks-3 \
         --seeds 1 2 --skip-existing
 
     # Run here instead of on Slurm (sequential; good for a smoke test):
-    python scaling/launch_scaling.py --backend local --domains blocks-3 --seeds 0 \
+    python experiments/scaling/launch_scaling.py --backend local \
+        --domains blocks-3 --seeds 0 \
         --experiment smoke
 """
 
@@ -41,13 +45,13 @@ from pathlib import Path
 
 import yaml
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SCALING_DIR = PROJECT_ROOT / "scaling"
+SCALING_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = SCALING_DIR.parents[1]
 SLURM_SCRIPT = SCALING_DIR / "slurm" / "benchmark.sh"
 
-# Appended, not prepended: this directory must stay ahead of scripts/ so the
-# sibling imports below cannot be shadowed.
-sys.path.append(str(PROJECT_ROOT / "scripts"))
+# Appended, not prepended: this directory must stay ahead of the pipeline
+# folder above so the sibling imports below cannot be shadowed.
+sys.path.append(str(SCALING_DIR.parent))
 from benchmark import DEFAULT_RESULTS_DIR, SIZES_CONFIG  # noqa: E402
 
 # Reused rather than re-derived so this study's sbatch flags mean exactly what
@@ -141,8 +145,8 @@ def main() -> int:
         raise SystemExit(
             "Missing instance file(s): "
             + ", ".join(missing)
-            + "\nRegenerate them with scaling/generate_instances.py "
-            "--generators-dir DIR (see scaling/README.md)."
+            + "\nRegenerate them with experiments/scaling/generate_instances.py "
+            "--generators-dir DIR (see experiments/scaling/README.md)."
         )
 
     total = sum(len(instances_for(d, cfg)) for d in domains) * len(seeds)

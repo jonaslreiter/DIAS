@@ -1,11 +1,13 @@
 #!/usr/bin/env python
 """Walk one domain's size ladder for one seed (compute-side driver).
 
-This is what a Slurm array task runs (``scaling/slurm/benchmark.sh``, array task
-id = seed) and what ``scaling/launch_scaling.py --backend local`` calls directly.
-It is the analogue of ``scripts/validate_runs.py`` in the main pipeline.
+This is what a Slurm array task runs (``experiments/scaling/slurm/benchmark.sh``,
+array task id = seed) and what ``experiments/scaling/launch_scaling.py
+--backend local`` calls directly.
+It is the analogue of ``experiments/validate_runs.py`` in the main pipeline.
 
-Every size runs as its own ``scaling/benchmark.py`` subprocess. That is the point
+Every size runs as its own ``experiments/scaling/benchmark.py`` subprocess.
+That is the point
 of the indirection: a CUDA OOM — expected at the top of the ladder — leaves the
 process's allocator in a state not worth trusting for the next measurement, and
 one dead subprocess costs one point instead of the whole ladder. The subprocess
@@ -16,8 +18,9 @@ GPU, so a curve is never stitched together across cards.
 
 Usage
 -----
-    python scaling/run_scaling.py --domain blocks-3 --seed 0
-    python scaling/run_scaling.py --domain delivery --seed 2 --experiment scaling-a10
+    python experiments/scaling/run_scaling.py --domain blocks-3 --seed 0
+    python experiments/scaling/run_scaling.py --domain delivery --seed 2 \
+        --experiment scaling-a10
 """
 
 from __future__ import annotations
@@ -34,8 +37,8 @@ import yaml
 from benchmark import DEFAULT_RESULTS_DIR, SIZES_CONFIG, instance_path, result_path
 from generate_instances import OBJECT_COUNT, instance_id
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SCALING_DIR = PROJECT_ROOT / "scaling"
+SCALING_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = SCALING_DIR.parents[1]
 
 
 def ladder_for(domain: str, cfg: dict) -> list[tuple[int, str]]:
@@ -85,7 +88,7 @@ def run_ladder(
         if not instance_path(domain, instance).exists():
             print(
                 f"[{domain} seed={seed}] {instance}: missing instance file — run "
-                "scaling/generate_instances.py first",
+                "experiments/scaling/generate_instances.py first",
                 file=sys.stderr,
                 flush=True,
             )

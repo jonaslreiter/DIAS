@@ -15,3 +15,6 @@ htmlcov/
 .vscode/
 logs/
 local/
+# Collected result tables: generated from logs/ by
+# experiments/collect_results.py --markdown, so they are reproducible output.
+experiments/results/

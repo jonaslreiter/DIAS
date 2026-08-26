@@ -33,53 +33,53 @@ over per-domain values in ``pddl/<domain>/config.yaml``. ``--reuse-default
 EXPERIMENT`` skips the point that equals the axis default and takes its results
 from an existing experiment instead.
 
-Per-domain Slurm resources come from ``configs/slurm-resources.yaml``.
+Per-domain Slurm resources come from ``experiments/configs/slurm-resources.yaml``.
 
 Examples
 --------
     # Full grid on Slurm (all domains, 10 seeds each), grouped as "paper-main":
-    python scripts/launch.py --experiment paper-main
+    python experiments/launch.py --experiment paper-main
 
     # MLP baseline on two domains:
-    python scripts/launch.py --experiment-type mlp --domains gripper satellite \
+    python experiments/launch.py --experiment-type mlp --domains gripper satellite \
         --experiment mlp-main
 
     # Noise sweep point (expected 2 added / 2 removed atoms):
-    python scripts/launch.py --experiment-type noise --experiment noise-a2r2 \
+    python experiments/launch.py --experiment-type noise --experiment noise-a2r2 \
         --set data.init_args.noise.added_atoms=2 \
         --set data.init_args.noise.removed_atoms=2
 
     # Ablation (no PCGrad) on the default DIAS model:
-    python scripts/launch.py --ablation no-pcgrad --experiment abl-no-pcgrad
+    python experiments/launch.py --ablation no-pcgrad --experiment abl-no-pcgrad
 
     # aux_loss_weight sweep: all domains x {0.01,0.03,0.1,0.3,1.0} x 3 seeds,
     # submitted as sub-experiments aux-sweep-aux0.01 ... aux-sweep-aux1:
-    python scripts/launch.py --experiment aux-sweep --sweep aux-loss-weight \
+    python experiments/launch.py --experiment aux-sweep --sweep aux-loss-weight \
         --num-runs 3
 
     # num_slots sweep, reusing the finished dias-full runs for the default 5
     # (only <experiment>-slots7 and <experiment>-slots9 are submitted):
-    python scripts/launch.py --experiment dias --sweep num-slots \
+    python experiments/launch.py --experiment dias --sweep num-slots \
         --reuse-default dias-full --num-runs 3
 
     # Dataset-size sweep, clean and noisy (2 atom flips per transition), on the
     # six-domain subset; sub-experiments <experiment>-n20 ... <experiment>-n2000:
-    python scripts/launch.py --experiment datasize-clean --sweep dataset-size \
+    python experiments/launch.py --experiment datasize-clean --sweep dataset-size \
         --domains blocks-3 delivery gripper hanoi logistics miconic --num-runs 3
-    python scripts/launch.py --experiment datasize-noise --sweep dataset-size \
+    python experiments/launch.py --experiment datasize-noise --sweep dataset-size \
         --experiment-type noise --num-runs 3 \
         --domains blocks-3 delivery gripper hanoi logistics miconic \
         --set data.init_args.noise.removed_atoms=0.5 \
         --set data.init_args.noise.added_atoms=0.5
 
     # Re-run just the seeds that failed, into the same experiment/group:
-    python scripts/launch.py --experiment paper-main --domains gripper --seeds 3 7-8
+    python experiments/launch.py --experiment paper-main --domains gripper --seeds 3 7-8
 
     # See exactly what would be submitted, without submitting:
-    python scripts/launch.py --domains gripper --num-runs 3 --dry-run
+    python experiments/launch.py --domains gripper --num-runs 3 --dry-run
 
     # Run locally (no Slurm), sequentially — good for smoke tests:
-    python scripts/launch.py --backend local --domains gripper --num-runs 2 \
+    python experiments/launch.py --backend local --domains gripper --num-runs 2 \
         --experiment smoke --no-wandb
 """
 
@@ -99,8 +99,9 @@ from pipeline import configure_logging  # noqa: E402
 from pipeline import (
     EXPERIMENT_TYPES,
     EXPERIMENT_VALIDATOR,
-    EXPERIMENTS_DIR,
+    OVERLAYS_DIR,
     PROJECT_ROOT,
+    SLURM_DIR,
     SLURM_RESOURCES,
     SLURM_RESOURCES_VALIDATION,
     add_domain_arguments,
@@ -121,8 +122,8 @@ from pipeline import (
 )
 
 EXPERIMENT_OVERLAYS = {
-    "mlp": EXPERIMENTS_DIR / "mlp.yaml",
-    "noise": EXPERIMENTS_DIR / "noise.yaml",
+    "mlp": OVERLAYS_DIR / "mlp.yaml",
+    "noise": OVERLAYS_DIR / "noise.yaml",
 }
 # Schema-derivation threshold (Eq. 14) per experiment type; the paper raises it
 # to 0.75 under noise. Override per launch with --validation-threshold.
@@ -131,18 +132,18 @@ VALIDATION_THRESHOLD = {"noise": 0.75}
 # Model ablation overlays, orthogonal to --experiment-type (all use the DIAS
 # validator). Composed after the experiment overlay.
 ABLATION_OVERLAYS = {
-    "no-slot-weights": EXPERIMENTS_DIR / "ablation-no-slot-weights.yaml",
-    "no-precondition-loss": EXPERIMENTS_DIR / "ablation-no-precondition-loss.yaml",
-    "no-effect-loss": EXPERIMENTS_DIR / "ablation-no-effect-loss.yaml",
-    "no-aux-loss": EXPERIMENTS_DIR / "ablation-no-aux-loss.yaml",
-    "no-pcgrad": EXPERIMENTS_DIR / "ablation-no-pcgrad.yaml",
-    "no-random-embeddings": EXPERIMENTS_DIR / "ablation-no-random-embeddings.yaml",
+    "no-slot-weights": OVERLAYS_DIR / "ablation-no-slot-weights.yaml",
+    "no-precondition-loss": OVERLAYS_DIR / "ablation-no-precondition-loss.yaml",
+    "no-effect-loss": OVERLAYS_DIR / "ablation-no-effect-loss.yaml",
+    "no-aux-loss": OVERLAYS_DIR / "ablation-no-aux-loss.yaml",
+    "no-pcgrad": OVERLAYS_DIR / "ablation-no-pcgrad.yaml",
+    "no-random-embeddings": OVERLAYS_DIR / "ablation-no-random-embeddings.yaml",
 }
 # The tau schedule is a typed dataclass, so its fields are ordinary dotted keys.
 SCHEDULE_KEY = "model.init_args.gmean_temperature"
 
-TRAIN_SCRIPT = PROJECT_ROOT / "scripts" / "slurm" / "train.sh"
-VALIDATE_SCRIPT = PROJECT_ROOT / "scripts" / "slurm" / "validate.sh"
+TRAIN_SCRIPT = SLURM_DIR / "train.sh"
+VALIDATE_SCRIPT = SLURM_DIR / "validate.sh"
 
 
 @dataclass(frozen=True)
@@ -256,7 +257,7 @@ def sweep_experiment_name(
 
     With ``reuse_default`` the axis-default point maps to that existing
     experiment instead of a new sub-experiment. Also used by
-    ``scripts/collect_results.py`` to rebuild the per-value experiment names, so
+    ``experiments/collect_results.py`` to rebuild the per-value experiment names, so
     keep the two in sync by importing this function rather than re-deriving it.
     """
     if reuse_default and axis.default is not None and axis.cast(value) == axis.default:
@@ -411,7 +412,7 @@ def run_directory_args(run_id: str, logs_dir: Path, log_wandb: bool) -> list[str
     without one, ModelCheckpoint falls back to ``default_root_dir``, so the same
     path has to be named explicitly -- otherwise a --no-wandb run writes its
     checkpoint to ./checkpoints and validation cannot find it. Mirrored in
-    scripts/slurm/train.sh, which builds the same args for an array task.
+    experiments/slurm/train.sh, which builds the same args for an array task.
     """
     if not log_wandb:
         return ["--trainer.default_root_dir", str(logs_dir / "dias" / run_id)]
