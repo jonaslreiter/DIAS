@@ -20,8 +20,6 @@ warnings.filterwarnings("ignore", message=".*Lightning on SLURM.*")
 
 class CLI(LightningCLI):
     def add_arguments_to_parser(self, parser):
-        parser.add_argument("--experiment", type=str, help="Experiment description")
-
         for name in (
             "num_objects",
             "arity_relations",

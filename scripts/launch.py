@@ -389,8 +389,6 @@ class LaunchPlan:
         for path in [self.domain_config(domain), *self.overlays]:
             args += ["--config", str(path)]
         args += [
-            "--experiment",
-            point.experiment,
             "--data.init_args.domain_path",
             str(PROJECT_ROOT / spec["domain"]),
             "--data.init_args.problem_path",

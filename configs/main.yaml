@@ -4,7 +4,6 @@
 # For the noise ablation, compose configs/experiments/noise.yaml on top.
 
 seed_everything: 43
-experiment: "dias"
 
 model:
   class_path: dias.models.DIAS
