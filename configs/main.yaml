@@ -12,7 +12,7 @@ model:
     # Parameter slots per action schema, which bounds the arity DIAS can recover. Too few silently caps what a domain can learn, and every extra slot is a dimension in every schema tensor.
     num_slots: 5
     # Tau: the root degree of the relaxed precondition product. Anneals from the geometric mean (1.0) toward the exact product (0.0). Unset would hold it at 1.0, which never sharpens into a precondition check.
-    gmean_temperature:
+    precondition_tau:
       class_path: dias.schedules.Exponential
       init_args:
         start: 1.0
@@ -24,10 +24,10 @@ data:
   class_path: dias.data.datamodule.PddlGraphDataModule
   init_args:
     # Transitions to draw per action, per split. SampleQuota refuses a run where neither these nor num_train / num_valid say how much to sample; the domains that need other amounts override them.
-    min_per_label_train: 100
-    min_per_label_valid: 50
-    max_per_label_train: 1000
-    max_per_label_valid: 500
+    min_per_action_train: 100
+    min_per_action_valid: 50
+    max_per_action_train: 1000
+    max_per_action_valid: 500
 
 trainer:
   # Weights & Biases. `entity: null` means "whichever account is logged in" (or $WANDB_ENTITY), so a clone of this repository logs to its own account and needs no edit here. To train without W&B at all, either

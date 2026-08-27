@@ -36,7 +36,7 @@ def _construction_kwargs(args: argparse.Namespace) -> dict:
     """The arguments that differ between a checkpoint and a learned domain."""
     validator = VALIDATORS[args.validator]
     common = {
-        "logs_path_abs": str(args.log_dir.resolve()),
+        "logs_path": str(args.log_dir.resolve()),
         "problem_path": str(args.problem.resolve()),
     }
     if not validator.from_checkpoint:

@@ -79,7 +79,7 @@ ABLATION_OVERLAYS = {
     "no-random-embeddings": OVERLAYS_DIR / "ablation-no-random-embeddings.yaml",
 }
 # The tau schedule is a typed dataclass, so its fields are ordinary dotted keys.
-SCHEDULE_KEY = "model.init_args.gmean_temperature"
+SCHEDULE_KEY = "model.init_args.precondition_tau"
 
 TRAIN_SCRIPT = SLURM_DIR / "train.sh"
 VALIDATE_SCRIPT = SLURM_DIR / "validate.sh"
@@ -100,18 +100,18 @@ class SweepAxis:
 
 
 def _dataset_size_overrides(value: float) -> dict[str, int]:
-    """Sampling knobs that move with ``min_per_label_train`` on the size axis.
+    """Sampling knobs that move with ``min_per_action_train`` on the size axis.
 
     Pinning the caps to the same N makes the dataset size exact rather than a lower bound. The ``*_floor`` overrides neutralise the noise overlay's 200/100 floors, which are composed later and would clamp the small points back up.
     """
     n = int(value)
     half = max(1, n // 2)
     return {
-        "data.init_args.max_per_label_train": n,
-        "data.init_args.min_per_label_valid": half,
-        "data.init_args.max_per_label_valid": half,
-        "data.init_args.min_per_label_train_floor": n,
-        "data.init_args.min_per_label_valid_floor": half,
+        "data.init_args.max_per_action_train": n,
+        "data.init_args.min_per_action_valid": half,
+        "data.init_args.max_per_action_valid": half,
+        "data.init_args.min_per_action_train_floor": n,
+        "data.init_args.min_per_action_valid_floor": half,
     }
 
 
@@ -138,7 +138,7 @@ SWEEP_AXES: dict[str, SweepAxis] = {
     ),
     # Training-set size, in transitions per action schema (N train + N/2 valid). The grid brackets every tuned per-domain minimum, so each domain is scaled both down and up relative to its own default.
     "dataset-size": SweepAxis(
-        param="data.init_args.min_per_label_train",
+        param="data.init_args.min_per_action_train",
         tag="n",
         values=(20, 50, 100, 200, 500, 1000, 2000),
         cast=int,

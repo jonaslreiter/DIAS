@@ -22,7 +22,7 @@ class CLI(LightningCLI):
     def add_arguments_to_parser(self, parser):
         for name in (
             "num_objects",
-            "arity_relations",
+            "relation_arities",
             "num_actions",
             "action_arities",
             "action_arg_positions",

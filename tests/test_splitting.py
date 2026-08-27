@@ -5,7 +5,7 @@ import unittest
 import torch
 
 from dias.data.splitting import (
-    cap_per_label,
+    cap_per_action,
     check_every_action_survives,
     stratified_split,
 )
@@ -17,12 +17,12 @@ def samples(*actions: str) -> list[dict]:
 
 class CapPerLabelTest(unittest.TestCase):
     def test_it_keeps_the_first_n_of_each_action(self):
-        kept = cap_per_label(samples("a", "a", "a", "b"), cap=2)
+        kept = cap_per_action(samples("a", "a", "a", "b"), cap=2)
         self.assertEqual([sample["id"] for sample in kept], [0, 1, 3])
 
     def test_a_cap_nothing_reaches_changes_nothing(self):
         drawn = samples("a", "b")
-        self.assertEqual(cap_per_label(drawn, cap=5), drawn)
+        self.assertEqual(cap_per_action(drawn, cap=5), drawn)
 
 
 class StratifiedSplitTest(unittest.TestCase):

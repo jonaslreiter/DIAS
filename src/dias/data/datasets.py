@@ -51,15 +51,15 @@ def _build_sample(
         sample["next_state"] if noisy_next is None else noisy_next,
     )
 
-    data_s1, data_s2 = [
+    state_graph, next_state_graph = [
         adj_to_pyg_data(state, base.num_objects) for state in transition
     ]
-    data_s1.y_action = sample["action_index"]
-    data_s1.y_action_args = sample["action_args"].unsqueeze(0)
+    state_graph.y_action = sample["action_index"]
+    state_graph.y_action_args = sample["action_args"].unsqueeze(0)
 
     return (
-        data_s1,
-        data_s2,
+        state_graph,
+        next_state_graph,
         idx_tensor,
         *transition,
         sample["action_index"],

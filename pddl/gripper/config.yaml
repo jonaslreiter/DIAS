@@ -2,10 +2,10 @@ data:
   init_args:
     domain_path: pddl/gripper/domain.pddl
     problem_path: pddl/gripper/train.pddl
-    min_per_label_train: 200
-    min_per_label_valid: 100
-    max_per_label_train: 1000
-    max_per_label_valid: 500
+    min_per_action_train: 200
+    min_per_action_valid: 100
+    max_per_action_train: 1000
+    max_per_action_valid: 500
 model:
   init_args:
     aux_loss_weight: 1.0

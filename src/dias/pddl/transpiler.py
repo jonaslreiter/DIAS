@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from dias.schema.action import ActionSchema, GroundAtom
+from dias.schema.action import ActionSchema, LiftedAtom
 
 
 class PDDLTranspiler:
@@ -81,10 +81,10 @@ class PDDLTranspiler:
 
     def _atoms(self, action: int, tensor: np.ndarray, positive: bool):
         """The distinct atoms one channel asserts for one action."""
-        atoms: list[GroundAtom] = []
+        atoms: list[LiftedAtom] = []
         for r, s1, s2 in zip(*np.where(tensor[action] == 1)):
             arity = self.predicate_arities[r]
-            atom = GroundAtom(
+            atom = LiftedAtom(
                 self.predicate_names[r], arity, [s1, s2][:arity], positive
             )
             if atom not in atoms:
@@ -119,9 +119,9 @@ class PDDLTranspiler:
 
         schema = ActionSchema(
             name=action_name,
-            preconditions=[GroundAtom(guard_predicate_name, 0, [], True)],
+            preconditions=[LiftedAtom(guard_predicate_name, 0, [], True)],
             effects=[
-                GroundAtom(name, arity, list(range(arity)), True)
+                LiftedAtom(name, arity, list(range(arity)), True)
                 for name, arity in zip(self.predicate_names, self.predicate_arities)
             ],
         )

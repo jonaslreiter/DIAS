@@ -3,24 +3,24 @@ import unittest
 import numpy as np
 
 from dias.pddl.transpiler import PDDLTranspiler
-from dias.schema.action import ActionSchema, GroundAtom
+from dias.schema.action import ActionSchema, LiftedAtom
 
 
 class TranspilerTest(unittest.TestCase):
     def test_ground_atom_string_equality_and_hash(self):
-        atom = GroundAtom("on", 2, [1, 0], True)
+        atom = LiftedAtom("on", 2, [1, 0], True)
         self.assertEqual(str(atom), "(on ?x1 ?x0)")
-        self.assertEqual(str(GroundAtom("clear", 1, [0], False)), "(not (clear ?x0))")
-        self.assertEqual(str(GroundAtom("ready", 0, [], True)), "(ready)")
-        self.assertEqual(atom, GroundAtom("on", 2, [1, 0], True))
-        self.assertNotEqual(atom, GroundAtom("on", 2, [1, 0], False))
-        self.assertEqual(len({atom, GroundAtom("on", 2, [1, 0], True)}), 1)
+        self.assertEqual(str(LiftedAtom("clear", 1, [0], False)), "(not (clear ?x0))")
+        self.assertEqual(str(LiftedAtom("ready", 0, [], True)), "(ready)")
+        self.assertEqual(atom, LiftedAtom("on", 2, [1, 0], True))
+        self.assertNotEqual(atom, LiftedAtom("on", 2, [1, 0], False))
+        self.assertEqual(len({atom, LiftedAtom("on", 2, [1, 0], True)}), 1)
 
     def test_action_schema_formats_empty_and_nonempty_sections(self):
         schema = ActionSchema(
             "stack",
-            [GroundAtom("clear", 1, [0], True)],
-            [GroundAtom("on", 2, [0, 1], True)],
+            [LiftedAtom("clear", 1, [0], True)],
+            [LiftedAtom("on", 2, [0, 1], True)],
         )
         text = str(schema)
         self.assertIn(":parameters (?x0 ?x1)", text)

@@ -2,10 +2,10 @@ data:
   init_args:
     domain_path: pddl/delivery/domain.pddl
     problem_path: pddl/delivery/train.pddl
-    min_per_label_train: 1000
-    min_per_label_valid: 500
-    max_per_label_train: 2000
-    max_per_label_valid: 1000
+    min_per_action_train: 1000
+    min_per_action_valid: 500
+    max_per_action_train: 2000
+    max_per_action_valid: 1000
 model:
   init_args:
     aux_loss_weight: 0.1

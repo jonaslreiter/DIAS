@@ -15,7 +15,7 @@ from .encoder import DEFAULT_HIDDEN_DIMS, RelationalEncoder
 from .objectives import DiasObjective, Losses
 from .outputs import SchemaLogits
 from .pcgrad import gradient_combiner
-from .prediction import PredictionModule
+from .prediction import SuccessorPredictor
 from .selection import resolve_num_slots
 
 logger = logging.getLogger(__name__)
@@ -27,7 +27,7 @@ class DIAS(L.LightningModule):
     def __init__(
         self,
         num_objects: int,
-        arity_relations: list[int],
+        relation_arities: list[int],
         num_actions: int,
         object_dim: int = 32,
         num_slots: int | None = None,
@@ -40,8 +40,8 @@ class DIAS(L.LightningModule):
         action_arg_positions: list[list[int]] | None = None,
         successor_relations: bool = True,
         random_node_embeddings: bool = True,
-        gmean_temperature: Schedule | Mapping | None = None,
-        pcgrad_dyn_clip: bool = True,
+        precondition_tau: Schedule | Mapping | None = None,
+        pcgrad_norm_cap: bool = True,
         state_dependent_effects: bool = False,
         use_slot_weights: bool = True,
         use_precondition_loss: bool = True,
@@ -52,7 +52,7 @@ class DIAS(L.LightningModule):
         """
         Args:
             num_objects: Objects in the instance. (linked from the datamodule)
-            arity_relations: Arity (1 or 2) of every relation, in channel order. (linked from the datamodule)
+            relation_arities: Arity (1 or 2) of every relation, in channel order. (linked from the datamodule)
             num_actions: Action schemas to learn, one per action of the domain. (linked from the datamodule)
             object_dim: Width of the object embeddings.
             num_slots: Parameter slots per schema, clamped to num_objects. Required unless per_action_slots.
@@ -65,8 +65,8 @@ class DIAS(L.LightningModule):
             action_arg_positions: Argument positions the labels observe, per action. (linked from the datamodule)
             successor_relations: Show the encoder what the transition changed.
             random_node_embeddings: Start each object from noise, so symmetric objects differ.
-            gmean_temperature: Schedule for tau. None holds it at 1.
-            pcgrad_dyn_clip: Clip the projected auxiliary gradient to the primary one's norm.
+            precondition_tau: Schedule for tau, the root degree of the relaxed precondition product. None holds it at 1, the geometric mean.
+            pcgrad_norm_cap: Cap the projected auxiliary gradient at the primary one's norm.
             state_dependent_effects: Predict effects from the state with an MLP (the baseline).
             use_slot_weights: Learn which slots an action uses, which is its recovered arity.
             use_precondition_loss: Include the restrictive-precondition auxiliary term.
@@ -76,14 +76,14 @@ class DIAS(L.LightningModule):
         """
         super().__init__()
         self.save_hyperparameters()
-        self.gmean_temperature = as_schedule(gmean_temperature)
+        self.precondition_tau = as_schedule(precondition_tau)
         # Hyper-parameters must stay primitive; see dias.hparams.
-        self.hparams["gmean_temperature"] = to_mapping(self.gmean_temperature)
+        self.hparams["precondition_tau"] = to_mapping(self.precondition_tau)
 
         # Kept here because something reads them back; the rest goes to the module that owns it.
         self.num_objects = num_objects
         self.num_actions = num_actions
-        self.num_relations = len(arity_relations)
+        self.num_relations = len(relation_arities)
         self.num_slots = resolve_num_slots(
             num_slots,
             num_objects=num_objects,
@@ -100,15 +100,15 @@ class DIAS(L.LightningModule):
             action_arg_positions=action_arg_positions,
             successor_relations=successor_relations,
         )
-        self.state_encoder = RelationalEncoder(
+        self.encoder = RelationalEncoder(
             object_dim,
             self.edges.num_edge_types,
             hidden_dims=encoder_hidden_dims or DEFAULT_HIDDEN_DIMS,
             random_node_embeddings=random_node_embeddings,
         )
 
-        self.graph_edit = PredictionModule(
-            arity_relations=arity_relations,
+        self.predictor = SuccessorPredictor(
+            relation_arities=relation_arities,
             num_actions=num_actions,
             num_slots=self.num_slots,
             object_dim=object_dim,
@@ -121,7 +121,7 @@ class DIAS(L.LightningModule):
         )
 
         self.objective = DiasObjective(
-            arity_relations=arity_relations,
+            relation_arities=relation_arities,
             num_slots=self.num_slots,
             use_effect_loss=use_effect_loss,
             use_precondition_loss=use_precondition_loss,
@@ -131,7 +131,7 @@ class DIAS(L.LightningModule):
             auxiliary_weight=aux_loss_weight,
             auxiliary_active=aux_loss_weight != 0.0
             and (use_effect_loss or use_precondition_loss),
-            dynamic_clip=pcgrad_dyn_clip,
+            norm_cap=pcgrad_norm_cap,
         )
 
         self.automatic_optimization = False
@@ -183,20 +183,20 @@ class DIAS(L.LightningModule):
     def configure_optimizers(self):
         return torch.optim.AdamW(self.trainable_parameters(), lr=self.learning_rate)
 
-    def forward(self, batch_s1, batch_s2=None):
-        edge_index, edge_type = self.edges(batch_s1, batch_s2)
-        node_embeddings = self.state_encoder(
-            self.state_encoder.initial_features(batch_s1.batch.size(0), self.device),
+    def forward(self, batch_state, batch_next_state=None):
+        edge_index, edge_type = self.edges(batch_state, batch_next_state)
+        node_embeddings = self.encoder(
+            self.encoder.initial_features(batch_state.batch.size(0), self.device),
             edge_index,
             edge_type,
         )
 
-        prediction = self.graph_edit(
+        prediction = self.predictor(
             node_embeddings=node_embeddings,
-            adjacency=self.dense(batch_s1),
-            y_action=batch_s1.y_action,
-            y_action_args=batch_s1.y_action_args,
-            gmean_temperature=self.gmean_temperature(self.global_step),
+            adjacency=self.dense(batch_state),
+            y_action=batch_state.y_action,
+            y_action_args=batch_state.y_action_args,
+            tau=self.precondition_tau(self.global_step),
         )
         return prediction
 
@@ -206,9 +206,9 @@ class DIAS(L.LightningModule):
         The supported way to read a schema off a trained model: the raw parameters hold noise at masked cells.
         """
         with torch.no_grad():
-            preconditions = self.graph_edit.preconditions.action_logits()
-            effects = self.graph_edit.effects.action_logits()
-            slot_weights = self.graph_edit.selector.slot_weight_logits
+            preconditions = self.predictor.preconditions.action_logits()
+            effects = self.predictor.effects.action_logits()
+            slot_weights = self.predictor.selector.slot_weight_logits
             return SchemaLogits(
                 preconditions=preconditions.detach().cpu(),
                 effects=None if effects is None else effects.detach().cpu(),
@@ -222,7 +222,7 @@ class DIAS(L.LightningModule):
         y_action: torch.Tensor,
     ) -> torch.Tensor:
         """The successor state predicted for a known slot binding, preconditions not consulted."""
-        return self.graph_edit.apply(adjacency, selection, y_action)
+        return self.predictor.apply(adjacency, selection, y_action)
 
     def retarget(self, num_objects: int) -> None:
         """Point the model at an instance with a different number of objects."""
@@ -243,18 +243,16 @@ class DIAS(L.LightningModule):
         )
 
     def step(self, batch) -> Losses:
-        batch_s1, batch_s2, *_ = batch
-        prediction = self.forward(batch_s1, batch_s2)
+        batch_state, batch_next_state, *_ = batch
+        prediction = self.forward(batch_state, batch_next_state)
         return self.objective(
             prediction,
-            self.dense(batch_s2),
-            self.graph_edit.selector.slot_weights(batch_s1.y_action),
+            self.dense(batch_next_state),
+            self.predictor.selector.slot_weights(batch_state.y_action),
         )
 
     def on_train_batch_start(self, batch, batch_idx):
-        self.log(
-            "scheduled_w/gmean_temperature", self.gmean_temperature(self.global_step)
-        )
+        self.log("schedule/precondition_tau", self.precondition_tau(self.global_step))
 
     def trainable_parameters(self):
         return [p for p in self.parameters() if p.requires_grad]

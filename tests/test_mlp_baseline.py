@@ -13,7 +13,7 @@ os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
 import torch
 
 from checkpoints import TEST_PROBLEM, build_model, save
-from dias.validation.mlp_baseline import ModelValidation
+from dias.validation.mlp_baseline import MlpBaselineValidator
 from support import temp_dir
 
 torch.set_num_threads(1)
@@ -28,7 +28,7 @@ class MlpBaselineTest(unittest.TestCase):
         directory = temp_dir(self)
         model, hparams = build_model(state_dependent_effects=True)
         model_id = save(directory, model, hparams)
-        validation = ModelValidation(
+        validation = MlpBaselineValidator(
             model_id,
             str(directory),
             problem_path=str(TEST_PROBLEM),
@@ -84,7 +84,9 @@ class MlpBaselineTest(unittest.TestCase):
         model, hparams = build_model()
         model_id = save(directory, model, hparams)
         with self.assertRaisesRegex(ValueError, "state_dependent_effects"):
-            ModelValidation(model_id, str(directory), problem_path=str(TEST_PROBLEM))
+            MlpBaselineValidator(
+                model_id, str(directory), problem_path=str(TEST_PROBLEM)
+            )
 
 
 if __name__ == "__main__":

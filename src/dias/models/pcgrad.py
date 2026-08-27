@@ -44,9 +44,9 @@ class PCGrad:
     # Below this the primary gradient carries no direction to project onto.
     NEGLIGIBLE = 1e-12
 
-    def __init__(self, weight: float, dynamic_clip: bool = True):
+    def __init__(self, weight: float, norm_cap: bool = True):
         self.weight = weight
-        self.dynamic_clip = dynamic_clip
+        self.norm_cap = norm_cap
 
     def backward(self, primary, auxiliary, parameters) -> None:
         parameters = list(parameters)
@@ -73,8 +73,8 @@ class PCGrad:
             return None if reached is None else reached.clone()
 
         auxiliary = self._project(primary, auxiliary)
-        if self.dynamic_clip:
-            auxiliary = self._clip_to(primary, auxiliary)
+        if self.norm_cap:
+            auxiliary = self._cap_norm(primary, auxiliary)
         return (primary + auxiliary).clone()
 
     @classmethod
@@ -90,7 +90,7 @@ class PCGrad:
         return auxiliary - (opposition / squared_norm) * primary
 
     @classmethod
-    def _clip_to(cls, primary: torch.Tensor, auxiliary: torch.Tensor) -> torch.Tensor:
+    def _cap_norm(cls, primary: torch.Tensor, auxiliary: torch.Tensor) -> torch.Tensor:
         """Keep the auxiliary gradient no longer than the primary one: orthogonality alone does not bound it, and it can dominate early."""
         primary_norm = torch.norm(primary)
         auxiliary_norm = torch.norm(auxiliary)
@@ -103,11 +103,11 @@ def gradient_combiner(
     use_pcgrad: bool,
     auxiliary_weight: float,
     auxiliary_active: bool,
-    dynamic_clip: bool = True,
+    norm_cap: bool = True,
 ) -> GradientCombiner:
     """Pick how the two losses are reconciled, once, at construction."""
     if not auxiliary_active:
         return SingleObjective()
     if not use_pcgrad:
         return WeightedSum(auxiliary_weight)
-    return PCGrad(auxiliary_weight, dynamic_clip=dynamic_clip)
+    return PCGrad(auxiliary_weight, norm_cap=norm_cap)

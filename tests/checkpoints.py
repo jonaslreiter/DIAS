@@ -9,12 +9,12 @@ from dias.schema import DomainSchema
 
 # What today's parameters were called before the models/ split. Stated independently of dias.models.checkpoints, so a rename that forgets its migration rule fails here.
 _PRE_SPLIT_NAMES = {
-    "graph_edit.selector.slot_encodings": "graph_edit.slot_encodings",
-    "graph_edit.selector.slot_weight_logits": "graph_edit.slot_weight_logits",
-    "graph_edit.preconditions.logits": "graph_edit.preconditions",
-    "graph_edit.effects.logits": "graph_edit.effects",
+    "predictor.selector.slot_queries": "graph_edit.slot_encodings",
+    "predictor.selector.slot_weight_logits": "graph_edit.slot_weight_logits",
+    "predictor.preconditions.logits": "graph_edit.preconditions",
+    "predictor.effects.logits": "graph_edit.effects",
 }
-_ENCODER_LAYER = re.compile(r"^state_encoder\.(convs|norms)\.(\d+)\.")
+_ENCODER_LAYER = re.compile(r"^encoder\.(convs|norms)\.(\d+)\.")
 _PRE_SPLIT_ENCODER = {"convs": "conv", "norms": "ln"}
 
 
@@ -59,7 +59,7 @@ def build_model(**overrides):
     schema = domain_schema()
     hparams = {
         "num_objects": schema.num_objects,
-        "arity_relations": list(schema.relation_arities),
+        "relation_arities": list(schema.relation_arities),
         "num_actions": schema.num_actions,
         "object_dim": 8,
         "aux_loss_weight": 1.0,

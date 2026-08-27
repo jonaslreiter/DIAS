@@ -13,10 +13,10 @@ from .outputs import IGNORE
 
 
 def unary_offdiagonal_mask(
-    arity_relations: Sequence[int], num_slots: int
+    relation_arities: Sequence[int], num_slots: int
 ) -> torch.Tensor:
     """``(1, R, k, k, 1)``, true where a relation cannot relate the slot pair."""
-    is_unary = torch.tensor([arity == 1 for arity in arity_relations])
+    is_unary = torch.tensor([arity == 1 for arity in relation_arities])
     off_diagonal = ~torch.eye(num_slots, dtype=torch.bool)
     return is_unary.view(1, -1, 1, 1, 1) & off_diagonal.view(
         1, 1, num_slots, num_slots, 1

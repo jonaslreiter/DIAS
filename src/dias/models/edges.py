@@ -55,16 +55,23 @@ class EdgeTypeLayout(nn.Module):
             + (4 * self.num_relations if self.successor_relations else 0)
         )
 
-    def forward(self, batch_s1, batch_s2=None) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward(
+        self, batch_state, batch_next_state=None
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Every edge the encoder sees, as one ``(edge_index, edge_type)`` pair."""
-        num_objects = batch_s1.batch.size(0) // batch_s1.y_action.size(0)
+        num_objects = batch_state.batch.size(0) // batch_state.y_action.size(0)
         parts = [
-            (batch_s1.edge_index, batch_s1.edge_attr),
-            (batch_s1.edge_index.flip(0), batch_s1.edge_attr + self.num_relations),
-            self._action_edges(batch_s1.y_action, batch_s1.y_action_args, num_objects),
+            (batch_state.edge_index, batch_state.edge_attr),
+            (
+                batch_state.edge_index.flip(0),
+                batch_state.edge_attr + self.num_relations,
+            ),
+            self._action_edges(
+                batch_state.y_action, batch_state.y_action_args, num_objects
+            ),
         ]
-        if self.successor_relations and batch_s2 is not None:
-            parts.append(self._change_edges(batch_s1, batch_s2))
+        if self.successor_relations and batch_next_state is not None:
+            parts.append(self._change_edges(batch_state, batch_next_state))
         return (
             torch.cat([index for index, _ in parts], dim=1),
             torch.cat([types for _, types in parts], dim=0),
@@ -94,22 +101,34 @@ class EdgeTypeLayout(nn.Module):
             2 * self.num_relations + relations,
         )
 
-    def _change_edges(self, batch_s1, batch_s2) -> tuple[torch.Tensor, torch.Tensor]:
+    def _change_edges(
+        self, batch_state, batch_next_state
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """The atoms the transition deleted and added, in both directions."""
-        total_nodes = batch_s1.batch.size(0)
+        total_nodes = batch_state.batch.size(0)
         before = _edge_codes(
-            batch_s1.edge_index, batch_s1.edge_attr, total_nodes, self.num_relations
+            batch_state.edge_index,
+            batch_state.edge_attr,
+            total_nodes,
+            self.num_relations,
         )
         after = _edge_codes(
-            batch_s2.edge_index, batch_s2.edge_attr, total_nodes, self.num_relations
+            batch_next_state.edge_index,
+            batch_next_state.edge_attr,
+            total_nodes,
+            self.num_relations,
         )
         base = 2 * self.num_relations + self.num_action_relations
 
         indices: list[torch.Tensor] = []
         types: list[torch.Tensor] = []
         for changed, batch, offset in (
-            (~torch.isin(before, after), batch_s1, base),
-            (~torch.isin(after, before), batch_s2, base + 2 * self.num_relations),
+            (~torch.isin(before, after), batch_state, base),
+            (
+                ~torch.isin(after, before),
+                batch_next_state,
+                base + 2 * self.num_relations,
+            ),
         ):
             if not changed.any():
                 continue
@@ -123,8 +142,8 @@ class EdgeTypeLayout(nn.Module):
 
         if not indices:
             return (
-                batch_s1.edge_index.new_empty((2, 0)),
-                batch_s1.edge_attr.new_empty((0,)),
+                batch_state.edge_index.new_empty((2, 0)),
+                batch_state.edge_attr.new_empty((0,)),
             )
         return torch.cat(indices, dim=1), torch.cat(types, dim=0)
 

@@ -15,8 +15,8 @@ class NoiseArgumentTest(unittest.TestCase):
         return PddlGraphDataModule(
             domain_path=str(DOMAIN),
             problem_path=str(TRAIN_PROBLEM),
-            min_per_label_train=2,
-            min_per_label_valid=1,
+            min_per_action_train=2,
+            min_per_action_valid=1,
             **kwargs,
         )
 
@@ -47,14 +47,14 @@ class QuotaFloorTest(unittest.TestCase):
         module = PddlGraphDataModule(
             domain_path=str(DOMAIN),
             problem_path=str(TRAIN_PROBLEM),
-            min_per_label_train=2,
-            min_per_label_valid=1,
-            min_per_label_train_floor=20,
-            min_per_label_valid_floor=10,
+            min_per_action_train=2,
+            min_per_action_valid=1,
+            min_per_action_train_floor=20,
+            min_per_action_valid_floor=10,
         )
         self.assertEqual(module.quota.split_weights, (20, 10))
-        self.assertEqual(module.hparams["min_per_label_train"], 2)
-        self.assertEqual(module.hparams["min_per_label_valid"], 1)
+        self.assertEqual(module.hparams["min_per_action_train"], 2)
+        self.assertEqual(module.hparams["min_per_action_valid"], 1)
 
 
 class DataloaderTest(unittest.TestCase):
@@ -64,8 +64,8 @@ class DataloaderTest(unittest.TestCase):
         module = PddlGraphDataModule(
             domain_path=str(DOMAIN),
             problem_path=str(TRAIN_PROBLEM),
-            min_per_label_train=4,
-            min_per_label_valid=2,
+            min_per_action_train=4,
+            min_per_action_valid=2,
             batch_size=4,
             **kwargs,
         )
@@ -73,9 +73,9 @@ class DataloaderTest(unittest.TestCase):
         return module
 
     def first_batch(self, loader):
-        batch_s1, batch_s2, *_ = next(iter(loader))
-        self.assertEqual(batch_s1.num_graphs, batch_s2.num_graphs)
-        return batch_s1
+        batch_state, batch_next_state, *_ = next(iter(loader))
+        self.assertEqual(batch_state.num_graphs, batch_next_state.num_graphs)
+        return batch_state
 
     def test_stratified_batches_stream_without_exhausting(self):
         module = self.build(batch_sampling_strategy="stratified")

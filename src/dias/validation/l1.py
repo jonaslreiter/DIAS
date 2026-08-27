@@ -30,15 +30,15 @@ logger = logging.getLogger(__name__)
 UNINFORMATIVE_TYPES = frozenset({"untyped", "object"})
 
 
-class ModelValidation:
+class L1Validator:
     def __init__(
         self,
         original_domain_path,
         learned_domain_path,
-        logs_path_abs,
+        logs_path,
         problem_path=None,
     ):
-        self.logs_path_abs = logs_path_abs
+        self.logs_path = logs_path
 
         original_domain_text = Path(original_domain_path).read_text()
         learned_domain_text = Path(learned_domain_path).read_text()

@@ -71,13 +71,13 @@ def _extend_init(text: str, atoms: list[str]) -> str:
 
 def extract_domain_header(
     domain_text: str,
-    rel_names: list[str] | None = None,
+    predicate_names: list[str] | None = None,
     predicate_arities: list[int] | None = None,
     keep_equality_requirement: bool = True,
 ) -> str:
     """Return everything before the first ``:action``, untyped.
 
-    ``:requirements`` gains ``:negative-preconditions``, and keeps ``:equality`` only if the original declared it, so pymimir does not materialise reflexive ``(= x x)`` atoms. Given *rel_names* and *predicate_arities*, ``:predicates`` is rebuilt so the generated domain is self-contained.
+    ``:requirements`` gains ``:negative-preconditions``, and keeps ``:equality`` only if the original declared it, so pymimir does not materialise reflexive ``(= x x)`` atoms. Given *predicate_names* and *predicate_arities*, ``:predicates`` is rebuilt so the generated domain is self-contained.
     """
     action_start = domain_text.find("(:action")
     if action_start == -1:
@@ -102,7 +102,7 @@ def extract_domain_header(
     header = re.sub(r":typing\s*", "", header)
     header = re.sub(r"(\?\w+)\s+-\s+\w+", r"\1", header)
 
-    if rel_names is None or predicate_arities is None:
+    if predicate_names is None or predicate_arities is None:
         return header
 
     # Rebuild :predicates from the learned relations, the type names and whatever the original declared beyond both.
@@ -126,7 +126,7 @@ def extract_domain_header(
         else:
             decls.append(f"({name} " + " ".join(f"?x{i}" for i in range(arity)) + ")")
 
-    for name, arity in zip(rel_names, predicate_arities):
+    for name, arity in zip(predicate_names, predicate_arities):
         declare(name, arity)
 
     for children, parent in pddl_text.parse_type_groups(domain_text):

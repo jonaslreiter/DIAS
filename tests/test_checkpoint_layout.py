@@ -16,6 +16,13 @@ from dias.models.dias import DIAS
 from dias.schedules import Constant, Exponential
 from support import temp_dir
 
+# Constructor arguments this layout spelled differently. Stated independently of dias.models.checkpoints, so a rename that forgets its migration rule fails here.
+UNVERSIONED_HPARAM_NAMES = {
+    "relation_arities": "arity_relations",
+    "pcgrad_norm_cap": "pcgrad_dyn_clip",
+}
+_CURRENT_HPARAM_NAMES = {old: new for new, old in UNVERSIONED_HPARAM_NAMES.items()}
+
 UNVERSIONED_HPARAMS = {
     "num_objects": 4,
     "arity_relations": [1, 2, 2],
@@ -80,12 +87,12 @@ UNVERSIONED_ONLY_HPARAMS = {
 
 # What it becomes after migration.
 CURRENT_HPARAMS = {
-    key: value
+    _CURRENT_HPARAM_NAMES.get(key, key): value
     for key, value in UNVERSIONED_HPARAMS.items()
     if key not in UNVERSIONED_ONLY_HPARAMS
 } | {
     # A gmean_offset of 0.0 leaves the schedule unchanged.
-    "gmean_temperature": to_mapping(
+    "precondition_tau": to_mapping(
         Exponential(start=1.0, floor=0.0, factor=0.1, every=500)
     ),
     # Added later, so an unversioned checkpoint gets the constructor default.
@@ -99,7 +106,7 @@ def constructor_args() -> dict:
     Only the hyper-parameters differ between the two layouts; the tensor shapes do not, so this still builds a state dict with the unversioned key set.
     """
     return {
-        k: v
+        _CURRENT_HPARAM_NAMES.get(k, k): v
         for k, v in UNVERSIONED_HPARAMS.items()
         if k not in UNVERSIONED_ONLY_HPARAMS
     }
@@ -184,7 +191,7 @@ class CheckpointLayoutTest(unittest.TestCase):
         self.assertNotIn(RETIRED_ENCODER_KEY, {pre_split_name(k) for k in state})
         self.assertFalse([k for k in state if k.endswith("convs.5.bias")])
         # The convolution itself is still there, weights and all.
-        self.assertIn("state_encoder.convs.5.weight", state)
+        self.assertIn("encoder.convs.5.weight", state)
 
     def test_unversioned_hparams_migrate_to_the_current_layout(self):
         path = self.write_unversioned_checkpoint()
@@ -235,7 +242,7 @@ class CheckpointLayoutTest(unittest.TestCase):
 
         for step in (0, 100, 500, 1000, 10000):
             self.assertAlmostEqual(
-                model.gmean_temperature(step), unversioned_tau(step), places=12
+                model.precondition_tau(step), unversioned_tau(step), places=12
             )
 
     def test_an_unversioned_mlp_checkpoint_is_refused(self):
@@ -267,7 +274,7 @@ class CheckpointLayoutTest(unittest.TestCase):
         del checkpoint["hyper_parameters"]["loss_weight_schedule"]
         torch.save(checkpoint, path)
         model = DIAS.load_from_checkpoint(path, map_location="cpu")
-        self.assertEqual(model.gmean_temperature, Constant(1.0))
+        self.assertEqual(model.precondition_tau, Constant(1.0))
 
 
 if __name__ == "__main__":

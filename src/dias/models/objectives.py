@@ -37,8 +37,8 @@ class Losses:
             "loss_adjacency": self.adjacency.detach(),
             "loss_aux": self.auxiliary.detach(),
             "hamming_distance": self.hamming_distance,
-            "pre_mean": self.precondition_satisfaction,
-            "pre_prod_mean": self.precondition_product,
+            "precondition_satisfaction": self.precondition_satisfaction,
+            "precondition_product": self.precondition_product,
         }
 
 
@@ -53,13 +53,13 @@ class DiasObjective:
 
     def __init__(
         self,
-        arity_relations: Sequence[int],
+        relation_arities: Sequence[int],
         num_slots: int,
         use_effect_loss: bool = True,
         use_precondition_loss: bool = True,
     ):
         # One schema cell per slot tuple a relation of that arity ranges over.
-        self.schema_cells = int(sum(num_slots**arity for arity in arity_relations))
+        self.schema_cells = int(sum(num_slots**arity for arity in relation_arities))
         self.use_effect_loss = use_effect_loss
         self.use_precondition_loss = use_precondition_loss
 

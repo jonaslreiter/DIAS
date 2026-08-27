@@ -17,7 +17,7 @@ from dias.schema.domain import strips_plus_arguments
 
 from .artifacts import PddlWorkspace
 from .checkpoint import load_run
-from .decoding import process_model_logits
+from .decoding import derive_schema
 from .successors import (
     LEARNED_ACTION_PREFIX,
     compare_successors,
@@ -29,12 +29,12 @@ from .successors import (
 logger = logging.getLogger(__name__)
 
 
-class ModelValidation:
-    def __init__(self, model_id, logs_path_abs, problem_path=None, threshold=0.5):
+class DiasValidator:
+    def __init__(self, model_id, logs_path, problem_path=None, threshold=0.5):
         self.model_id = model_id
         self.threshold = threshold
 
-        run = load_run(model_id, logs_path_abs)
+        run = load_run(model_id, logs_path)
         self.schema = run.schema
         self.model = run.model
 
@@ -70,14 +70,20 @@ class ModelValidation:
         """Binarize the model's logits into action schemas. Returns the transpiler, which also carries the predicate names and arities the merged domain must declare."""
         hparams = run.datamodule_hparams
         schema = self.model.schema_logits()
-        add_eff, del_eff, pos_prec, neg_prec, _ = process_model_logits(
+        (
+            add_effects,
+            delete_effects,
+            positive_preconditions,
+            negative_preconditions,
+            _,
+        ) = derive_schema(
             effect_logits=schema.effects,
             precondition_logits=schema.preconditions,
             slot_weight_logits=schema.slot_weight_logits,
             force_action_args=self.model.force_action_args,
             action_arguments=hparams.get("action_arguments", False),
             strips_plus_actions=hparams.get("strips_plus_actions", False),
-            free_pos_map=(
+            strips_plus_positions=(
                 strips_plus_arguments(run.domain_path)
                 if hparams.get("strips_plus_actions", False)
                 else {}
@@ -94,17 +100,28 @@ class ModelValidation:
         if not has_equality:
             # Without :equality the "=" channel has no predicate to write to.
             keep = [i for i, name in enumerate(names) if name != "="]
-            add_eff, del_eff, pos_prec, neg_prec = (
-                array[:, keep, :, :] for array in (add_eff, del_eff, pos_prec, neg_prec)
+            (
+                add_effects,
+                delete_effects,
+                positive_preconditions,
+                negative_preconditions,
+            ) = (
+                array[:, keep, :, :]
+                for array in (
+                    add_effects,
+                    delete_effects,
+                    positive_preconditions,
+                    negative_preconditions,
+                )
             )
             names = [names[i] for i in keep]
             arities = [arities[i] for i in keep]
 
         transpiler = PDDLTranspiler(
-            add_effects=add_eff,
-            delete_effects=del_eff,
-            positive_preconditions=pos_prec,
-            negative_preconditions=neg_prec,
+            add_effects=add_effects,
+            delete_effects=delete_effects,
+            positive_preconditions=positive_preconditions,
+            negative_preconditions=negative_preconditions,
             predicate_names=[
                 EQUALITY_PREDICATE if has_equality and n == "=" else n for n in names
             ],
@@ -130,7 +147,7 @@ class ModelValidation:
         """One untyped domain holding the original actions and the learned ones."""
         header = extract_domain_header(
             domain_text,
-            rel_names=transpiler.predicate_names,
+            predicate_names=transpiler.predicate_names,
             predicate_arities=transpiler.predicate_arities,
             keep_equality_requirement=False,
         )

@@ -112,11 +112,12 @@ def run_command(cmd: list[str], dry_run: bool, capture: bool = True) -> str | No
 class Validator:
     """One way of scoring a learned action model against the real domain.
 
-    ``binarizes_schema``: only a model with lifted schema tensors has anything to threshold. ``from_checkpoint``: L1 is handed a learned PDDL domain instead of a trained model.
+    ``binarizes_schema``: only a model with lifted schema tensors has anything to threshold. ``from_checkpoint``: L1 is handed a learned PDDL domain instead of a trained model. ``class_name`` is what the module calls its validator, so the three are named for what they do rather than sharing one name by convention.
     """
 
     name: str
     module: str
+    class_name: str
     summary: str
     binarizes_schema: bool
     from_checkpoint: bool
@@ -126,6 +127,7 @@ VALIDATORS: dict[str, Validator] = {
     "dias": Validator(
         name="dias",
         module="dias.validation.dias_validate",
+        class_name="DiasValidator",
         summary="DIAS: lifted schemas read off a trained checkpoint",
         binarizes_schema=True,
         from_checkpoint=True,
@@ -133,6 +135,7 @@ VALIDATORS: dict[str, Validator] = {
     "mlp": Validator(
         name="mlp",
         module="dias.validation.mlp_baseline",
+        class_name="MlpBaselineValidator",
         summary="MLP baseline: effects predicted from the state, no lifted schema",
         binarizes_schema=False,
         from_checkpoint=True,
@@ -140,6 +143,7 @@ VALIDATORS: dict[str, Validator] = {
     "l1": Validator(
         name="l1",
         module="dias.validation.l1",
+        class_name="L1Validator",
         summary="L1 baseline: a learned PDDL domain produced outside this repo",
         binarizes_schema=False,
         from_checkpoint=False,
@@ -152,10 +156,11 @@ EXPERIMENT_TYPES = tuple(EXPERIMENT_VALIDATOR)
 
 
 def validator_class(name: str):
-    """The ``ModelValidation`` class of one validator, imported on demand."""
+    """The validator class one entry names, imported on demand."""
     from importlib import import_module
 
-    return import_module(VALIDATORS[name].module).ModelValidation
+    spec = VALIDATORS[name]
+    return getattr(import_module(spec.module), spec.class_name)
 
 
 # ── seeds and Slurm ───────────────────────────────────────────────────────────

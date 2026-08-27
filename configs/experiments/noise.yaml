@@ -11,7 +11,7 @@
 model:
   init_args:
     # Tau decays as in main.yaml but bottoms out at 0.1 instead of 0: under noise the exact precondition product is too brittle to train against.
-    gmean_temperature:
+    precondition_tau:
       class_path: dias.schedules.Exponential
       init_args:
         start: 1.0
@@ -28,6 +28,6 @@ data:
         added_atoms: 1.0
         # Static relations describe the instance, not its state; corrupting them would ask the model to learn a different problem.
         fluents_only: true
-    min_per_label_train_floor: 200
-    min_per_label_valid_floor: 100
+    min_per_action_train_floor: 200
+    min_per_action_valid_floor: 100
     batch_size: 50

@@ -33,7 +33,7 @@ def prediction(adjacency: torch.Tensor, effects=0.5, preconditions=0.5):
         effects=channels(effects),
         preconditions=channels(preconditions),
         selection=torch.zeros(1, NUM_SLOTS, adjacency.size(-1)),
-        selection_logits=torch.zeros(1, NUM_SLOTS + 1, adjacency.size(-1)),
+        correspondence=torch.zeros(1, NUM_SLOTS + 1, adjacency.size(-1)),
         precondition_satisfaction=torch.tensor([0.25]),
         precondition_product=torch.tensor([0.125]),
     )

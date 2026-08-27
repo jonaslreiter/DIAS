@@ -5,7 +5,7 @@ from dias.data.generate_samples import (
     generate_random_walk,
     reachable_states,
     samples_to_tensors,
-    state_to_dict,
+    state_to_groundings,
 )
 
 
@@ -131,13 +131,13 @@ class FakeProblem:
 
 
 class SampleGenerationTest(unittest.TestCase):
-    def test_state_to_dict_reads_only_the_fluents_unless_asked(self):
+    def test_state_to_groundings_reads_only_the_fluents_unless_asked(self):
         fluent = FakePredicate("ready", 1)
         static = FakePredicate("type", 1, static=True)
         state = FakeState(0, [FakeAtom(fluent, [1]), FakeAtom(static, [0])])
-        self.assertEqual(state_to_dict(state), {"ready": [[1]]})
+        self.assertEqual(state_to_groundings(state), {"ready": [[1]]})
         self.assertEqual(
-            state_to_dict(state, include_statics=True),
+            state_to_groundings(state, include_statics=True),
             {"ready": [[1]], "type": [[0]]},
         )
 
@@ -149,7 +149,7 @@ class SampleGenerationTest(unittest.TestCase):
         initial.actions = [FakeGroundAction(action, [FakeObject(0, "a")], terminal)]
         domain = FakeDomain("demo", [predicate], [action])
         problem = FakeProblem(domain, initial, [FakeObject(0, "a")])
-        samples = generate_random_walk(problem, min_num_samples=1, max_steps=3)
+        samples = generate_random_walk(problem, min_total_samples=1, max_steps=3)
         self.assertEqual(len(samples), 1)
         self.assertEqual(samples[0]["action"], "go")
         self.assertEqual(samples[0]["action_args"], [0])
@@ -170,7 +170,7 @@ class SampleGenerationTest(unittest.TestCase):
         )
         samples = generate_random_walk(
             problem,
-            min_per_label=2,
+            min_per_action=2,
             max_steps=1,
             only_unseen_states=True,
         )

@@ -2,14 +2,14 @@ import unittest
 
 import torch
 
-from dias.models.prediction import PredictionModule
+from dias.models.prediction import SuccessorPredictor
 
 
-class PredictionModuleTest(unittest.TestCase):
+class SuccessorPredictorTest(unittest.TestCase):
     def test_dense_forward_handles_forced_arguments_and_tracks_training_state(self):
         torch.manual_seed(4)
-        module = PredictionModule(
-            arity_relations=[1, 2],
+        module = SuccessorPredictor(
+            relation_arities=[1, 2],
             num_actions=1,
             num_slots=2,
             object_dim=3,
@@ -27,13 +27,13 @@ class PredictionModuleTest(unittest.TestCase):
         self.assertEqual(tuple(output.adjacency.shape), (1, 2, 2, 2))
         self.assertTrue(torch.isfinite(output.adjacency).all())
         self.assertEqual(tuple(output.selection.shape), (1, 2, 2))
-        self.assertEqual(output.selection_logits[0, 0, 1].item(), 0.0)
-        self.assertTrue(torch.isneginf(output.selection_logits).any())
+        self.assertEqual(output.correspondence[0, 0, 1].item(), 0.0)
+        self.assertTrue(torch.isneginf(output.correspondence).any())
 
     def test_per_action_slots_masks_unused_slots(self):
         torch.manual_seed(7)
-        module = PredictionModule(
-            arity_relations=[1, 2],
+        module = SuccessorPredictor(
+            relation_arities=[1, 2],
             num_actions=2,
             num_slots=2,
             object_dim=3,
@@ -53,10 +53,10 @@ class PredictionModuleTest(unittest.TestCase):
 
     def test_forward_without_preconditions_does_not_gate_delta(self):
         torch.manual_seed(9)
-        gated = PredictionModule(
+        gated = SuccessorPredictor(
             [2], 1, 1, 2, learn_preconditions=True, action_arities=[1]
         )
-        ungated = PredictionModule(
+        ungated = SuccessorPredictor(
             [2], 1, 1, 2, learn_preconditions=False, action_arities=[1]
         )
         ungated.load_state_dict(gated.state_dict())
@@ -71,23 +71,23 @@ class PredictionModuleTest(unittest.TestCase):
         self.assertFalse(torch.equal(gated_output.adjacency, ungated_output.adjacency))
         self.assertTrue(torch.equal(gated_output.delta, ungated_output.delta))
 
-    def test_the_temperature_reaches_the_precondition_gate(self):
+    def test_tau_reaches_the_precondition_gate(self):
         """Tau arrives as a plain value; the floor is the schedule's business."""
         torch.manual_seed(11)
-        module = PredictionModule([2], 1, 1, 2, action_arities=[1])
+        module = SuccessorPredictor([2], 1, 1, 2, action_arities=[1])
         kwargs = {
             "y_action": torch.tensor([0]),
             "y_action_args": torch.tensor([[-1]]),
             "adjacency": torch.zeros(1, 1, 2, 2),
         }
         node_embeddings = torch.randn(2, 2)
-        relaxed = module(node_embeddings, gmean_temperature=0.5, **kwargs)
-        stricter = module(node_embeddings, gmean_temperature=0.4, **kwargs)
+        relaxed = module(node_embeddings, tau=0.5, **kwargs)
+        stricter = module(node_embeddings, tau=0.4, **kwargs)
         self.assertFalse(torch.allclose(relaxed.adjacency, stricter.adjacency))
         self.assertTrue(
             torch.allclose(
                 relaxed.adjacency,
-                module(node_embeddings, gmean_temperature=0.5, **kwargs).adjacency,
+                module(node_embeddings, tau=0.5, **kwargs).adjacency,
             )
         )
 

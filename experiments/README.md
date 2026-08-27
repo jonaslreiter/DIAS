@@ -141,7 +141,7 @@ Every point of the grid is submitted, including one that matches what another ex
 
 ### Dataset size
 
-The one axis that moves several parameters at once. For value N it pins `min_per_label_train = max_per_label_train = N` and both `*_valid` to N/2, so the sampled pool is *exactly* `num_actions × 1.5N` transitions rather than a lower bound with a loose cap. It also pins the `*_floor` knobs to the same values, which is what stops the noise overlay's 200/100 floors from silently clamping the 20/50/100 points back up.
+The one axis that moves several parameters at once. For value N it pins `min_per_action_train = max_per_action_train = N` and both `*_valid` to N/2, so the sampled pool is *exactly* `num_actions × 1.5N` transitions rather than a lower bound with a loose cap. It also pins the `*_floor` knobs to the same values, which is what stops the noise overlay's 200/100 floors from silently clamping the 20/50/100 points back up.
 
 ```bash
 # Noiseless

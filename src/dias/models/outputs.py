@@ -50,7 +50,7 @@ class SchemaPrediction:
     selection: torch.Tensor
     """Soft slot-to-object assignment, ``(batch, slots, objects)``."""
 
-    selection_logits: torch.Tensor
+    correspondence: torch.Tensor
     """Assignment scores before Sinkhorn, with the slack row appended."""
 
     precondition_satisfaction: torch.Tensor

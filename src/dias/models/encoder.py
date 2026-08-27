@@ -13,20 +13,20 @@ DEFAULT_HIDDEN_DIMS = (32, 64, 64, 64, 64)
 
 
 class RelationalEncoder(nn.Module):
-    """Relational graph convolutions with LayerNorm + SiLU between layers, one per hidden dimension plus a final bias-free one back down to `latent_dim`. Per-edge-type weights are what distinguish a relation from its reverse and both from an action self-loop."""
+    """Relational graph convolutions with LayerNorm + SiLU between layers, one per hidden dimension plus a final bias-free one back down to `object_dim`. Per-edge-type weights are what distinguish a relation from its reverse and both from an action self-loop."""
 
     def __init__(
         self,
-        latent_dim: int,
+        object_dim: int,
         num_edge_types: int,
         hidden_dims: Sequence[int] = DEFAULT_HIDDEN_DIMS,
         random_node_embeddings: bool = True,
     ):
         super().__init__()
-        self.latent_dim = latent_dim
+        self.object_dim = object_dim
         self.random_node_embeddings = random_node_embeddings
 
-        widths = [latent_dim, *hidden_dims, latent_dim]
+        widths = [object_dim, *hidden_dims, object_dim]
         last = len(widths) - 2
         self.convs = nn.ModuleList(
             FastRGCNConv(
@@ -47,10 +47,10 @@ class RelationalEncoder(nn.Module):
         Half the dimensions are seeded with noise: objects carry no features of their own, so two in symmetric positions are otherwise indistinguishable. Off is the `random_node_embeddings` ablation.
         """
         features = torch.zeros(
-            num_nodes, self.latent_dim, device=device, dtype=torch.float32
+            num_nodes, self.object_dim, device=device, dtype=torch.float32
         )
         if self.random_node_embeddings:
-            half = self.latent_dim // 2
+            half = self.object_dim // 2
             features[:, :half] = 0.1 * torch.randn(
                 num_nodes, half, device=device, dtype=torch.float32
             )

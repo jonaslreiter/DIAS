@@ -22,7 +22,7 @@ from dias.pddl.untype import (
 
 from .artifacts import PddlWorkspace
 from .checkpoint import load_run
-from .decoding import process_model_logits
+from .decoding import derive_schema
 from .successors import (
     LEARNED_ACTION_PREFIX,
     resolve_sample_seed,
@@ -33,7 +33,7 @@ from .successors import (
 
 
 # Top-level so a spawn-mode pool can pickle it. pymimir states cannot cross a process boundary, so each worker reloads the domain and rebuilds every state from an atom payload.
-def _phase1_worker(
+def _enumerate_groundings(
     payloads: list[list[tuple[str, tuple[str, ...]]]],
     config: dict,
 ):
@@ -124,17 +124,17 @@ def _phase1_worker(
 
         # Keyed by action, as the symbolic validators are.
         sigs: dict[str, set[bytes]] = defaultdict(set)
-        for ga in orig_state.generate_applicable_actions():
-            signature = adj_signature(state_to_adj(ga.apply(orig_state)))
-            sigs[ga.get_action().get_name()].add(signature)
+        for ground_action in orig_state.generate_applicable_actions():
+            signature = adj_signature(state_to_adj(ground_action.apply(orig_state)))
+            sigs[ground_action.get_action().get_name()].add(signature)
         orig_sigs_list.append(dict(sigs))
 
-        for ga in learned_state.generate_applicable_actions():
-            name = ga.get_action().get_name()
+        for ground_action in learned_state.generate_applicable_actions():
+            name = ground_action.get_action().get_name()
             if not name.startswith(prefix):
                 continue
             a_idx = action_name_to_idx[name[prefix_len:]]
-            objs = ga.get_objects()
+            objs = ground_action.get_objects()
             row = np.full(max_arity, -1, dtype=np.int64)
             for p, o in enumerate(objs):
                 if p >= max_arity:
@@ -160,11 +160,11 @@ def _phase1_worker(
     )
 
 
-class ModelValidation:
+class MlpBaselineValidator:
     def __init__(
         self,
         model_id,
-        logs_path_abs,
+        logs_path,
         problem_path=None,
         batch_size: int = 4096,
         num_workers: int = 1,
@@ -173,7 +173,7 @@ class ModelValidation:
         self.num_workers = num_workers
         self.model_id = model_id
 
-        run = load_run(model_id, logs_path_abs)
+        run = load_run(model_id, logs_path)
         self.schema = run.schema
         self.model = run.model
         datamodule_hparams = run.datamodule_hparams
@@ -184,7 +184,7 @@ class ModelValidation:
                 "validate_mlp_baseline expects a model with state_dependent_effects=True. Use validate.py for the static-effects baseline."
             )
 
-        free_pos_map = (
+        strips_plus_positions = (
             strips_plus_arguments(datamodule_hparams["domain_path"])
             if datamodule_hparams.get("strips_plus_actions", False)
             else {}
@@ -193,18 +193,20 @@ class ModelValidation:
         strips_plus_actions = datamodule_hparams.get("strips_plus_actions", False)
 
         # `schema.effects` is None here, so only preconditions and slot activations are read off.
-        _, _, pos_prec, neg_prec, active_slots = process_model_logits(
-            effect_logits=schema.effects,
-            precondition_logits=schema.preconditions,
-            slot_weight_logits=schema.slot_weight_logits,
-            force_action_args=self.model.force_action_args,
-            action_arguments=action_arguments,
-            strips_plus_actions=strips_plus_actions,
-            free_pos_map=free_pos_map,
-            action_names=list(self.schema.action_names),
-            action_arities=list(self.schema.action_arities),
-            num_slots=self.model.num_slots,
-            random_flip=False,
+        _, _, positive_preconditions, negative_preconditions, active_slots = (
+            derive_schema(
+                effect_logits=schema.effects,
+                precondition_logits=schema.preconditions,
+                slot_weight_logits=schema.slot_weight_logits,
+                force_action_args=self.model.force_action_args,
+                action_arguments=action_arguments,
+                strips_plus_actions=strips_plus_actions,
+                strips_plus_positions=strips_plus_positions,
+                action_names=list(self.schema.action_names),
+                action_arities=list(self.schema.action_arities),
+                num_slots=self.model.num_slots,
+                random_flip=False,
+            )
         )
 
         original_domain_path = datamodule_hparams["domain_path"]
@@ -215,8 +217,8 @@ class ModelValidation:
         relation_arities = list(self.schema.relation_arities)
         if not has_equality:
             keep = [i for i, n in enumerate(relation_names) if n != "="]
-            pos_prec = pos_prec[:, keep, :, :]
-            neg_prec = neg_prec[:, keep, :, :]
+            positive_preconditions = positive_preconditions[:, keep, :, :]
+            negative_preconditions = negative_preconditions[:, keep, :, :]
             relation_names = [relation_names[i] for i in keep]
             relation_arities = [relation_arities[i] for i in keep]
 
@@ -244,12 +246,12 @@ class ModelValidation:
         ]
 
         # The transpiler only supplies the precondition atoms; the blocks are written below.
-        zero_eff = np.zeros_like(pos_prec)
+        zero_effects = np.zeros_like(positive_preconditions)
         pddl_transpiler = PDDLTranspiler(
-            add_effects=zero_eff,
-            delete_effects=zero_eff,
-            positive_preconditions=pos_prec,
-            negative_preconditions=neg_prec,
+            add_effects=zero_effects,
+            delete_effects=zero_effects,
+            positive_preconditions=positive_preconditions,
+            negative_preconditions=negative_preconditions,
             predicate_names=transpiler_predicate_names,
             predicate_arities=relation_arities,
             action_names=list(self.schema.action_names),
@@ -266,7 +268,7 @@ class ModelValidation:
         # The learned-only domain.
         header = extract_domain_header(
             original_domain_text,
-            rel_names=pddl_transpiler.predicate_names,
+            predicate_names=pddl_transpiler.predicate_names,
             predicate_arities=pddl_transpiler.predicate_arities,
             keep_equality_requirement=False,
         )
@@ -345,7 +347,7 @@ class ModelValidation:
     def validate(self):
         """Score every sampled state, batching the MLP forward passes on the GPU.
 
-        Phase 1 (pymimir, CPU) enumerates each state's ground-truth successors and the learned groundings; that is the slow part, and ``num_workers > 1`` spreads it. Phase 2 runs every grounding through the effects MLP in ``batch_size`` chunks.
+        Phase 1 (`_enumerate_groundings`, pymimir, CPU) enumerates each state's ground-truth successors and the learned groundings; that is the slow part, and ``num_workers > 1`` spreads it. Phase 2 runs every grounding through the effects MLP in ``batch_size`` chunks.
         """
         batch_size = self.batch_size
         num_workers = self.num_workers
@@ -394,7 +396,7 @@ class ModelValidation:
         chunk_results: list[tuple[int, tuple]] = []
 
         if num_workers <= 1 or S <= 1:
-            chunk_results.append((0, _phase1_worker(payloads, worker_config)))
+            chunk_results.append((0, _enumerate_groundings(payloads, worker_config)))
         else:
             num_workers = min(num_workers, S)
             chunk_size = (S + num_workers - 1) // num_workers
@@ -402,21 +404,23 @@ class ModelValidation:
                 (start, payloads[start : start + chunk_size])
                 for start in range(0, S, chunk_size)
             ]
-            mp_ctx = _mp.get_context("spawn")
+            spawn_context = _mp.get_context("spawn")
             ordered: list[tuple] = [None] * len(chunks)  # type: ignore
-            fut_to_idx = {}
+            future_to_chunk = {}
             with ProcessPoolExecutor(
-                max_workers=num_workers, mp_context=mp_ctx
+                max_workers=num_workers, mp_context=spawn_context
             ) as pool:
                 for chunk_idx, (start, chunk_payloads) in enumerate(chunks):
-                    fut = pool.submit(_phase1_worker, chunk_payloads, worker_config)
-                    fut_to_idx[fut] = chunk_idx
-                for fut in tqdm(
-                    as_completed(fut_to_idx),
-                    total=len(fut_to_idx),
-                    desc=f"phase1 ({num_workers}p)",
+                    future = pool.submit(
+                        _enumerate_groundings, chunk_payloads, worker_config
+                    )
+                    future_to_chunk[future] = chunk_idx
+                for future in tqdm(
+                    as_completed(future_to_chunk),
+                    total=len(future_to_chunk),
+                    desc=f"Grounding states ({num_workers} processes)",
                 ):
-                    ordered[fut_to_idx[fut]] = fut.result()
+                    ordered[future_to_chunk[future]] = future.result()
             chunk_results = list(zip([c[0] for c in chunks], ordered))
 
         # Concatenate worker outputs in original state order.

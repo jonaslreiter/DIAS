@@ -35,7 +35,7 @@ class DIASModelTest(unittest.TestCase):
     def make_model(self, **kwargs):
         defaults = {
             "num_objects": 2,
-            "arity_relations": [1, 2],
+            "relation_arities": [1, 2],
             "num_actions": 1,
             "object_dim": 4,
             "aux_loss_weight": 1.0,
@@ -70,21 +70,21 @@ class DIASModelTest(unittest.TestCase):
 
     def test_the_tau_schedule_is_kept_as_given(self):
         model = self.make_model(
-            gmean_temperature=Exponential(start=1.0, factor=0.1, every=10)
+            precondition_tau=Exponential(start=1.0, factor=0.1, every=10)
         )
         self.assertEqual(
-            model.gmean_temperature,
+            model.precondition_tau,
             Exponential(start=1.0, floor=0.0, factor=0.1, every=10),
         )
-        self.assertAlmostEqual(model.gmean_temperature(10), 0.1)
+        self.assertAlmostEqual(model.precondition_tau(10), 0.1)
 
     def test_the_tau_schedule_is_stored_as_primitives(self):
         """A dataclass here would make the checkpoint unloadable."""
         model = self.make_model(
-            gmean_temperature=Exponential(start=1.0, factor=0.1, every=10)
+            precondition_tau=Exponential(start=1.0, factor=0.1, every=10)
         )
         self.assertEqual(
-            model.hparams["gmean_temperature"],
+            model.hparams["precondition_tau"],
             {
                 "class_path": "dias.schedules.Exponential",
                 "init_args": {
@@ -99,25 +99,25 @@ class DIASModelTest(unittest.TestCase):
     def test_forward_handles_action_argument_padding_truncation_and_changes(self):
         model = self.make_model(force_action_args=True)
         model.eval()
-        batch_s1, batch_s2 = make_batch(changed=True)
-        short_s1 = batch_s1.clone()
-        short_s1.y_action_args = torch.tensor([[-1]])
-        short_output = model(short_s1, batch_s2)
+        batch_state, batch_next_state = make_batch(changed=True)
+        short_state = batch_state.clone()
+        short_state.y_action_args = torch.tensor([[-1]])
+        short_output = model(short_state, batch_next_state)
         self.assertEqual(short_output.adjacency.shape, (1, 2, 2, 2))
 
         long_model = self.make_model(force_action_args=False)
         long_model.eval()
-        long_s1 = batch_s1.clone()
-        long_s1.y_action_args = torch.tensor([[0, 1, 0]])
-        long_output = long_model(long_s1, batch_s2)
+        long_state = batch_state.clone()
+        long_state.y_action_args = torch.tensor([[0, 1, 0]])
+        long_output = long_model(long_state, batch_next_state)
         self.assertEqual(long_output.adjacency.shape, (1, 2, 2, 2))
         self.assertTrue(torch.isfinite(long_output.adjacency).all())
 
     def test_forward_without_successor_batch_uses_reverse_edges_only(self):
         model = self.make_model(successor_relations=False, random_node_embeddings=False)
         model.eval()
-        batch_s1, _ = make_batch(action_args=(-1, -1))
-        output = model(batch_s1)
+        batch_state, _ = make_batch(action_args=(-1, -1))
+        output = model(batch_state)
         self.assertEqual(output.adjacency.shape, (1, 2, 2, 2))
         self.assertTrue(torch.isfinite(output.adjacency).all())
 
@@ -133,8 +133,8 @@ class DIASModelTest(unittest.TestCase):
                 "loss_adjacency",
                 "loss_aux",
                 "hamming_distance",
-                "pre_mean",
-                "pre_prod_mean",
+                "precondition_satisfaction",
+                "precondition_product",
             },
         )
         for value in losses.logged(model.aux_loss_weight).values():
@@ -178,7 +178,7 @@ class DIASModelTest(unittest.TestCase):
 
     def test_the_scheduled_tau_is_logged_for_the_current_step(self):
         model = self.make_model(
-            gmean_temperature=Exponential(start=1.0, factor=0.1, every=10)
+            precondition_tau=Exponential(start=1.0, factor=0.1, every=10)
         )
         model.log = Mock()
         with patch.object(
@@ -186,7 +186,7 @@ class DIASModelTest(unittest.TestCase):
         ):
             model.on_train_batch_start(None, 0)
         name, value = model.log.call_args.args
-        self.assertEqual(name, "scheduled_w/gmean_temperature")
+        self.assertEqual(name, "schedule/precondition_tau")
         self.assertAlmostEqual(value, 0.1)
 
     def test_log_results_skips_nan_and_handles_train_prefix(self):

@@ -160,10 +160,10 @@ class PrecedenceTest(unittest.TestCase):
     def test_the_noise_overlay_raises_the_per_action_floors(self):
         # A floor raises the smallest minimum without shrinking the domains that sample more.
         config = parse(MAIN, A_DOMAIN, ROOT / "configs/experiments/noise.yaml")
-        self.assertEqual(config.data.init_args.min_per_label_train_floor, 200)
-        self.assertEqual(config.data.init_args.min_per_label_valid_floor, 100)
-        self.assertEqual(config.data.init_args.min_per_label_train, 200)
-        self.assertEqual(config.model.init_args.gmean_temperature.floor, 0.1)
+        self.assertEqual(config.data.init_args.min_per_action_train_floor, 200)
+        self.assertEqual(config.data.init_args.min_per_action_valid_floor, 100)
+        self.assertEqual(config.data.init_args.min_per_action_train, 200)
+        self.assertEqual(config.model.init_args.precondition_tau.floor, 0.1)
 
     def test_a_command_line_override_beats_every_file(self):
         # How a sweep point reaches a run: appended last, one dotted key, and setting one field of the schedule leaves the others alone.
@@ -171,9 +171,9 @@ class PrecedenceTest(unittest.TestCase):
             MAIN,
             A_DOMAIN,
             ROOT / "configs/experiments/noise.yaml",
-            overrides=["--model.init_args.gmean_temperature.every=100"],
+            overrides=["--model.init_args.precondition_tau.every=100"],
         )
-        schedule = config.model.init_args.gmean_temperature
+        schedule = config.model.init_args.precondition_tau
         self.assertEqual(schedule.every, 100)
         self.assertEqual(schedule.floor, 0.1)
         self.assertEqual(schedule.start, 1.0)
@@ -192,15 +192,15 @@ class SavedConfigTest(unittest.TestCase):
                 args=["--config", str(MAIN), "--config", str(A_DOMAIN), *plain],
                 run=False,
             )
-            original = cli.model.gmean_temperature
+            original = cli.model.precondition_tau
 
             with tempfile.TemporaryDirectory() as tmp:
                 saved = Path(tmp) / "config.yaml"
                 saved.write_text(cli.parser.dump(cli.config, skip_none=False))
                 reloaded = CLI(args=["--config", str(saved), *plain], run=False).model
 
-        self.assertIs(type(reloaded.gmean_temperature), type(original))
-        self.assertEqual(reloaded.gmean_temperature, original)
+        self.assertIs(type(reloaded.precondition_tau), type(original))
+        self.assertEqual(reloaded.precondition_tau, original)
 
 
 if __name__ == "__main__":

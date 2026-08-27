@@ -79,7 +79,7 @@ class ExtractDomainHeaderTest(unittest.TestCase):
     def test_rebuilt_predicates_cover_relations_and_types(self):
         header = extract_domain_header(
             DOMAIN,
-            rel_names=["=", "ready", "linked"],
+            predicate_names=["=", "ready", "linked"],
             predicate_arities=[2, 1, 2],
             keep_equality_requirement=False,
         )

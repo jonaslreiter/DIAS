@@ -163,7 +163,7 @@ class ValidatorRegistryTest(unittest.TestCase):
         self.assertTrue(VALIDATORS["dias"].from_checkpoint)
         self.assertTrue(VALIDATORS["mlp"].from_checkpoint)
 
-    def test_each_validator_module_holds_a_ModelValidation(self):
+    def test_each_validator_module_holds_the_class_it_names(self):
         from pipeline import validator_class
 
         for name in VALIDATORS:

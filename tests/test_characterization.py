@@ -38,7 +38,7 @@ NUM_SLOTS = 3
 
 MODEL_DEFAULTS = dict(
     num_objects=NUM_OBJECTS,
-    arity_relations=ARITY_RELATIONS,
+    relation_arities=ARITY_RELATIONS,
     num_actions=NUM_ACTIONS,
     object_dim=8,
     # Pinned, not left to the class default, which would move the trajectory with it.

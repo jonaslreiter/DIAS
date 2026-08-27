@@ -18,12 +18,12 @@ def project(lifted: torch.Tensor, selection: torch.Tensor) -> torch.Tensor:
     return torch.einsum("bai,brac,bcj->brij", selection, lifted, selection)
 
 
-class PredictionModule(nn.Module):
+class SuccessorPredictor(nn.Module):
     """Slot-based graph-edit predictor: bind the action's slots to objects, project its lifted schema onto that binding, apply the change as ``A' = A + pre * delta``."""
 
     def __init__(
         self,
-        arity_relations: Sequence[int],
+        relation_arities: Sequence[int],
         num_actions: int,
         num_slots: int,
         object_dim: int,
@@ -37,7 +37,7 @@ class PredictionModule(nn.Module):
         super().__init__()
         self.num_actions = num_actions
         self.num_slots = num_slots
-        self.num_relations = len(arity_relations)
+        self.num_relations = len(relation_arities)
         self.learn_preconditions = learn_preconditions
 
         self.selector = SlotSelector(
@@ -49,11 +49,11 @@ class PredictionModule(nn.Module):
             force_action_args=force_action_args,
             use_slot_weights=use_slot_weights,
         )
-        self.preconditions = Preconditions(num_actions, arity_relations, num_slots)
+        self.preconditions = Preconditions(num_actions, relation_arities, num_slots)
         effect_source = (
             StateDependentEffects if state_dependent_effects else StaticEffects
         )
-        self.effects = effect_source(num_actions, arity_relations, num_slots)
+        self.effects = effect_source(num_actions, relation_arities, num_slots)
 
     def forward(
         self,
@@ -61,14 +61,14 @@ class PredictionModule(nn.Module):
         adjacency: torch.Tensor,
         y_action: torch.Tensor,
         y_action_args: torch.Tensor | None = None,
-        gmean_temperature: float = 1.0,
+        tau: float = 1.0,
     ) -> SchemaPrediction:
         # Sinkhorn / log-space are float16-unsafe under AMP.
         node_embeddings = node_embeddings.float()
         adjacency = adjacency.float()
         batch, _, _, num_objects = adjacency.shape
 
-        selection, selection_logits = self.selector(
+        selection, correspondence = self.selector(
             node_embeddings.view(batch, num_objects, -1), y_action, y_action_args
         )
 
@@ -80,9 +80,7 @@ class PredictionModule(nn.Module):
         satisfaction = (
             (1 - required * (1 - adjacency)) * (1 - forbidden * adjacency)
         ).flatten(start_dim=1)
-        fulfilled = soft_conjunction(
-            satisfaction, dim=-1, temperature=gmean_temperature
-        )
+        fulfilled = soft_conjunction(satisfaction, dim=-1, tau=tau)
 
         # What would the action change?
         effects = Channels.from_logits(self.effects(y_action, adjacency, selection))
@@ -100,7 +98,7 @@ class PredictionModule(nn.Module):
             effects=effects,
             preconditions=preconditions,
             selection=selection,
-            selection_logits=selection_logits,
+            correspondence=correspondence,
             precondition_satisfaction=fulfilled,
             precondition_product=satisfaction.prod(dim=-1).detach(),
         )

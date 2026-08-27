@@ -2,7 +2,7 @@
 #
 # Each domain trains on `pddl/<domain>/train.pddl` and validates on that folder's `test-1.pddl` .. `test-3.pddl`; which files those are is the folder layout, not a setting. The pipeline runs once per (domain, seed) pair, and `seeds` also sets the default `--num-runs`.
 
-# Validation knobs (forwarded to ModelValidation.setup / validate).
+# Validation knobs (forwarded to the validator's setup / validate).
 num_samples: 250
 sample_population: 500
 

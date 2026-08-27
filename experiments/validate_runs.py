@@ -68,7 +68,7 @@ def validate_run(
     val_problems = validation_problems(domain)
 
     validator = VALIDATORS[EXPERIMENT_VALIDATOR[experiment_type]]
-    ModelValidation = validator_class(validator.name)
+    validation = validator_class(validator.name)
     if not validator.binarizes_schema and threshold != 0.5:
         raise SystemExit(
             f"--threshold applies to a validator that reads a lifted schema; {validator.summary}"
@@ -94,9 +94,9 @@ def validate_run(
             sample_population,
         )
         try:
-            v = ModelValidation(
+            v = validation(
                 model_id=run_id,
-                logs_path_abs=str(logs_dir.resolve()),
+                logs_path=str(logs_dir.resolve()),
                 problem_path=str(problem.resolve()),
                 **extra_kwargs,
             )

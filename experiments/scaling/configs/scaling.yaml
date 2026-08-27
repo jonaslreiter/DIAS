@@ -11,10 +11,10 @@
 data:
   init_args:
     # Pin the sample pool instead of leaving a min/max window: every domain and every instance size trains on exactly 100 train + 50 valid transitions per action. Otherwise delivery (min 1000/500) would sample 10x more than blocks-3 and the domains would not be comparable, and the per-instance sampling time would leak into a benchmark that is about the training step.
-    min_per_label_train: 100
-    min_per_label_valid: 50
-    max_per_label_train: 100
-    max_per_label_valid: 50
+    min_per_action_train: 100
+    min_per_action_valid: 50
+    max_per_action_train: 100
+    max_per_action_valid: 50
     # Held constant across the ladder: batch size is the other multiplier on the B x R x N x N adjacency tensors whose growth this study is measuring.
     batch_size: 200
     num_workers: 0

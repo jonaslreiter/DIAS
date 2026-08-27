@@ -72,7 +72,7 @@ class SlotSelector(nn.Module):
         self.force_action_args = force_action_args
         self.use_slot_weights = use_slot_weights
 
-        self.slot_encodings = nn.Parameter(
+        self.slot_queries = nn.Parameter(
             0.1 * torch.randn(num_actions, num_slots, object_dim)
         )
         self.slot_weight_logits = nn.Parameter(torch.zeros(num_actions, num_slots))
@@ -105,34 +105,34 @@ class SlotSelector(nn.Module):
         y_action: torch.Tensor,
         y_action_args: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """``(B, N, D)`` embeddings to a ``(B, k, N)`` selection and its logits."""
+        """``(B, N, D)`` embeddings to a ``(B, k, N)`` selection and the correspondence matrix behind it."""
         batch, num_objects, _ = embeddings.shape
         # Score every object against every slot query of this action.
-        queries = self.slot_encodings[y_action]  # (B, k, D)
+        queries = self.slot_queries[y_action]  # (B, k, D)
         scores = torch.bmm(queries, embeddings.transpose(1, 2)) / self.object_dim**0.5
 
-        logits = torch.zeros(
+        correspondence = torch.zeros(
             (batch, self.num_slots + 1, num_objects),
             device=scores.device,
             dtype=torch.float32,
         )
-        logits[:, :-1, :] = scores
+        correspondence[:, :-1, :] = scores
 
         # Slots beyond the action's arity are ruled out entirely; otherwise every slot competes and its weight says how much it participates.
         unused = self.unused_slots(y_action) if self.per_action_slots else None
         row_mask = None if unused is None else F.pad(unused, (0, 1), value=False)
 
         if self.force_action_args and y_action_args is not None:
-            self._pin_known_arguments(logits, y_action_args)
+            self._pin_known_arguments(correspondence, y_action_args)
 
-        selection = batched_sinkhorn_d1d2(logits, row_mask=row_mask)[:, :-1, :]
+        selection = batched_sinkhorn_d1d2(correspondence, row_mask=row_mask)[:, :-1, :]
         if unused is not None:
             selection = selection.clone()
             selection[unused] = 0.0
         else:
             weights = self.slot_weights(y_action, y_action_args)
             selection = selection * weights.unsqueeze(-1)
-        return selection, logits
+        return selection, correspondence
 
     def slot_weights(
         self, y_action: torch.Tensor, y_action_args: torch.Tensor | None = None
@@ -152,7 +152,9 @@ class SlotSelector(nn.Module):
         return weights
 
     @staticmethod
-    def _pin_known_arguments(logits: torch.Tensor, y_action_args: torch.Tensor) -> None:
+    def _pin_known_arguments(
+        correspondence: torch.Tensor, y_action_args: torch.Tensor
+    ) -> None:
         """Force slots with a known object onto it: rule out the slot's row and the object's column everywhere else, leaving Sinkhorn one admissible cell."""
         known = y_action_args >= 0  # (B, k)
         if not known.any():
@@ -161,52 +163,67 @@ class SlotSelector(nn.Module):
         objects = y_action_args[samples, slots]
 
         row_mask = torch.zeros(
-            logits.shape[:2] + (1,), device=logits.device, dtype=torch.bool
+            correspondence.shape[:2] + (1,),
+            device=correspondence.device,
+            dtype=torch.bool,
         )
         row_mask[samples, slots, 0] = True
-        logits.masked_fill_(row_mask, -torch.inf)
+        correspondence.masked_fill_(row_mask, -torch.inf)
 
         column_mask = torch.zeros(
-            (logits.size(0), logits.size(2)), device=logits.device, dtype=torch.bool
+            (correspondence.size(0), correspondence.size(2)),
+            device=correspondence.device,
+            dtype=torch.bool,
         )
         column_mask[samples, objects] = True
-        logits.masked_fill_(column_mask.unsqueeze(1), -torch.inf)
+        correspondence.masked_fill_(column_mask.unsqueeze(1), -torch.inf)
 
-        logits[samples, slots, objects] = 0.0
+        correspondence[samples, slots, objects] = 0.0
 
 
 def batched_sinkhorn_d1d2(
-    log_A: torch.Tensor,
+    correspondence: torch.Tensor,
     max_iter: int = 10000,
     row_mask: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """Batched Sinkhorn D1D2 in log-space (https://hal.science/hal-03768664)."""
-    tol = 1.0e-2
-    batch_size, np1, _ = log_A.shape
-    n = np1 - 1
+    """Batched Sinkhorn D1D2 in log-space (https://hal.science/hal-03768664).
 
-    log_x = torch.zeros(batch_size, np1, device=log_A.device, dtype=log_A.dtype)
-    log_y = torch.zeros(
-        batch_size, log_A.size(-1), device=log_A.device, dtype=log_A.dtype
+    `correspondence` is the slot-by-object score matrix with the slack row appended; `log_row` and `log_col` are the log-domain row and column scalings the iteration alternates between, and the slack row's is pinned to zero so it absorbs whatever column mass no real slot claimed.
+    """
+    tol = 1.0e-2
+    batch_size, num_rows, _ = correspondence.shape
+    slack_row = num_rows - 1
+
+    log_row = torch.zeros(
+        batch_size,
+        num_rows,
+        device=correspondence.device,
+        dtype=correspondence.dtype,
+    )
+    log_col = torch.zeros(
+        batch_size,
+        correspondence.size(-1),
+        device=correspondence.device,
+        dtype=correspondence.dtype,
     )
     if row_mask is not None:
-        log_x = log_x.masked_fill(row_mask, -torch.inf)
+        log_row = log_row.masked_fill(row_mask, -torch.inf)
 
     for _ in range(max_iter):
-        log_x_prev, log_y_prev = log_x, log_y
-        log_x = -torch.logsumexp(log_A + log_y.unsqueeze(-2), dim=-1)
-        log_x[:, n] = 0.0
+        previous_row, previous_col = log_row, log_col
+        log_row = -torch.logsumexp(correspondence + log_col.unsqueeze(-2), dim=-1)
+        log_row[:, slack_row] = 0.0
         if row_mask is not None:
-            log_x = log_x.masked_fill(row_mask, -torch.inf)
-        log_y = -torch.logsumexp(log_A + log_x.unsqueeze(-1), dim=-2)
+            log_row = log_row.masked_fill(row_mask, -torch.inf)
+        log_col = -torch.logsumexp(correspondence + log_row.unsqueeze(-1), dim=-2)
 
         if (
             max(
-                (log_x - log_x_prev).abs().max(),
-                (log_y - log_y_prev).abs().max(),
+                (log_row - previous_row).abs().max(),
+                (log_col - previous_col).abs().max(),
             )
             < tol
         ):
             break
 
-    return torch.exp(log_x.unsqueeze(-1) + log_A + log_y.unsqueeze(-2))
+    return torch.exp(log_row.unsqueeze(-1) + correspondence + log_col.unsqueeze(-2))

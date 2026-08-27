@@ -8,7 +8,7 @@ import re
 import unittest
 from pathlib import Path
 
-from dias.validation.l1 import ModelValidation
+from dias.validation.l1 import L1Validator
 from support import temp_dir
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -26,7 +26,7 @@ class L1ValidationTest(unittest.TestCase):
         learned = directory / "learned.pddl"
         learned.write_text(learned_domain_text)
         random.seed(SAMPLE_SEED)
-        validation = ModelValidation(
+        validation = L1Validator(
             str(DOMAIN), str(learned), str(directory), problem_path=str(PROBLEM)
         )
         validation.setup(num_samples=NUM_SAMPLES, sample_population=SAMPLE_POPULATION)
@@ -53,7 +53,7 @@ class L1ValidationTest(unittest.TestCase):
         directory = temp_dir(self)
         learned = directory / "learned.pddl"
         learned.write_text(DOMAIN.read_text())
-        validation = ModelValidation(
+        validation = L1Validator(
             str(DOMAIN), str(learned), str(directory), problem_path=str(PROBLEM)
         )
         with self.assertRaisesRegex(RuntimeError, "setup"):

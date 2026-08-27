@@ -18,21 +18,27 @@ PIECEWISE_LINEAR = "dias.schedules.PiecewiseLinear"
 
 # The unversioned layout kept the whole schema flat on the prediction module and declared the encoder's layers one attribute at a time.
 _SCHEMA_RENAMES = {
-    "graph_edit.slot_encodings": "graph_edit.selector.slot_encodings",
-    "graph_edit.slot_weight_logits": "graph_edit.selector.slot_weight_logits",
-    "graph_edit.preconditions": "graph_edit.preconditions.logits",
-    "graph_edit.effects": "graph_edit.effects.logits",
+    "graph_edit.slot_encodings": "predictor.selector.slot_queries",
+    "graph_edit.slot_weight_logits": "predictor.selector.slot_weight_logits",
+    "graph_edit.preconditions": "predictor.preconditions.logits",
+    "graph_edit.effects": "predictor.effects.logits",
 }
 _ENCODER_LAYER = re.compile(r"^dynamics_model\.(conv|ln)(\d+)\.")
 _ENCODER_LISTS = {"conv": "convs", "ln": "norms"}
 # Encoder convolutions after the rename, for locating the last one.
-_ENCODER_CONV = re.compile(r"^state_encoder\.convs\.(\d+)\.")
+_ENCODER_CONV = re.compile(r"^encoder\.convs\.(\d+)\.")
 
 # Derived from the constructor arguments, and rebuilt from them on load.
 _DROPPED_KEYS = ("graph_edit.action_arities_t", "_action_rel_lookup")
 
 # Hyper-parameters the constructor no longer takes; neither ever affected any weights.
 _DROPPED_HPARAMS = ("parameter_plotting", "batch_size")
+
+# Constructor arguments that only changed name. A rule is needed for every one of them: Lightning drops a hyper-parameter it does not recognise instead of raising, so a renamed one would otherwise fall back to its default, or fail the load on an argument that has none.
+_RENAMED_HPARAMS = {
+    "arity_relations": "relation_arities",
+    "pcgrad_dyn_clip": "pcgrad_norm_cap",
+}
 
 
 def _spec(class_path: str, **init_args) -> dict:
@@ -47,7 +53,7 @@ def _drop_final_encoder_bias(state: dict) -> None:
         if (match := _ENCODER_CONV.match(key)) is not None
     ]
     if indices:
-        state.pop(f"state_encoder.convs.{max(indices)}.bias", None)
+        state.pop(f"encoder.convs.{max(indices)}.bias", None)
 
 
 def _migrate_state_dict(state: dict) -> None:
@@ -62,9 +68,7 @@ def _migrate_state_dict(state: dict) -> None:
     for key in [key for key in state if _ENCODER_LAYER.match(key)]:
         layer = _ENCODER_LAYER.match(key)
         kind, index = layer.group(1), int(layer.group(2))
-        renamed = (
-            f"state_encoder.{_ENCODER_LISTS[kind]}.{index - 1}.{key[layer.end():]}"
-        )
+        renamed = f"encoder.{_ENCODER_LISTS[kind]}.{index - 1}.{key[layer.end():]}"
         state[renamed] = state.pop(key)
     for key in _DROPPED_KEYS:
         state.pop(key, None)
@@ -83,12 +87,12 @@ def _migrate_tau_schedule(hparams: dict) -> None:
     offset = float(hparams.pop("gmean_offset", 0.0) or 0.0)
 
     if not legacy:
-        hparams["gmean_temperature"] = _spec(CONSTANT, value=1.0 + offset)
+        hparams["precondition_tau"] = _spec(CONSTANT, value=1.0 + offset)
         return
 
     kind = legacy.get("type")
     if kind == "exponential":
-        hparams["gmean_temperature"] = _spec(
+        hparams["precondition_tau"] = _spec(
             EXPONENTIAL,
             start=legacy["v0"] + offset,
             floor=offset,
@@ -98,7 +102,7 @@ def _migrate_tau_schedule(hparams: dict) -> None:
         return
     if kind == "linear":
         keypoints = {int(k): float(v) + offset for k, v in legacy["keypoints"].items()}
-        hparams["gmean_temperature"] = (
+        hparams["precondition_tau"] = (
             _spec(CONSTANT, value=next(iter(keypoints.values())))
             if len(keypoints) == 1
             else _spec(PIECEWISE_LINEAR, keypoints=keypoints)
@@ -113,7 +117,11 @@ def _from_unversioned(checkpoint: dict) -> None:
         _migrate_state_dict(checkpoint["state_dict"])
     hparams = checkpoint.get("hyper_parameters")
     if hparams is not None:
+        # Before the renames, so the schedule it writes is spelled the way it is stored today.
         _migrate_tau_schedule(hparams)
+        for old, new in _RENAMED_HPARAMS.items():
+            if old in hparams:
+                hparams[new] = hparams.pop(old)
         for key in _DROPPED_HPARAMS:
             hparams.pop(key, None)
 

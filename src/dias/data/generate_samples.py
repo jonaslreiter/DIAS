@@ -30,8 +30,8 @@ class _Progress:
         logger.info(self.message, *values)
 
 
-def state_to_dict(state, include_statics=False):
-    """pymimir State -> {predicate_name: [[obj_idx, ...], ...]}."""
+def state_to_groundings(state, include_statics=False):
+    """pymimir State -> {predicate_name: [[object_index, ...], ...]}."""
     result: dict[str, list[list[int]]] = {}
     for atom in state.get_atoms():
         pred = atom.get_predicate()
@@ -43,35 +43,37 @@ def state_to_dict(state, include_statics=False):
     return result
 
 
-def _applicable_map(actions):
-    """List of GroundedActions -> {action_name: [(arg_idx, ...), ...]}."""
-    out: dict[str, list[tuple[int, ...]]] = {}
-    for ga in actions:
-        out.setdefault(ga.get_action().get_name(), []).append(
-            tuple(o.get_index() for o in ga.get_objects())
+def _groundings_by_action(actions):
+    """List of ground actions -> {action_name: [(object_index, ...), ...]}."""
+    groundings: dict[str, list[tuple[int, ...]]] = {}
+    for ground_action in actions:
+        groundings.setdefault(ground_action.get_action().get_name(), []).append(
+            tuple(o.get_index() for o in ground_action.get_objects())
         )
-    return out
+    return groundings
 
 
-def _make_sample(state, ga, successor, include_statics):
+def _make_sample(state, ground_action, successor, include_statics):
     return {
-        "state": state_to_dict(state, include_statics),
-        "action": ga.get_action().get_name(),
-        "action_args": [o.get_index() for o in ga.get_objects()],
-        "next_state": state_to_dict(successor, include_statics),
-        "applicable_actions": _applicable_map(state.generate_applicable_actions()),
+        "state": state_to_groundings(state, include_statics),
+        "action": ground_action.get_action().get_name(),
+        "action_args": [o.get_index() for o in ground_action.get_objects()],
+        "next_state": state_to_groundings(successor, include_statics),
+        "applicable_actions": _groundings_by_action(
+            state.generate_applicable_actions()
+        ),
     }
 
 
 def generate_random_walk(
     problem,
-    min_num_samples: int = 0,
-    min_per_label: int = 0,
+    min_total_samples: int = 0,
+    min_per_action: int = 0,
     max_steps: int = 1_000_000,
     only_unseen_states: bool = True,
     include_statics: bool = False,
 ):
-    """Random walk until ``min_num_samples`` and per-label quota are met."""
+    """Random walk until ``min_total_samples`` and the per-action quota are met."""
     initial = problem.get_initial_state()
     if not list(initial.generate_applicable_actions()):
         raise ValueError("initial state has no applicable actions.")
@@ -79,13 +81,13 @@ def generate_random_walk(
     action_names = [a.get_name() for a in problem._domain.get_actions()]
     current = initial
     samples: list[dict] = []
-    per_label: dict[str, int] = {}
+    per_action: dict[str, int] = {}
     seen: set[int] = set()
     deadlocks = 0
 
     def quota_met() -> bool:
-        return len(samples) >= min_num_samples and all(
-            per_label.get(a, 0) >= min_per_label for a in action_names
+        return len(samples) >= min_total_samples and all(
+            per_action.get(a, 0) >= min_per_action for a in action_names
         )
 
     steps = 0
@@ -95,7 +97,7 @@ def generate_random_walk(
         progress.report(
             steps,
             len(samples),
-            sum(per_label.get(a, 0) >= min_per_label for a in action_names),
+            sum(per_action.get(a, 0) >= min_per_action for a in action_names),
             len(action_names),
         )
         app = list(current.generate_applicable_actions())
@@ -104,14 +106,16 @@ def generate_random_walk(
             current = initial
             continue
 
-        ga = random.choice(app)
-        successor = ga.apply(current)
+        ground_action = random.choice(app)
+        successor = ground_action.apply(current)
         sid = current.get_index()
         if (not only_unseen_states) or sid not in seen:
             seen.add(sid)
-            samples.append(_make_sample(current, ga, successor, include_statics))
-            name = ga.get_action().get_name()
-            per_label[name] = per_label.get(name, 0) + 1
+            samples.append(
+                _make_sample(current, ground_action, successor, include_statics)
+            )
+            name = ground_action.get_action().get_name()
+            per_action[name] = per_action.get(name, 0) + 1
 
         current = successor
         if quota_met():
@@ -119,9 +123,9 @@ def generate_random_walk(
 
     if steps >= max_steps and not quota_met():
         missing = {
-            a: min_per_label - per_label.get(a, 0)
+            a: min_per_action - per_action.get(a, 0)
             for a in action_names
-            if per_label.get(a, 0) < min_per_label
+            if per_action.get(a, 0) < min_per_action
         }
         logger.warning(
             "Random walk hit max_steps=%d before meeting its quota; missing per action: %s",
@@ -137,7 +141,7 @@ def generate_random_walk(
         "Random walk: %d steps, %d samples, per action: %s",
         steps,
         len(samples),
-        per_label,
+        per_action,
     )
     return samples
 

@@ -15,7 +15,7 @@ class DIASForwardTest(unittest.TestCase):
         torch.manual_seed(17)
         model = DIAS(
             num_objects=2,
-            arity_relations=[1, 2],
+            relation_arities=[1, 2],
             num_actions=1,
             object_dim=4,
             aux_loss_weight=1.0,

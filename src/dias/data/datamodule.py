@@ -17,7 +17,7 @@ from dias.data.datasets import (
 from dias.data.noise import ExpectedCount, NoiseModel, Ratio, RelationStats
 from dias.data.quota import SampleQuota
 from dias.data.splitting import (
-    cap_per_label,
+    cap_per_action,
     check_every_action_survives,
     stratified_split,
 )
@@ -52,12 +52,12 @@ class PddlGraphDataModule(L.LightningDataModule):
         action_arguments: bool = False,
         strips_plus_actions: bool = False,
         pt_file: Optional[str] = None,
-        min_per_label_train: Optional[int] = None,
-        min_per_label_valid: Optional[int] = None,
-        min_per_label_train_floor: Optional[int] = None,
-        min_per_label_valid_floor: Optional[int] = None,
-        max_per_label_train: Optional[int] = None,
-        max_per_label_valid: Optional[int] = None,
+        min_per_action_train: Optional[int] = None,
+        min_per_action_valid: Optional[int] = None,
+        min_per_action_train_floor: Optional[int] = None,
+        min_per_action_valid_floor: Optional[int] = None,
+        max_per_action_train: Optional[int] = None,
+        max_per_action_valid: Optional[int] = None,
         num_train: Optional[int] = None,
         num_valid: Optional[int] = None,
         max_steps: int = 1_000_000,
@@ -77,12 +77,12 @@ class PddlGraphDataModule(L.LightningDataModule):
             action_arguments: Label a transition with the action's arguments, not only its name.
             strips_plus_actions: Restrict those labels to the STRIPS+ positions in strips+.yaml.
             pt_file: Load transitions from this file instead of exploring the state space.
-            min_per_label_train: Transitions per action sampled for the training split.
-            min_per_label_valid: The same for the validation split; their ratio divides the pool.
-            min_per_label_train_floor: Raise (never lower) min_per_label_train to this.
-            min_per_label_valid_floor: The same for min_per_label_valid.
-            max_per_label_train: Cap per action, trimming a walk that overshot.
-            max_per_label_valid: The same for the validation split. Set both or neither.
+            min_per_action_train: Transitions per action sampled for the training split.
+            min_per_action_valid: The same for the validation split; their ratio divides the pool.
+            min_per_action_train_floor: Raise (never lower) min_per_action_train to this.
+            min_per_action_valid_floor: The same for min_per_action_valid.
+            max_per_action_train: Cap per action, trimming a walk that overshot.
+            max_per_action_valid: The same for the validation split. Set both or neither.
             num_train: Total training transitions, an alternative to the per-action minima.
             num_valid: The same for the validation split.
             max_steps: Walk length at which sampling gives up on an unmet quota.
@@ -117,12 +117,12 @@ class PddlGraphDataModule(L.LightningDataModule):
             )
         # The floors raise the minima, so `hparams` keep the per-domain values as written.
         self.quota = SampleQuota.with_floors(
-            min_per_label_train=min_per_label_train,
-            min_per_label_valid=min_per_label_valid,
-            min_per_label_train_floor=min_per_label_train_floor,
-            min_per_label_valid_floor=min_per_label_valid_floor,
-            max_per_label_train=max_per_label_train,
-            max_per_label_valid=max_per_label_valid,
+            min_per_action_train=min_per_action_train,
+            min_per_action_valid=min_per_action_valid,
+            min_per_action_train_floor=min_per_action_train_floor,
+            min_per_action_valid_floor=min_per_action_valid_floor,
+            max_per_action_train=max_per_action_train,
+            max_per_action_valid=max_per_action_valid,
             num_train=num_train,
             num_valid=num_valid,
         )
@@ -147,7 +147,7 @@ class PddlGraphDataModule(L.LightningDataModule):
                 strips_plus_actions=strips_plus_actions,
             ),
         )
-        self.arity_relations: list[int] = list(self.schema.relation_arities)
+        self.relation_arities: list[int] = list(self.schema.relation_arities)
 
         self._base: Optional[PddlTransitionDataset] = None
         self._train_ds = None
@@ -265,15 +265,15 @@ class PddlGraphDataModule(L.LightningDataModule):
         )
         samples = generate_random_walk(
             problem=self.problem,
-            min_num_samples=self.quota.num_total,
-            min_per_label=self.quota.min_total,
+            min_total_samples=self.quota.num_total,
+            min_per_action=self.quota.min_total,
             only_unseen_states=False,
             max_steps=self.max_steps,
             include_statics=self.include_statics,
         )
         if self.quota.cap is None:
             return samples
-        return cap_per_label(samples, self.quota.cap)
+        return cap_per_action(samples, self.quota.cap)
 
     def _postprocess_action_args(self, samples: list[dict]) -> None:
         if self.action_arguments and self.strips_plus_actions:
@@ -308,12 +308,12 @@ class PddlGraphDataModule(L.LightningDataModule):
         is_fluent = [name not in static_names for name in base.relation_names]
         if len(base) == 0:
             return RelationStats(
-                self.arity_relations, [0.0] * len(base.relation_names), is_fluent
+                self.relation_arities, [0.0] * len(base.relation_names), is_fluent
             )
 
         stats = RelationStats.measure(
             torch.cat([base.states, base.next_states], dim=0),
-            self.arity_relations,
+            self.relation_arities,
             is_fluent,
         )
         logger.info(

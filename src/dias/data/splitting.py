@@ -9,7 +9,7 @@ import torch
 logger = logging.getLogger(__name__)
 
 
-def cap_per_label(samples: list[dict], cap: int) -> list[dict]:
+def cap_per_action(samples: list[dict], cap: int) -> list[dict]:
     """Keep at most `cap` samples of each action, in the order they were drawn."""
     kept: list[dict] = []
     kept_count: dict[str, int] = {}
@@ -87,5 +87,5 @@ def check_every_action_survives(
         missing = sampled - set(action_indices[indices].tolist())
         if missing:
             raise ValueError(
-                f"Stratified '{name}' split is missing action(s) {[action_names[action] for action in sorted(missing)]} that appear in the full pool. Increase min_per_label_* / num_* or relax the train:valid ratio."
+                f"Stratified '{name}' split is missing action(s) {[action_names[action] for action in sorted(missing)]} that appear in the full pool. Increase min_per_action_* / num_* or relax the train:valid ratio."
             )

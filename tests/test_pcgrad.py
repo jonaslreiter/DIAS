@@ -55,7 +55,7 @@ class PCGradTest(unittest.TestCase):
         """g_aux - (g_adj . g_aux / |g_adj|^2) g_adj, then g_adj + that."""
         # The clip is disabled here: it has its own test, and the projected gradient below is longer than the primary one, so it would fire.
         primary, auxiliary = [2.0, 0.0], [-1.0, 1.5]
-        grad = self.combine(primary, auxiliary, dynamic_clip=False)
+        grad = self.combine(primary, auxiliary, norm_cap=False)
 
         g_primary = torch.tensor(primary)
         g_auxiliary = AUXILIARY_WEIGHT * torch.tensor(auxiliary)
@@ -68,10 +68,10 @@ class PCGradTest(unittest.TestCase):
         torch.testing.assert_close(torch.dot(g_primary, projected), torch.tensor(0.0))
         torch.testing.assert_close(grad, g_primary + projected)
 
-    def test_the_dynamic_clip_caps_the_auxiliary_gradient_at_the_primary_norm(self):
+    def test_the_norm_cap_caps_the_auxiliary_gradient_at_the_primary_norm(self):
         primary, auxiliary = [0.5, 0.0], [0.0, 10.0]
         clipped = self.combine(primary, auxiliary)
-        unclipped = self.combine(primary, auxiliary, dynamic_clip=False)
+        unclipped = self.combine(primary, auxiliary, norm_cap=False)
 
         g_primary = torch.tensor(primary)
         # Orthogonal already, so only the clip separates the two results.
@@ -98,7 +98,7 @@ class PCGradTest(unittest.TestCase):
     def test_a_vanishing_primary_gradient_leaves_the_auxiliary_one_alone(self):
         """There is no direction to project onto, so nothing is removed."""
         weights = parameter(0.0, 0.0)
-        PCGrad(1.0, dynamic_clip=False).backward(
+        PCGrad(1.0, norm_cap=False).backward(
             linear_loss(weights, [0.0, 0.0]),
             linear_loss(weights, [-1.0, 2.0]),
             [weights],

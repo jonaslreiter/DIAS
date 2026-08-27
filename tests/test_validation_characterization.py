@@ -9,7 +9,7 @@ from pathlib import Path
 import torch
 
 from checkpoints import TEST_PROBLEM, build_model, domain_schema, save
-from dias.validation.dias_validate import ModelValidation
+from dias.validation.dias_validate import DiasValidator
 from support import temp_dir
 
 torch.set_num_threads(1)
@@ -31,14 +31,14 @@ def build_checkpoint(directory: Path) -> str:
 
     stack = action["stack"]
     with torch.no_grad():
-        effects = model.graph_edit.effects.logits
-        preconditions = model.graph_edit.preconditions.logits
+        effects = model.predictor.effects.logits
+        preconditions = model.predictor.preconditions.logits
         for tensor in (effects, preconditions):
             tensor[..., 0] = OFF
             tensor[..., 1] = 0.0
             tensor[..., 2] = 0.0
 
-        slot_weights = model.graph_edit.selector.slot_weight_logits
+        slot_weights = model.predictor.selector.slot_weight_logits
         slot_weights.fill_(-ON)
         slot_weights[stack, 0] = ON
         slot_weights[stack, 1] = ON
@@ -65,7 +65,7 @@ class ValidationCharacterizationTest(unittest.TestCase):
     def validate(self) -> dict:
         directory = temp_dir(self)
         model_id = build_checkpoint(directory)
-        validation = ModelValidation(
+        validation = DiasValidator(
             model_id, str(directory), problem_path=str(TEST_PROBLEM)
         )
         validation.setup(
@@ -108,7 +108,7 @@ class ValidationCharacterizationTest(unittest.TestCase):
         model_id = build_checkpoint(directory)
 
         def run(seed):
-            validation = ModelValidation(
+            validation = DiasValidator(
                 model_id, str(directory), problem_path=str(TEST_PROBLEM)
             )
             validation.setup(

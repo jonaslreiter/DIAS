@@ -59,9 +59,9 @@ class GraphDatasetTest(unittest.TestCase):
         noisy_states = PddlTransitionDataset(make_data()).states[[0]].clone()
         noisy_states[0, 1, 1, 0] = 1.0  # one atom of the binary relation added
 
-        data_s1, _, _, state, _, _, _ = self.sample(noisy_states=noisy_states)
+        state_graph, _, _, state, _, _, _ = self.sample(noisy_states=noisy_states)
         self.assertTrue(torch.equal(state, noisy_states[0]))
-        self.assertEqual(data_s1.edge_index.size(1), int(noisy_states[0].sum()))
+        self.assertEqual(state_graph.edge_index.size(1), int(noisy_states[0].sum()))
 
 
 class StratifiedStreamTest(unittest.TestCase):

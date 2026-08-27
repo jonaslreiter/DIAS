@@ -7,75 +7,84 @@ from torch.nn import functional as F
 from dias.models.outputs import Channels
 
 
-def process_model_logits(
+def derive_schema(
     effect_logits: torch.Tensor | None,
     precondition_logits: torch.Tensor,
     slot_weight_logits: torch.Tensor,
     force_action_args: bool,
     action_arguments: bool,
     strips_plus_actions: bool,
-    free_pos_map: dict,
+    strips_plus_positions: dict,
     action_names,
     action_arities,
     num_slots,
     random_flip: bool = False,
     threshold: float = 0.5,
 ):
-    """Binarize the learned schema tensors at *threshold*.
+    """Derive each action's lifted schema by binarizing the learned tensors at *threshold*.
 
     It applies uniformly to slot activation and all four schema tensors, so lowering it yields more active slots (higher learned arity) and more effects and preconditions. 0.5 is what the paper reports. `effect_logits` of None gives None back for the add and delete arrays.
     """
     effects = None if effect_logits is None else Channels.from_logits(effect_logits)
-    add_effects_probs = None if effects is None else effects.positive
-    del_effects_probs = None if effects is None else effects.negative
+    add_probabilities = None if effects is None else effects.positive
+    delete_probabilities = None if effects is None else effects.negative
 
     preconditions = Channels.from_logits(precondition_logits)
-    pos_precond_probs = preconditions.positive
-    neg_precond_probs = preconditions.negative
+    positive_probabilities = preconditions.positive
+    negative_probabilities = preconditions.negative
 
-    slot_probs = F.sigmoid(slot_weight_logits)
+    slot_activations = F.sigmoid(slot_weight_logits)
 
     # Slots whose object the labels already name are active by construction.
     if action_arguments and force_action_args:
         if strips_plus_actions:
-            forced_slot_mask = torch.zeros(
-                len(action_names), num_slots, dtype=torch.bool
-            )
-            for a_idx, name in enumerate(action_names):
-                for pos in free_pos_map.get(name, []):
-                    if pos < num_slots:
-                        forced_slot_mask[a_idx, pos] = True
+            forced_slots = torch.zeros(len(action_names), num_slots, dtype=torch.bool)
+            for action, name in enumerate(action_names):
+                for position in strips_plus_positions.get(name, []):
+                    if position < num_slots:
+                        forced_slots[action, position] = True
         else:
             slot_indices = torch.arange(num_slots).unsqueeze(0)
-            arity_t = torch.tensor(action_arities, dtype=torch.long).unsqueeze(1)
-            forced_slot_mask = slot_indices < arity_t  # (num_actions, num_slots)
-        slot_probs[forced_slot_mask] = 1.0
+            arities = torch.tensor(action_arities, dtype=torch.long).unsqueeze(1)
+            forced_slots = slot_indices < arities  # (num_actions, num_slots)
+        slot_activations[forced_slots] = 1.0
 
-    active_slots = slot_probs.detach().cpu().numpy() > threshold  # (actions, slots)
+    active_slots = slot_activations.detach().cpu().numpy() > threshold
 
     # An inactive slot is not a parameter of the learned action, so nothing may be asserted over it.
-    schema = [pos_precond_probs, neg_precond_probs]
+    schema = [positive_probabilities, negative_probabilities]
     if effects is not None:
-        schema += [add_effects_probs, del_effects_probs]
+        schema += [add_probabilities, delete_probabilities]
     for action, active in enumerate(active_slots):
         inactive = ~active  # (num_slots,)
         for probabilities in schema:
             probabilities[action, :, inactive, :] = 0
             probabilities[action, :, :, inactive] = 0
 
-    add_eff = _binarize(add_effects_probs, threshold)
-    del_eff = _binarize(del_effects_probs, threshold)
-    pos_prec = _binarize(pos_precond_probs, threshold)
-    neg_prec = _binarize(neg_precond_probs, threshold)
+    add_effects = _binarize(add_probabilities, threshold)
+    delete_effects = _binarize(delete_probabilities, threshold)
+    positive_preconditions = _binarize(positive_probabilities, threshold)
+    negative_preconditions = _binarize(negative_probabilities, threshold)
 
     if random_flip:
-        for arr in (add_eff, del_eff, pos_prec, neg_prec):
-            if arr is None:
+        for array in (
+            add_effects,
+            delete_effects,
+            positive_preconditions,
+            negative_preconditions,
+        ):
+            if array is None:
                 continue
-            idx = tuple(np.random.randint(0, s) for s in arr.shape)
-            arr[idx] = 1 - arr[idx]
+            cell = tuple(np.random.randint(0, size) for size in array.shape)
+            array[cell] = 1 - array[cell]
 
-    return add_eff, del_eff, pos_prec, neg_prec, active_slots
+    return (
+        add_effects,
+        delete_effects,
+        positive_preconditions,
+        negative_preconditions,
+        active_slots,
+    )
 
 
 def _binarize(probabilities, threshold: float):

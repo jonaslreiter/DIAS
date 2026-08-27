@@ -2,10 +2,10 @@ data:
   init_args:
     domain_path: pddl/driverlog/domain.pddl
     problem_path: pddl/driverlog/train.pddl
-    min_per_label_train: 2000
-    min_per_label_valid: 1000
-    max_per_label_train: 3000
-    max_per_label_valid: 1500
+    min_per_action_train: 2000
+    min_per_action_valid: 1000
+    max_per_action_train: 3000
+    max_per_action_valid: 1500
 model:
   init_args:
     aux_loss_weight: 0.01
