@@ -45,6 +45,9 @@ MODEL_DEFAULTS = dict(
     arity_relations=ARITY_RELATIONS,
     num_actions=NUM_ACTIONS,
     object_dim=8,
+    # Pinned rather than left to the class default: the golden was recorded at these values, and a default that moves would move the trajectory with it.
+    aux_loss_weight=1.0,
+    learning_rate=0.01,
     num_slots=NUM_SLOTS,
     action_arities=[2, 2],
     action_arg_positions=[[0, 1], [0]],

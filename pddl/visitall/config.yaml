@@ -1,9 +1,3 @@
-# Per-domain config for 'visitall', composed after configs/main.yaml:
-#   dias fit --config configs/main.yaml --config pddl/visitall/config.yaml
-#
-# The paths below are what make that command train visitall rather than whichever domain the base config happens to name. They are this folder's standard filenames, which the test suite checks.
-#
-# Sampling stays at main.yaml's default; only the auxiliary weight is tuned.
 data:
   init_args:
     domain_path: pddl/visitall/domain.pddl

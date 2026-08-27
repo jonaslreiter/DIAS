@@ -22,21 +22,26 @@ logger = logging.getLogger(__name__)
 
 
 class DIAS(L.LightningModule):
+    """The model: a relational encoder, a slot assignment, and one lifted schema per action.
+
+    Defaults are the paper's full model, so a config states only what it changes and an ablation overlay only the component it removes. The instance metadata (``num_objects``, ``arity_relations``, ``num_actions``, ``action_arities``, ``action_arg_positions``) has no default because the CLI links it from the datamodule. ``num_slots`` and ``gmean_temperature`` default to ``None``, which means "not set" rather than a value: the first is then the widest action's arity under ``per_action_slots`` and an error otherwise, the second no annealing at all.
+    """
+
     def __init__(
         self,
         num_objects: int,
         arity_relations: list[int],
         num_actions: int,
-        object_dim: int,
+        object_dim: int = 32,
         num_slots: int | None = None,
-        learning_rate: float = 0.01,
-        aux_loss_weight: float = 1.0,
+        learning_rate: float = 0.005,
+        aux_loss_weight: float = 0.1,
         force_action_args: bool = False,
         per_action_slots: bool = False,
         learn_preconditions: bool = True,
         action_arities: list[int] | None = None,
         action_arg_positions: list[list[int]] | None = None,
-        successor_relations: bool = False,
+        successor_relations: bool = True,
         random_node_embeddings: bool = True,
         gmean_temperature: Schedule | Mapping | None = None,
         pcgrad_dyn_clip: bool = True,
@@ -47,6 +52,31 @@ class DIAS(L.LightningModule):
         use_pcgrad: bool = True,
         encoder_hidden_dims: list[int] | None = None,
     ):
+        """
+        Args:
+            num_objects: Objects in the instance being trained on. (linked from the datamodule)
+            arity_relations: Arity (1 or 2) of every relation, in channel order. (linked from the datamodule)
+            num_actions: Action schemas to learn, one per action of the domain. (linked from the datamodule)
+            object_dim: Width of the object embeddings the encoder produces.
+            num_slots: Parameter slots per schema, clamped to num_objects. Required unless per_action_slots.
+            learning_rate: Adam step size.
+            aux_loss_weight: Weight of the auxiliary objective against the adjacency loss. Tuned per domain, from 0.01 to 1.0.
+            force_action_args: Bind the slots of observed action arguments to those objects instead of assigning them.
+            per_action_slots: Give every action exactly its own arity in slots, rather than num_slots each.
+            learn_preconditions: Gate the predicted change on the learned preconditions. Off applies effects unconditionally.
+            action_arities: Arity of every action, in action order. (linked from the datamodule)
+            action_arg_positions: Argument positions of every action that the labels observe, empty when only names are. (linked from the datamodule)
+            successor_relations: Show the encoder what the transition changed, as a fourth band of edge types.
+            random_node_embeddings: Start each object from noise, so symmetric objects are distinguishable.
+            gmean_temperature: Schedule for tau, the root degree of the relaxed precondition product. None holds it at 1.
+            pcgrad_dyn_clip: Clip the projected auxiliary gradient to the norm of the primary one.
+            state_dependent_effects: Predict effects from the state with an MLP (the baseline) instead of learning one lifted tensor per action.
+            use_slot_weights: Learn which slots an action uses, which is what its recovered arity is.
+            use_precondition_loss: Include the restrictive-precondition term in the auxiliary objective.
+            use_effect_loss: Include the minimal-effects term in the auxiliary objective.
+            use_pcgrad: Project the auxiliary gradient away from the primary one, rather than adding a weighted sum.
+            encoder_hidden_dims: Widths of the relational convolutions.
+        """
         super().__init__()
         self.save_hyperparameters()
         self.gmean_temperature = as_schedule(gmean_temperature)

@@ -20,7 +20,7 @@ experiments/
 
 Three things this folder deliberately does *not* hold, because they are not about running a sweep:
 
-- **`configs/main.yaml` and `configs/experiments/*.yaml`**: the Lightning configs `dias fit` reads. `launch.py` composes them into every run's command line, but they train a single domain on their own, without this folder.
+- **`configs/main.yaml` and `configs/experiments/*.yaml`**: the Lightning configs `dias fit` reads. `launch.py` composes them into every run's command line, but paired with a `pddl/<domain>/config.yaml` they train a single domain without this folder.
 - **`pddl/<domain>/`**: the 13 domains. A domain *is* its folder, so `--domains <name>` works as soon as the folder exists.
 - **`logs/`**: what runs produce: `logs/dias/` (checkpoints), `logs/validation/` (per-run result JSON), `logs/slurm/` (job output).
 
@@ -36,13 +36,13 @@ Every run of one launch shares its `--experiment` name, which is at once the W&B
 
 Each run composes, in order:
 
-1. `configs/main.yaml`: the base training config
-2. `pddl/<domain>/config.yaml`: that domain's tuned sampling and `aux_loss_weight`
+1. `configs/main.yaml`: the base training config, which names no domain
+2. `pddl/<domain>/config.yaml`: that domain's files, plus its tuned sampling and `aux_loss_weight`
 3. an experiment overlay, if any: `configs/experiments/{mlp,noise}.yaml`
 4. an ablation overlay, if any: `configs/experiments/ablation-*.yaml`
 5. the launcher's `--set key=value` overrides, and any sweep override, last
 
-Later layers win, which is why a sweep value beats a domain's tuned one. Global validation settings (how many problems, how many states sampled from each, the seed list) live in `experiments/configs/validation.yaml`.
+Later layers win, which is why a sweep value beats a domain's tuned one, and each layer states only what it changes about the one below it: the bottom layer is the defaults in `dias.models.DIAS` and `dias.data.datamodule.PddlGraphDataModule`, which are the paper's full model with no noise (`dias fit --model.help dias.models.DIAS` and `--data.help dias.data.datamodule.PddlGraphDataModule` list them all, with a line on what each does). Only `domain_path` and `problem_path` have no default at all, so a chain that names no domain is refused rather than run on a guess. The launcher passes one seed, `--seed_everything`, which the sampling walk follows unless a config gave it a seed of its own. Global validation settings (how many problems, how many states sampled from each, the seed list) live in `experiments/configs/validation.yaml`.
 
 ## The main table
 
@@ -123,26 +123,19 @@ python experiments/collect_results.py --experiment dias-full abl-no-pcgrad abl-n
 
 `--sweep AXIS` submits the whole domain × seed grid once per value of that axis, each into its own sub-experiment `<experiment>-<tag><value>`, with the value applied last so it beats the per-domain config.
 
-| axis | parameter | tag | grid | default |
-|---|---|---|---|---|
-| `aux-loss-weight` | `model.init_args.aux_loss_weight` | `aux` | 0.01, 0.03, 0.1, 0.3, 1.0 | tuned per domain |
-| `num-slots` | `model.init_args.num_slots` | `slots` | 5, 7, 9 | 5 |
-| `gmean-temperature` | the τ schedule's `every` | `gmeanT` | 0, 100, 500, 1000, 5000 | 500 |
-| `dataset-size` | transitions per action | `n` | 20 … 2000 | tuned per domain |
+| axis | parameter | tag | grid |
+|---|---|---|---|
+| `aux-loss-weight` | `model.init_args.aux_loss_weight` | `aux` | 0.01, 0.03, 0.1, 0.3, 1.0 |
+| `num-slots` | `model.init_args.num_slots` | `slots` | 5, 7, 9 |
+| `gmean-temperature` | the τ schedule's `every` | `gmeanT` | 0, 100, 500, 1000, 5000 |
+| `dataset-size` | transitions per action | `n` | 20 … 2000 |
 
 ```bash
 python experiments/launch.py --experiment aux-sweep --sweep aux-loss-weight --num-runs 3
 python experiments/collect_results.py --experiment aux-sweep --sweep aux-loss-weight --markdown experiments/results/aux-sweep.md
 ```
 
-`--reuse-default EXPERIMENT` skips the point that equals the axis default and maps that column onto an existing experiment, so this submits only `slots7` and `slots9`:
-
-```bash
-python experiments/launch.py --experiment dias --sweep num-slots --reuse-default dias-full --num-runs 3
-python experiments/collect_results.py --experiment dias --sweep num-slots --reuse-default dias-full --markdown experiments/results/num-slots-sweep.md
-```
-
-It is refused when the axis has no reusable default, when `configs/main.yaml` no longer holds that default, or when a selected domain config overrides the swept parameter: every case where the reused runs did not actually sit at the default.
+Every point of the grid is submitted, including one that matches what another experiment already ran: a column collected from runs launched under a different chain is a column nothing pins to this axis.
 
 `gmean-temperature = 0` means τ sits at its floor from step 0, the `every → 0` limit of the decay. With the default floor of 0 that is the *exact* precondition product rather than a relaxation.
 

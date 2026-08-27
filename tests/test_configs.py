@@ -45,6 +45,20 @@ def parse(*paths, overrides=()):
     return ParseOnlyCLI(args=args + list(overrides), run=False).config
 
 
+def parse_base():
+    """The base config alone, with the domain it deliberately does not name.
+
+    ``configs/main.yaml`` carries no ``domain_path`` / ``problem_path``, and neither does the datamodule, so parsing it on its own is an error by design (see ``RequiredValuesTest``). Supplying the two on the command line is how a test reads what the base config itself sets, without a domain config layered over it.
+    """
+    return parse(
+        MAIN,
+        overrides=[
+            "--data.init_args.domain_path=pddl/gripper/domain.pddl",
+            "--data.init_args.problem_path=pddl/gripper/train.pddl",
+        ],
+    )
+
+
 @contextlib.contextmanager
 def unseeded():
     """Undo the seeding a fully constructed CLI performs.
@@ -96,21 +110,50 @@ class DomainSelectionTest(unittest.TestCase):
         self.assertEqual(folders, sorted(c.parent.name for c in DOMAIN_CONFIGS))
 
 
+class RequiredValuesTest(unittest.TestCase):
+    """What no default can stand in for is refused rather than guessed.
+
+    Which transitions a run learns from is the run's own choice, so ``domain_path`` and ``problem_path`` have a default in neither the base config nor the datamodule: a base config that named a domain is how a launch trains gripper under satellite's name and nothing says so.
+    """
+
+    def test_the_base_config_alone_is_not_a_runnable_configuration(self):
+        with self.assertRaises(SystemExit):
+            parse(MAIN)
+
+    def test_a_domain_config_completes_it(self):
+        data = parse(MAIN, ROOT / "pddl/hanoi/config.yaml").data.init_args
+        self.assertEqual(data.domain_path, "pddl/hanoi/domain.pddl")
+        self.assertEqual(data.problem_path, "pddl/hanoi/train.pddl")
+
+
+class SeedTest(unittest.TestCase):
+    """One seed per run, not two.
+
+    The walk's seed and the run's seed were always set to the same value by the launcher, in two places, so forgetting one was silent: the run sampled different transitions under the same name. ``data.seed`` now defaults to None, and ``dias.main.CLI`` fills it in from ``seed_everything`` before anything is constructed, so the config a run saves records the number it actually sampled under.
+    """
+
+    def test_the_walk_follows_the_runs_seed(self):
+        config = parse(MAIN, A_DOMAIN, overrides=["--seed_everything=7"])
+        self.assertEqual(config.data.init_args.seed, 7)
+
+    def test_a_seed_of_its_own_wins(self):
+        config = parse(
+            MAIN,
+            A_DOMAIN,
+            overrides=["--seed_everything=7", "--data.init_args.seed=3"],
+        )
+        self.assertEqual(config.data.init_args.seed, 3)
+
+
 class PrecedenceTest(unittest.TestCase):
     """Later layers win. This is what the launcher relies on and nothing states."""
 
     def test_a_domain_config_beats_the_base_config(self):
-        base = parse(MAIN)
+        # aux_loss_weight is not in main.yaml at all: the base chain resolves it to the class default, and every domain tunes it.
+        base = parse_base()
         tuned = parse(MAIN, A_DOMAIN)
-        self.assertEqual(base.model.init_args.aux_loss_weight, 0.2)
+        self.assertEqual(base.model.init_args.aux_loss_weight, 0.1)
         self.assertEqual(tuned.model.init_args.aux_loss_weight, 1.0)
-
-    def test_a_domain_config_beats_the_base_config_on_the_domain_itself(self):
-        # The defect this closes: composing a domain config used to leave the base config's domain in place, so the run trained satellite under gripper's name and nothing said so.
-        base = parse(MAIN).data.init_args.domain_path
-        composed = parse(MAIN, ROOT / "pddl/hanoi/config.yaml").data.init_args
-        self.assertNotEqual(base, composed.domain_path)
-        self.assertEqual(composed.domain_path, "pddl/hanoi/domain.pddl")
 
     def test_an_overlay_beats_the_domain_config(self):
         config = parse(MAIN, A_DOMAIN, ROOT / "configs/experiments/mlp.yaml")
@@ -147,7 +190,10 @@ class SavedConfigTest(unittest.TestCase):
         # The accelerator and the logger are overridden because this is the one test that builds a Trainer: main.yaml asks for a GPU and for W&B, and neither is a property of the schedule being checked.
         plain = ["--trainer.accelerator=cpu", "--trainer.logger=false"]
         with unseeded():
-            cli = CLI(args=["--config", str(MAIN), *plain], run=False)
+            cli = CLI(
+                args=["--config", str(MAIN), "--config", str(A_DOMAIN), *plain],
+                run=False,
+            )
             original = cli.model.gmean_temperature
 
             with tempfile.TemporaryDirectory() as tmp:

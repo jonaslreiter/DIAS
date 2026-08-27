@@ -45,10 +45,10 @@ Python 3.10+. A CUDA GPU for full-size runs; the quickstart below is CPU-only. [
 
 ## Quickstart
 
-Train on the smallest domain, on CPU, with no Weights & Biases account:
+Train on the smallest domain, on CPU, with no Weights & Biases account. Two configs: the base training setup, and the domain to apply it to.
 
 ```bash
-dias fit --config configs/main.yaml --trainer.accelerator=cpu --trainer.max_steps=300 --trainer.val_check_interval=100 --trainer.logger=false --trainer.default_root_dir=logs/dias/quickstart
+dias fit --config configs/main.yaml --config pddl/gripper/config.yaml --trainer.accelerator=cpu --trainer.max_steps=300 --trainer.val_check_interval=100 --trainer.logger=false --trainer.default_root_dir=logs/dias/quickstart
 ```
 
 A few minutes later `logs/dias/quickstart/checkpoints/` holds the trained model. Read the schema it learned back as PDDL and score it on a held-out problem:
@@ -61,13 +61,13 @@ which prints per-action `tp`/`fp`/`fn` and the precision and recall they sum to.
 
 ### Choosing a domain
 
-Compose that domain's config. It carries both the domain's files and its tuned hyperparameters, and it is layered after the base config, so it wins:
+Swap the second config. It carries both the domain's files and its tuned hyperparameters, and it is layered after the base config, so it wins:
 
 ```bash
 dias fit --config configs/main.yaml --config pddl/hanoi/config.yaml
 ```
 
-`configs/main.yaml` names a domain of its own (gripper) so that it can be run on its own, as the quickstart above does. Any single value is still overridable on the command line (`--data.init_args.problem_path=...` to train on a different instance of the same domain, for example), because command-line arguments are applied last of all.
+`configs/main.yaml` names no domain of its own, and neither does the datamodule: `domain_path` and `problem_path` have no default anywhere, so a run that says nothing is refused rather than trained on whichever domain the base config happened to carry. Every config states only what it changes about the layer below it, down to the model and datamodule signatures, whose defaults are the paper's setup. To see them all, with a line on what each does, ask the CLI: `dias fit --model.help dias.models.DIAS` and `dias fit --data.help dias.data.datamodule.PddlGraphDataModule`. Any single value is overridable on the command line (`--data.init_args.problem_path=...` to train on a different instance of the same domain, for example), because command-line arguments are applied last of all.
 
 ### Weights & Biases
 

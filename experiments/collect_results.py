@@ -11,7 +11,7 @@ Reads per-run results (written by ``experiments/validate_runs.py``) from local J
 
 Per seed, the seed's validation problems are reduced to a single precision / recall by micro-averaging the per-action tp/fp/fn in ``action_stats`` (so a seed is sound iff every problem has zero false positives); when tp/fp/fn are absent (e.g. W&B summaries) it falls back to the mean of per-problem precision/recall.
 
-With ``--sweep AXIS`` it instead reads the sub-experiments written by ``experiments/launch.py --sweep AXIS`` (``<experiment>-<tag><value>``) and prints one domain x value matrix per metric; ``--markdown`` writes the same matrices as markdown tables. ``--reuse-default EXPERIMENT`` mirrors the launcher flag: the axis-default column is read from that existing experiment.
+With ``--sweep AXIS`` it instead reads the sub-experiments written by ``experiments/launch.py --sweep AXIS`` (``<experiment>-<tag><value>``) and prints one domain x value matrix per metric; ``--markdown`` writes the same matrices as markdown tables.
 
 ``--threshold-sweep`` does the same for the *validation* binarization threshold (sub-experiments ``<experiment>-thr<T>`` written by ``experiments/launch_threshold_validation.py``). Those columns share one set of trained checkpoints, so they isolate the effect of the threshold alone.
 
@@ -24,7 +24,7 @@ Usage:
     python experiments/collect_results.py --experiment dias-full abl-no-pcgrad --markdown experiments/results/ablations-summary.md
     python experiments/collect_results.py --experiment dias-full --threshold-sweep --markdown experiments/results/threshold-sweep.md
     python experiments/collect_results.py --experiment aux-sweep --sweep aux-loss-weight --markdown experiments/results/aux-sweep.md
-    python experiments/collect_results.py --experiment dias --sweep num-slots --reuse-default dias-full --markdown experiments/results/num-slots-sweep.md
+    python experiments/collect_results.py --experiment dias --sweep num-slots --markdown experiments/results/num-slots-sweep.md
 """
 
 from __future__ import annotations
@@ -265,15 +265,8 @@ def write_sweep_markdown(
 def run_sweep(args: argparse.Namespace, axis_name: str, values: list[float]) -> None:
     """Collect one sub-experiment per value and print/write the domain x value grid."""
     axis = SWEEP_AXES[axis_name]
-    if args.reuse_default and axis.default is None:
-        raise SystemExit(
-            f"--reuse-default: the {axis_name} axis has no reusable default (the value is tuned per domain)"
-        )
-    # Same name derivation as the launcher, so the reused default column points at whatever experiment was passed to `launch.py --reuse-default`.
-    names = {
-        v: sweep_experiment_name(args.experiment, axis, v, args.reuse_default)
-        for v in values
-    }
+    # Same name derivation as the launcher, so a column reads the sub-experiment that launch.py wrote.
+    names = {v: sweep_experiment_name(args.experiment, axis, v) for v in values}
     _report_matrix(args, axis_name, axis.param, values, names)
 
 
@@ -478,12 +471,6 @@ def main() -> int:
         help="Values for --sweep instead of that axis' default grid.",
     )
     p.add_argument(
-        "--reuse-default",
-        default=None,
-        metavar="EXPERIMENT",
-        help="Read the axis-default column from this existing experiment (mirrors 'launch.py --reuse-default').",
-    )
-    p.add_argument(
         "--threshold-sweep",
         nargs="*",
         type=float,
@@ -517,10 +504,6 @@ def main() -> int:
             raise SystemExit(
                 "--threshold-sweep varies a validation parameter and cannot be combined with the training-parameter sweeps"
             )
-        if args.reuse_default:
-            raise SystemExit(
-                "--reuse-default does not apply to --threshold-sweep: the 0.5 column is re-validated into its own sub-experiment"
-            )
         run_threshold_sweep(args, list(args.threshold_sweep) or list(THRESHOLD_VALUES))
         return 0
 
@@ -531,8 +514,6 @@ def main() -> int:
         return 0
     if args.sweep_values:
         raise SystemExit("--sweep-values requires --sweep")
-    if args.reuse_default:
-        raise SystemExit("--reuse-default requires --sweep")
 
     run_experiments(args, experiments)
     return 0

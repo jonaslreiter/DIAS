@@ -1,9 +1,9 @@
 import logging
 import os
+import random
 import warnings
 from pathlib import Path
 
-import numpy as np
 import torch
 from lightning.pytorch.callbacks import ModelCheckpoint, TQDMProgressBar
 from lightning.pytorch.cli import LightningCLI, SaveConfigCallback
@@ -40,6 +40,7 @@ class CLI(LightningCLI):
         """
         super().before_instantiate_classes()
         config = self.config.get(self.subcommand, self.config)
+        self._seed_the_data_from_the_run(config)
         logger.info(
             "Composed from %s.",
             ", ".join(str(path) for path in config.get("config") or []) or "defaults",
@@ -51,6 +52,20 @@ class CLI(LightningCLI):
             data.get("problem_path"),
             config.get("seed_everything"),
         )
+
+    @staticmethod
+    def _seed_the_data_from_the_run(config) -> None:
+        """Let the walk follow the run's seed unless it was given one of its own.
+
+        Two seeds that a launcher always sets to the same value are one seed with two places to forget it, and the one that gets forgotten is silent: the run trains on a different sample under the same name. The datamodule's `seed` therefore defaults to None, meaning "whatever seeded this run", and is filled in here rather than read back from the global state, so the config the run saves records the number it actually sampled under.
+        """
+        data = config.get("data", {}).get("init_args", {})
+        seed = config.get("seed_everything")
+        # `seed_everything` is a union of bool and int, and in Python a bool passes for one: True means "draw one", which by here has been replaced by the drawn number unless the run is not seeding at all.
+        if isinstance(seed, bool) or not isinstance(seed, int):
+            return
+        if getattr(data, "seed", False) is None:
+            data.seed = seed
 
 
 class SaveAndLogConfigCallback(SaveConfigCallback):
@@ -95,7 +110,8 @@ def main():
         save_config_callback=SaveAndLogConfigCallback,
         # Let a re-launched (experiment, domain, seed) overwrite its own saved config instead of aborting: deterministic run ids mean re-runs reuse the same run directory.
         save_config_kwargs={"overwrite": True},
-        seed_everything_default=np.random.randint(2**32),
+        # A run that names no seed still records the one it drew, in the config it saves: reproducible after the fact, without every unseeded run being the same run. The range is the one Lightning accepts for a seed.
+        seed_everything_default=random.randrange(2**32),
     )
 
 

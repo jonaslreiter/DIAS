@@ -34,7 +34,7 @@ else
            --trainer.logger.init_args.name "$RUN_ID")
 fi
 
+# One seed, not two: the datamodule's own seed follows this one unless a config gave it one of its own.
 python -m dias.main fit "$@" \
   --seed_everything "$SEED" \
-  --data.init_args.seed "$SEED" \
   "${RUN_DIR[@]}"

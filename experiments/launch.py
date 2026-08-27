@@ -11,7 +11,7 @@ Runs are identified by a deterministic id ``<experiment>-<domain>-s<seed>`` (see
 
 Config composition (in order): ``configs/main.yaml`` -> ``<domain>/config.yaml`` -> optional experiment overlay (``configs/experiments/{mlp,noise}.yaml``) -> optional ablation overlay (``configs/experiments/ablation-*.yaml``, selected by ``--ablation``) -> launcher ``--set`` overrides. The experiment type also selects the validator (``mlp`` uses the MLP baseline; ``dias``/``noise`` use the DIAS validator) and its schema-derivation threshold (0.5, but 0.75 for ``noise``, as in the paper; override with ``--validation-threshold``); ablations always use the DIAS validator.
 
-``--sweep AXIS`` turns one launch into a hyperparameter sweep: the whole domain x seed grid is submitted once per value of that axis (see ``SWEEP_AXES``), each into its own sub-experiment ``<experiment>-<tag><value>`` (see ``sweep_experiment_name``), with the swept parameter overridden last so it wins over per-domain values in ``pddl/<domain>/config.yaml``. ``--reuse-default EXPERIMENT`` skips the point that equals the axis default and takes its results from an existing experiment instead.
+``--sweep AXIS`` turns one launch into a hyperparameter sweep: the whole domain x seed grid is submitted once per value of that axis (see ``SWEEP_AXES``), each into its own sub-experiment ``<experiment>-<tag><value>`` (see ``sweep_experiment_name``), with the swept parameter overridden last so it wins over per-domain values in ``pddl/<domain>/config.yaml``.
 
 Per-domain Slurm resources come from ``experiments/configs/slurm-resources.yaml``.
 
@@ -32,10 +32,6 @@ Examples
     # aux_loss_weight sweep: all domains x {0.01,0.03,0.1,0.3,1.0} x 3 seeds,
     # submitted as sub-experiments aux-sweep-aux0.01 ... aux-sweep-aux1:
     python experiments/launch.py --experiment aux-sweep --sweep aux-loss-weight --num-runs 3
-
-    # num_slots sweep, reusing the finished dias-full runs for the default 5
-    # (only <experiment>-slots7 and <experiment>-slots9 are submitted):
-    python experiments/launch.py --experiment dias --sweep num-slots --reuse-default dias-full --num-runs 3
 
     # Dataset-size sweep, clean and noisy (2 atom flips per transition), on the
     # six-domain subset; sub-experiments <experiment>-n20 ... <experiment>-n2000:
@@ -117,7 +113,7 @@ VALIDATE_SCRIPT = SLURM_DIR / "validate.sh"
 class SweepAxis:
     """One hyperparameter axis that ``--sweep`` varies over the full grid.
 
-    ``values`` is the default grid of the bare flag, ``tag`` the sub-experiment infix, and ``default`` the value the base config chain already realizes: the point ``--reuse-default`` takes from an existing experiment instead of re-running it. ``default = None`` means there is no reusable default (the value is tuned per domain), so ``--reuse-default`` is rejected.
+    ``values`` is the default grid of the bare flag and ``tag`` the sub-experiment infix.
 
     ``linked`` maps one axis value to *further* Lightning overrides that have to move with it (see ``_dataset_size_overrides``); ``param`` alone is what the axis is named and reported by. All of them are appended last on the command line, so they beat both ``pddl/<domain>/config.yaml`` and the overlays, and all of them are rejected as ``--set`` targets.
     """
@@ -125,7 +121,6 @@ class SweepAxis:
     param: str
     tag: str
     values: tuple[float, ...]
-    default: float | None
     cast: Callable[[float], float]
     linked: Callable[[float], dict[str, float]] | None = None
 
@@ -149,19 +144,17 @@ def _dataset_size_overrides(value: float) -> dict[str, int]:
 
 
 SWEEP_AXES: dict[str, SweepAxis] = {
-    # Grid covers every value currently tuned in pddl/<domain>/config.yaml; tuned per domain, hence no single default point to reuse.
+    # Grid covers every value currently tuned in pddl/<domain>/config.yaml.
     "aux-loss-weight": SweepAxis(
         param="model.init_args.aux_loss_weight",
         tag="aux",
         values=(0.01, 0.03, 0.1, 0.3, 1.0),
-        default=None,
         cast=float,
     ),
     "num-slots": SweepAxis(
         param="model.init_args.num_slots",
         tag="slots",
         values=(5, 7, 9),
-        default=5,
         cast=int,
     ),
     # 0 means tau sits at its floor from step 0; with the default floor of 0 that is the exact precondition product rather than a relaxation. Exponential handles the degenerate case.
@@ -169,7 +162,6 @@ SWEEP_AXES: dict[str, SweepAxis] = {
         param=f"{SCHEDULE_KEY}.init_args.every",
         tag="gmeanT",
         values=(0, 100, 500, 1000, 5000),
-        default=500,
         cast=int,
     ),
     # Training-set size, in transitions per action schema (N train + N/2 valid). The grid brackets every tuned per-domain minimum, so each domain is scaled both down and up relative to its own default.
@@ -177,7 +169,6 @@ SWEEP_AXES: dict[str, SweepAxis] = {
         param="data.init_args.min_per_label_train",
         tag="n",
         values=(20, 50, 100, 200, 500, 1000, 2000),
-        default=None,
         cast=int,
         linked=_dataset_size_overrides,
     ),
@@ -190,18 +181,11 @@ def _axis_params(axis: SweepAxis) -> list[str]:
     return [axis.param, *linked]
 
 
-def sweep_experiment_name(
-    experiment: str,
-    axis: SweepAxis,
-    value: float,
-    reuse_default: str | None = None,
-) -> str:
+def sweep_experiment_name(experiment: str, axis: SweepAxis, value: float) -> str:
     """Sub-experiment name for one point of a sweep.
 
-    With ``reuse_default`` the axis-default point maps to that existing experiment instead of a new sub-experiment. Also used by ``experiments/collect_results.py`` to rebuild the per-value experiment names, so keep the two in sync by importing this function rather than re-deriving it.
+    Also used by ``experiments/collect_results.py`` to rebuild the per-value experiment names, so keep the two in sync by importing this function rather than re-deriving it.
     """
-    if reuse_default and axis.default is not None and axis.cast(value) == axis.default:
-        return reuse_default
     return f"{experiment}-{axis.tag}{value:g}"
 
 
@@ -212,50 +196,11 @@ def _axis_grid_help() -> str:
     )
 
 
-def _config_value(cfg: dict, dotted_key: str):
-    """Look up a dotted key in a nested config dict; ``None`` if absent."""
-    node = cfg
-    for part in dotted_key.split("."):
-        if not isinstance(node, dict) or part not in node:
-            return None
-        node = node[part]
-    return node
-
-
 def _sweep_override_args(axis: SweepAxis, value: float) -> list[str]:
     """Lightning args pinning ``axis`` to ``value`` (appended last, so they win)."""
     extra = axis.linked(value) if axis.linked else {}
     linked = [f"--{k}={v:g}" for k, v in extra.items()]
     return [f"--{axis.param}={value:g}", *linked]
-
-
-def _check_sweep_config(
-    axis: SweepAxis,
-    axis_name: str,
-    domains: list[str],
-    train_cfg: dict,
-    train_config: Path,
-    overlays: list[Path],
-    reuse_default: str | None,
-) -> None:
-    """Fail early when the swept parameter is not where the sweep assumes it is."""
-    base = _config_value(train_cfg, axis.param)
-    if base is None:
-        raise SystemExit(
-            f"--sweep {axis_name}: {axis.param} not found in {train_config}"
-        )
-    if reuse_default and axis.cast(base) != axis.default:
-        raise SystemExit(
-            f"--reuse-default: {train_config} sets {axis.param}={base}, but the {axis_name} axis default is {axis.default:g}; '{reuse_default}' therefore did not run that point"
-        )
-    paths = [domain_config(domain) for domain in domains]
-    # Overlays are composed after the domain config and can carry the same parameters (the noise overlay replaces the whole schedule, for instance).
-    for path in paths + overlays:
-        cfg = load_yaml(path) or {}
-        if reuse_default and _config_value(cfg, axis.param) is not None:
-            raise SystemExit(
-                f"--reuse-default: {path} overrides {axis.param}, so '{reuse_default}' did not run it at the axis default {axis.default:g}"
-            )
 
 
 # ── the launch, resolved ──────────────────────────────────────────────────────
@@ -265,12 +210,11 @@ def _check_sweep_config(
 class SweepPoint:
     """One value of the swept axis: its sub-experiment and the args pinning it.
 
-    Without a sweep there is exactly one point, carrying the launch's own name and only the ``--set`` overrides. ``reused`` marks the axis-default point that ``--reuse-default`` maps onto an existing experiment; it is described but never submitted.
+    Without a sweep there is exactly one point, carrying the launch's own name and only the ``--set`` overrides.
     """
 
     experiment: str
     overrides: list[str]
-    reused: bool = False
 
 
 @dataclass(frozen=True)
@@ -292,7 +236,6 @@ class LaunchPlan:
     axis: SweepAxis | None
     axis_name: str | None
     values: list[float]
-    reuse_default: str | None
     backend: str
     dry_run: bool
     log_wandb: bool
@@ -301,10 +244,6 @@ class LaunchPlan:
     validation_config: Path
     train_resources: dict
     validation_resources: dict
-
-    @property
-    def submitted(self) -> list[SweepPoint]:
-        return [point for point in self.points if not point.reused]
 
     def train_args(self, point: SweepPoint, domain: str) -> list[str]:
         """Seed-independent Lightning args shared by all runs of a domain."""
@@ -346,7 +285,7 @@ def run_directory_args(run_id: str, logs_dir: Path, log_wandb: bool) -> list[str
     ]
 
 
-def _sweep_points(args: argparse.Namespace, plan_context: dict) -> tuple:
+def _sweep_points(args: argparse.Namespace) -> tuple:
     """The sweep points of a launch, and the axis they came from.
 
     Returns ``(points, axis, axis_name, values)``; without ``--sweep`` that is the single point named by ``--experiment``.
@@ -362,8 +301,6 @@ def _sweep_points(args: argparse.Namespace, plan_context: dict) -> tuple:
     if args.sweep is None:
         if args.sweep_values:
             raise SystemExit("--sweep-values requires --sweep")
-        if args.reuse_default:
-            raise SystemExit("--reuse-default requires --sweep")
         return [SweepPoint(args.experiment, overrides)], None, None, []
 
     axis_name = args.sweep
@@ -376,27 +313,11 @@ def _sweep_points(args: argparse.Namespace, plan_context: dict) -> tuple:
         raise SystemExit(
             "--ablation no-aux-loss disables the auxiliary losses, so sweeping their weight has no effect"
         )
-    if args.reuse_default and axis.default is None:
-        raise SystemExit(
-            f"--reuse-default: the {axis_name} axis has no reusable default (the value is tuned per domain)"
-        )
-    _check_sweep_config(
-        axis,
-        axis_name,
-        plan_context["domains"],
-        load_yaml(args.train_config),
-        args.train_config,
-        plan_context["overlays"],
-        args.reuse_default,
-    )
     # The override is appended last so it beats the per-domain config.
     points = [
         SweepPoint(
-            name := sweep_experiment_name(
-                args.experiment, axis, value, args.reuse_default
-            ),
+            sweep_experiment_name(args.experiment, axis, value),
             overrides + _sweep_override_args(axis, value),
-            reused=name == args.reuse_default,
         )
         for value in values
     ]
@@ -427,10 +348,7 @@ def build_plan(args: argparse.Namespace) -> LaunchPlan:
             f"--validation-threshold: expected a probability in (0,1), got {threshold:g}"
         )
 
-    points, axis, axis_name, values = _sweep_points(
-        args,
-        {"domains": domains, "overlays": overlays},
-    )
+    points, axis, axis_name, values = _sweep_points(args)
 
     on_slurm = args.backend == "slurm"
     return LaunchPlan(
@@ -446,7 +364,6 @@ def build_plan(args: argparse.Namespace) -> LaunchPlan:
         axis=axis,
         axis_name=axis_name,
         values=values,
-        reuse_default=args.reuse_default,
         backend=args.backend,
         dry_run=args.dry_run,
         log_wandb=not args.no_wandb,
@@ -469,13 +386,9 @@ def describe(plan: LaunchPlan) -> None:
         f"domains    : {len(plan.domains)} x {len(plan.seeds)} runs  (seeds={format_array(plan.seeds)}, backend={plan.backend})"
     )
     if plan.axis is not None:
-        runs = len(plan.submitted) * len(plan.domains) * len(plan.seeds)
+        runs = len(plan.points) * len(plan.domains) * len(plan.seeds)
         values = ", ".join(f"{v:g}" for v in plan.values)
         print(f"sweep      : {plan.axis.param} in {{{values}}}  -> {runs} runs total")
-        if len(plan.submitted) < len(plan.points):
-            print(
-                f"reuse      : {plan.axis.default:g} not submitted; results come from experiment '{plan.reuse_default}'"
-            )
     for overlay in plan.overlays:
         print(f"overlay    : {overlay}")
 
@@ -554,9 +467,8 @@ def run_domain(plan: LaunchPlan, point: SweepPoint, domain: str) -> None:
             "dias",
             "fit",
             *plan.train_args(point, domain),
+            # One seed, not two: the datamodule's own seed follows this one unless a config gave it one of its own (dias.main.CLI._seed_the_data_from_the_run).
             "--seed_everything",
-            str(seed),
-            "--data.init_args.seed",
             str(seed),
             *run_directory_args(run_id, plan.log_dir, plan.log_wandb),
         ]
@@ -588,9 +500,6 @@ def execute(plan: LaunchPlan) -> None:
     backend = submit_domain if plan.backend == "slurm" else run_domain
 
     for point in plan.points:
-        if point.reused:
-            print(f"\n=== {point.experiment} (reused, nothing submitted) ===")
-            continue
         if len(plan.points) > 1:
             print(f"\n=== sub-experiment {point.experiment} ===")
         for domain in plan.domains:
@@ -634,12 +543,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         metavar="V",
         help="Values for --sweep instead of that axis' default grid.",
-    )
-    p.add_argument(
-        "--reuse-default",
-        default=None,
-        metavar="EXPERIMENT",
-        help="Do not submit the sweep point equal to the axis default; take its results from this existing experiment (e.g. dias-full). Read back by 'collect_results.py --reuse-default'.",
     )
     p.add_argument(
         "--validation-threshold",

@@ -18,6 +18,7 @@ class DIASForwardTest(unittest.TestCase):
             arity_relations=[1, 2],
             num_actions=1,
             object_dim=4,
+            aux_loss_weight=1.0,
             num_slots=2,
             action_arities=[2],
             action_arg_positions=[[]],

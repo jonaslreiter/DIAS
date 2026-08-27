@@ -1,27 +1,17 @@
-# DIAS base training config for single-domain runs.
+# DIAS base training config: the paper's setup for a single domain, minus the domain.
 #
-# Switch domains by editing `data.init_args.{domain_path, problem_path}`. For the noise ablation, compose configs/experiments/noise.yaml on top.
-
-seed_everything: 43
+# Every layer states only what it changes about the one below it, and the bottom layer is the classes themselves: `dias.models.DIAS` and `dias.data.datamodule.PddlGraphDataModule` default to the paper's full model with no noise, so what is left here is the run itself (how long, on what hardware, logged where) and the few values a class cannot choose. Above it, `pddl/<domain>/config.yaml` carries the domain and its tuning, and `configs/experiments/*.yaml` the MLP baseline, the noise setup and the ablations. Command-line `--key=value` overrides win over all of them. Nothing is restated to make it visible: `dias fit --model.help dias.models.DIAS` lists every argument with its default, and each run saves the config it fully resolved to.
+#
+# This config names no domain: `domain_path` and `problem_path` have no default anywhere, so a run says which one it trains on rather than inheriting whichever domain the base config happened to name:
+#
+#   dias fit --config configs/main.yaml --config pddl/gripper/config.yaml
 
 model:
   class_path: dias.models.DIAS
   init_args:
-    object_dim: 32
+    # Parameter slots per action schema, which bounds the arity DIAS can recover. No default: too few silently caps what any domain can learn, and every extra slot is a dimension in every schema tensor.
     num_slots: 5
-    force_action_args: false
-    per_action_slots: false
-    learn_preconditions: true
-    successor_relations: true
-    random_node_embeddings: true
-    pcgrad_dyn_clip: true
-    learning_rate: 0.005
-    aux_loss_weight: 0.2
-    use_slot_weights: true
-    use_precondition_loss: true
-    use_effect_loss: true
-    use_pcgrad: true
-    # Tau: the root degree of the relaxed precondition product. Anneals from the geometric mean (1.0) toward the exact product (0.0).
+    # Tau: the root degree of the relaxed precondition product. Anneals from the geometric mean (1.0) toward the exact product (0.0). Unset would hold it at 1.0, which never sharpens into a precondition check.
     gmean_temperature:
       class_path: dias.schedules.Exponential
       init_args:
@@ -33,29 +23,11 @@ model:
 data:
   class_path: dias.data.datamodule.PddlGraphDataModule
   init_args:
-    # ── Domain / problem ────────────────────────────────────────────────
-    domain_path: pddl/gripper/domain.pddl
-    problem_path: pddl/gripper/train.pddl
-
-    # ── Sampling ────────────────────────────────────────────────────────
+    # Transitions to draw per action, per split. Nothing can guess these: SampleQuota refuses a run where neither these nor num_train / num_valid say how much to sample. The six domains that need more (or, for sokoban, fewer) override them.
     min_per_label_train: 100
     min_per_label_valid: 50
     max_per_label_train: 1000
     max_per_label_valid: 500
-    num_train: null
-    num_valid: null
-    max_steps: 1000000
-    seed: 43
-    include_statics: true
-    action_arguments: false
-    strips_plus_actions: false
-    batch_size: 200
-
-    # `random`: a shuffled DataLoader over the split, one pass per epoch.
-    # `stratified`: an infinite IterableDataset drawing action-balanced batches with replacement. Bound its length via trainer.max_steps / limit_train_batches / limit_val_batches.
-    batch_sampling_strategy: stratified
-    shuffle_train: true
-    num_workers: 0
 
 trainer:
   # Weights & Biases. `entity: null` means "whichever account is logged in" (or $WANDB_ENTITY), so a clone of this repository logs to its own account and needs no edit here. To train without W&B at all, either

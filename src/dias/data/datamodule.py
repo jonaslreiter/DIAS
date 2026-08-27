@@ -40,14 +40,16 @@ class PddlGraphDataModule(L.LightningDataModule):
     A random walk draws transitions until `SampleQuota` is met, they are split by action, and the train half is optionally corrupted by a `NoiseModel`. `batch_sampling_strategy` is ``"random"`` (a shuffled pass over the split) or ``"stratified"`` (an unbounded action-balanced stream, in which case training length comes from ``trainer.max_steps``).
 
     The sampling arguments stay flat here rather than nesting into the quota, because they are what configs, sweeps and archived hyper-parameters name.
+
+    ``domain_path`` and ``problem_path`` have no default: which transitions a run learns from is not something this class can stand in for, and a base config that named one would train that domain under whatever name the launch gave it. The sampling bounds default to ``None`` in the same spirit, and ``SampleQuota`` refuses a construction where nothing says how much to sample. Everything else defaults to what the paper's setup does with it, so a config states only what it changes.
     """
 
     def __init__(
         self,
-        domain_path: Optional[str] = None,
-        problem_path: Optional[str] = None,
-        seed: int = 42,
-        include_statics: bool = False,
+        domain_path: str,
+        problem_path: str,
+        seed: Optional[int] = None,
+        include_statics: bool = True,
         default_statics: list[str] = ["number", "object"],
         action_arguments: bool = False,
         strips_plus_actions: bool = False,
@@ -61,18 +63,45 @@ class PddlGraphDataModule(L.LightningDataModule):
         num_train: Optional[int] = None,
         num_valid: Optional[int] = None,
         max_steps: int = 1_000_000,
-        batch_size: int = 32,
-        batch_sampling_strategy: str = "random",
+        batch_size: int = 200,
+        batch_sampling_strategy: str = "stratified",
         shuffle_train: bool = True,
         num_workers: int = 0,
         noise: NoiseModel | None = None,
     ):
+        """
+        Args:
+            domain_path: PDDL domain to learn the action schemas of.
+            problem_path: Instance whose transitions are the training data.
+            seed: Seed for the walk and the split. Unset follows the seed the run was started under.
+            include_statics: Give static predicates channels of their own, so preconditions can name types.
+            default_statics: Static predicates to leave out even then.
+            action_arguments: Label a transition with the action's arguments, not only its name.
+            strips_plus_actions: Restrict those labels to the STRIPS+ positions in the domain folder's strips+.yaml.
+            pt_file: Load transitions from this file instead of exploring the state space.
+            min_per_label_train: Transitions per action the walk samples for the training split.
+            min_per_label_valid: The same for the validation split; their ratio is how the pool is divided.
+            min_per_label_train_floor: Raise (never lower) min_per_label_train to this, which is how an overlay lifts the domains that sample least.
+            min_per_label_valid_floor: The same for min_per_label_valid.
+            max_per_label_train: Cap per action for the training split, trimming a walk that overshot.
+            max_per_label_valid: The same for the validation split. Set both or neither.
+            num_train: Total training transitions, an alternative to the per-action minima. Either says how much to sample; both must agree on the ratio.
+            num_valid: The same for the validation split.
+            max_steps: Walk length at which sampling gives up on an unmet quota, with a warning.
+            batch_size: Transitions per batch, in both splits.
+            batch_sampling_strategy: 'stratified' for an endless action-balanced stream (bound by trainer.max_steps), 'random' for a shuffled pass per epoch.
+            shuffle_train: Shuffle the training split. The stratified stream samples with replacement and ignores this.
+            num_workers: Dataloader worker processes.
+            noise: Corruption applied to the training split's states. Unset trains on clean transitions.
+        """
         super().__init__()
         self.save_hyperparameters()
 
         self.domain_path = domain_path
         self.problem_path = problem_path
-        self.seed = seed
+        # Unset means "the seed this run was started under": dias.main fills it in from `seed_everything`, whose own default is a fresh draw, and a datamodule built outside the CLI reads the same number back off torch, which `seed_everything` set. Either way an archived run records the number it sampled under rather than the None that stood in for it.
+        self.seed = torch.initial_seed() if seed is None else seed
+        self.hparams["seed"] = self.seed
         self.pt_file = pt_file
         self.max_steps = max_steps
         self.batch_size = batch_size
