@@ -19,10 +19,7 @@ def project(lifted: torch.Tensor, selection: torch.Tensor) -> torch.Tensor:
 
 
 class PredictionModule(nn.Module):
-    """Slot-based graph-edit predictor.
-
-    The action's slots are bound to the state's objects, its lifted effects and preconditions are projected onto that binding, and the resulting change is applied to the state: ``A' = A + pre * delta``, where ``pre`` is how well the preconditions hold (when ``learn_preconditions=True``).
-    """
+    """Slot-based graph-edit predictor: bind the action's slots to objects, project its lifted schema onto that binding, apply the change as ``A' = A + pre * delta``."""
 
     def __init__(
         self,
@@ -116,7 +113,7 @@ class PredictionModule(nn.Module):
     ) -> torch.Tensor:
         """The successor state, for a caller that already knows the binding.
 
-        The preconditions are not consulted. A caller holding a binding got it by grounding the learned schema through PDDL, which is where applicability was decided; asking again here would decide it twice, by two different means.
+        The preconditions are not consulted: a caller holding a binding got it by grounding, which is where applicability was decided.
         """
         effects = Channels.from_logits(self.effects(y_action, adjacency, selection))
         return adjacency + self.delta(adjacency, effects, selection)

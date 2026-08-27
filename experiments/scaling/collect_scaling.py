@@ -1,9 +1,7 @@
 #!/usr/bin/env python
 """Aggregate the scaling study into domain x instance-size tables.
 
-Reads ``logs/scaling/<experiment>/<domain>/<instance>-s<seed>.json`` and prints one matrix per metric (rows = domains, columns = the object counts of the size ladder), with mean +/- population stdev over the seeds. OOM points show as ``oom`` and missing points as ``-``.
-
-Metrics: iterations/second, peak GPU memory (allocated and reserved, MiB), step time (ms), sampling time (s), and the seed count behind each cell.
+Reads ``logs/scaling/<experiment>/<domain>/<instance>-s<seed>.json`` and prints one matrix per metric (iterations/second, peak GPU memory, step time, sampling time, seeds per cell), mean +/- population stdev over the seeds. OOM shows as ``oom``, a missing point as ``-``.
 
     python experiments/scaling/collect_scaling.py --experiment scaling-a10
     python experiments/scaling/collect_scaling.py --experiment scaling-a10 --markdown experiments/results/scaling.md
@@ -138,7 +136,7 @@ def main() -> int:
 
     columns = _columns(domains, ladders)
     sections: list[tuple[str, list[str], list[list[str]]]] = [
-        # The rungs are nominal, so state the object count each domain actually reaches before reporting anything against it.
+        # The rungs are nominal, so state the count each domain actually reaches first.
         (
             "objects in the instance",
             ["domain"] + [str(c) for c in columns],
@@ -156,7 +154,7 @@ def main() -> int:
     for key, title, fmt in METRICS:
         header, rows = _table(domains, ladders, results, key, fmt)
         sections.append((title, header, rows))
-    # How many seeds each cell rests on (counts, not an average). Written as `ok/total` whenever they differ, so a cell whose average hides an OOM or a failed seed says so.
+    # `ok/total` whenever they differ, so a cell whose average hides an OOM says so.
 
     def _count(domain: str, rung: int) -> str:
         records = results[domain].get(dict(ladders[domain]).get(rung, ""), [])

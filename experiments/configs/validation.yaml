@@ -6,9 +6,7 @@
 num_samples: 250
 sample_population: 500
 
-# Which of the reachable states get sampled. Null draws a fresh sample every run; set it to a number to fix the draw, which makes a result reproducible and scores every seed of a domain on the same states. The seed used is recorded in each result JSON.
-#
-# Left unset deliberately. No draw in this pipeline is pinned to a constant (a sweep varies the training sample from seed to seed), so fixing only the validation states would claim a reproducibility the reported numbers do not have. Each run scores on its own sample.
+# Which of the reachable states get sampled. Null draws a fresh sample every run, as each run also trains on its own sample; setting a number fixes the draw, so every seed of a domain scores on the same states.
 #
 # Unfixed is not unrecorded: when this is null a seed is drawn and written into the result JSON, and setting it back here scores the next run on exactly those states.
 sample_seed: null

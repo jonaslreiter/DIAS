@@ -1,7 +1,4 @@
-"""Values that change over the course of training.
-
-Each schedule is a pure function of the global step: nothing here holds state, so a schedule can be queried at any step, in any order, without being "advanced" first.
-"""
+"""Values that change over training. Each schedule is a pure function of the global step and holds no state, so it can be queried at any step, in any order."""
 
 from __future__ import annotations
 
@@ -25,9 +22,7 @@ class Exponential:
 
     ``floor + (start - floor) * factor ** (step / every)``
 
-    The rate and the asymptote are independent: raising `floor` does not change how fast the value falls. That is what the noise experiments need: the same decay as the clean setup, but bottoming out at 0.1 rather than 0, because the exact precondition product is too strict a check under noise.
-
-    ``every = 0`` is the degenerate case: decay is instantaneous, so the value is `floor` from the first step. That is the limit as every -> 0+, written out because the general form would divide by zero.
+    Rate and asymptote are independent: raising `floor` does not change how fast the value falls. ``every = 0`` is the limit as every -> 0+, written out because the general form would divide by zero.
     """
 
     start: float = 1.0
@@ -76,9 +71,9 @@ Schedule = Constant | Exponential | PiecewiseLinear
 
 
 def as_schedule(value: "Schedule | Mapping[str, object] | None") -> Schedule:
-    """Accept a schedule, the mapping a checkpoint stores it as, or None.
+    """Accept a schedule, the mapping a checkpoint stores it as, or None (a constant 1.0).
 
-    None means a constant 1.0. Callers must default to None rather than to a schedule instance: jsonargparse merges a configured schedule's fields onto the default's instead of replacing it, and a Constant default would turn an Exponential in the config into a mixture that matches neither.
+    Callers must default to None, not to an instance: jsonargparse merges a configured schedule's fields onto the default's instead of replacing it.
     """
     if value is None:
         return Constant(1.0)

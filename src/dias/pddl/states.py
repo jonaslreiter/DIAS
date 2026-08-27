@@ -19,10 +19,7 @@ def state_fluents(state, predicate_names=None) -> frozenset[str]:
 
 
 def transfer_state(source_state, target_problem) -> State:
-    """Rebuild `source_state`'s atoms as a state of `target_problem`.
-
-    Both problems must share object and predicate names: typically the same problem file read against a different domain. Predicates that are static in the target keep the target's own definition rather than being copied.
-    """
+    """Rebuild `source_state`'s atoms as a state of `target_problem`, which must share its object and predicate names. Predicates static in the target keep the target's definition."""
     advanced = target_problem._advanced_problem
     fluent_by_name = {
         p.get_name(): p for p in advanced.get_domain().get_fluent_predicates()

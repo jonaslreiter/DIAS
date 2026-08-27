@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class SampleQuota:
     """The per-action sampling bounds one run draws under.
 
-    There are two ways to say how much to sample, and a run may use either or both: a minimum per action per split (``min_per_label_*``), and a total per split (``num_*``). Where both are given their train:valid ratios must agree, because one pool serves both splits and can only be divided once. ``max_per_label_*`` caps what a walk that overshoots its quota keeps.
+    Two ways to say how much to sample, either or both: a minimum per action per split (``min_per_label_*``) and a total per split (``num_*``); given both, their ratios must agree, since one pool serves both splits. ``max_per_label_*`` caps what a walk that overshoots keeps.
     """
 
     min_per_label_train: int | None = None
@@ -33,7 +33,7 @@ class SampleQuota:
     ) -> "SampleQuota":
         """Build a quota, raising the per-action minima to a shared lower bound.
 
-        A floor only ever increases the per-domain value. Experiment overlays are composed after the per-domain config, so a plain ``min_per_label_train`` there would also shrink the domains that sample more; the paper's noise setup instead raises the *smallest* per-action minimum to Nmin = 200 and leaves the larger ones alone.
+        Overlays are composed after the per-domain config, so a plain ``min_per_label_train`` there would also shrink the domains that sample more.
         """
         return cls(
             min_per_label_train=_floored(

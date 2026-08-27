@@ -1,8 +1,6 @@
-"""The config chains a run is actually composed from.
+"""The config chains a run is composed from, so a renamed ``init_args`` key fails here rather than on every task of a Slurm array.
 
-Every training run and every launch composes two or three YAML files (the base config, the domain's tuned overrides, an experiment overlay), and until this module nothing read any of them. A renamed ``init_args`` key therefore broke all 13 domains with a fully green suite, and surfaced as a Slurm array dying on every task.
-
-The chains are checked by *parsing*, not by instantiating: the CLI's parser is what validates class paths, argument names and types, and skipping construction keeps the whole grid to a few seconds. The one test that does instantiate is the round trip, which is about what a saved config means rather than whether it parses.
+Checked by parsing, not instantiating: the CLI's parser validates class paths, argument names and types, and skipping construction keeps the whole grid to a few seconds. The round trip is the one test that instantiates.
 """
 
 import contextlib
@@ -160,7 +158,7 @@ class PrecedenceTest(unittest.TestCase):
         self.assertTrue(config.model.init_args.state_dependent_effects)
 
     def test_the_noise_overlay_raises_the_per_action_floors(self):
-        # The floors exist because an overlay composed after a domain config must raise the smallest minimum without shrinking the domains that already sample more.
+        # A floor raises the smallest minimum without shrinking the domains that sample more.
         config = parse(MAIN, A_DOMAIN, ROOT / "configs/experiments/noise.yaml")
         self.assertEqual(config.data.init_args.min_per_label_train_floor, 200)
         self.assertEqual(config.data.init_args.min_per_label_valid_floor, 100)
@@ -185,9 +183,9 @@ class SavedConfigTest(unittest.TestCase):
     def test_a_saved_config_reproduces_the_schedule_it_was_run_with(self):
         """The config a run saves is the record of what that run was.
 
-        The tau schedule is a union of three dataclasses, and the parser resolves it structurally: the dump carries the schedule's *fields* and no ``class_path``. That round-trips today because no two schedules share a field set. Adding one that does would silently turn an archived run's exponential decay into something else, which is what this pins.
+        The parser resolves the schedule union structurally, so the dump carries its fields and no ``class_path``. That round-trips only while no two schedules share a field set.
         """
-        # The accelerator and the logger are overridden because this is the one test that builds a Trainer: main.yaml asks for a GPU and for W&B, and neither is a property of the schedule being checked.
+        # This is the one test that builds a Trainer, and main.yaml asks for a GPU and for W&B.
         plain = ["--trainer.accelerator=cpu", "--trainer.logger=false"]
         with unseeded():
             cli = CLI(

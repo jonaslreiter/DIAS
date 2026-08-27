@@ -10,7 +10,7 @@ from dias.schema.action import ActionSchema, GroundAtom
 class PDDLTranspiler:
     """Reads action schemas off binarized effect/precondition tensors.
 
-    Each tensor has shape ``(actions, predicates, slots, slots)`` and holds only 0/1. A set cell ``(a, r, s1, s2)`` means action ``a`` asserts predicate ``r`` over slots ``s1``, ``s2``, truncated to the predicate's arity, so a unary predicate is read off the ``s1`` axis and the ``s2`` axis is redundant, which is why atoms are deduplicated.
+    Each is ``(actions, predicates, slots, slots)`` of 0/1. A set cell means action ``a`` asserts predicate ``r`` over slots ``s1``, ``s2``, truncated to the predicate's arity, which is why atoms are deduplicated: for a unary predicate the ``s2`` axis is redundant.
     """
 
     def __init__(
@@ -68,7 +68,7 @@ class PDDLTranspiler:
         self.delete_effects = delete_effects
         self.positive_preconditions = positive_preconditions
         self.negative_preconditions = negative_preconditions
-        # Copied: add_unreachable_action extends these, and callers pass in lists they keep using afterwards.
+        # Copied: add_unreachable_action extends these, and callers keep using their lists.
         self.predicate_names = list(predicate_names)
         self.predicate_arities = list(predicate_arities)
         self.action_names = action_names
@@ -109,9 +109,9 @@ class PDDLTranspiler:
         action_name: str = "dummy_action_unreachable",
         guard_predicate_name: str = "dummy_guard",
     ) -> ActionSchema:
-        """Append an action that mentions every predicate but can never fire.
+        """Append an action that mentions every predicate but can never fire, which is what keeps every predicate fluent for pymimir.
 
-        A guard predicate of arity 0 that no action produces and no initial state contains makes the action unreachable, without the contradictory preconditions some PDDL compilers optimise away. Its purpose is to keep every predicate fluent for pymimir.
+        A nullary guard nothing produces makes it unreachable, without the contradictory preconditions some PDDL compilers optimise away.
         """
         self.predicate_names.append(guard_predicate_name)
         self.predicate_arities.append(0)

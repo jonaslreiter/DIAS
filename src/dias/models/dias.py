@@ -22,10 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 class DIAS(L.LightningModule):
-    """The model: a relational encoder, a slot assignment, and one lifted schema per action.
-
-    Defaults are the paper's full model, so a config states only what it changes and an ablation overlay only the component it removes. The instance metadata (``num_objects``, ``arity_relations``, ``num_actions``, ``action_arities``, ``action_arg_positions``) has no default because the CLI links it from the datamodule. ``num_slots`` and ``gmean_temperature`` default to ``None``, which means "not set" rather than a value: the first is then the widest action's arity under ``per_action_slots`` and an error otherwise, the second no annealing at all.
-    """
+    """A relational encoder, a slot assignment, and one lifted schema per action. Defaults are the paper's full model."""
 
     def __init__(
         self,
@@ -54,36 +51,36 @@ class DIAS(L.LightningModule):
     ):
         """
         Args:
-            num_objects: Objects in the instance being trained on. (linked from the datamodule)
+            num_objects: Objects in the instance. (linked from the datamodule)
             arity_relations: Arity (1 or 2) of every relation, in channel order. (linked from the datamodule)
             num_actions: Action schemas to learn, one per action of the domain. (linked from the datamodule)
-            object_dim: Width of the object embeddings the encoder produces.
+            object_dim: Width of the object embeddings.
             num_slots: Parameter slots per schema, clamped to num_objects. Required unless per_action_slots.
             learning_rate: Adam step size.
-            aux_loss_weight: Weight of the auxiliary objective against the adjacency loss. Tuned per domain, from 0.01 to 1.0.
-            force_action_args: Bind the slots of observed action arguments to those objects instead of assigning them.
-            per_action_slots: Give every action exactly its own arity in slots, rather than num_slots each.
-            learn_preconditions: Gate the predicted change on the learned preconditions. Off applies effects unconditionally.
-            action_arities: Arity of every action, in action order. (linked from the datamodule)
-            action_arg_positions: Argument positions of every action that the labels observe, empty when only names are. (linked from the datamodule)
-            successor_relations: Show the encoder what the transition changed, as a fourth band of edge types.
-            random_node_embeddings: Start each object from noise, so symmetric objects are distinguishable.
-            gmean_temperature: Schedule for tau, the root degree of the relaxed precondition product. None holds it at 1.
-            pcgrad_dyn_clip: Clip the projected auxiliary gradient to the norm of the primary one.
-            state_dependent_effects: Predict effects from the state with an MLP (the baseline) instead of learning one lifted tensor per action.
-            use_slot_weights: Learn which slots an action uses, which is what its recovered arity is.
-            use_precondition_loss: Include the restrictive-precondition term in the auxiliary objective.
-            use_effect_loss: Include the minimal-effects term in the auxiliary objective.
-            use_pcgrad: Project the auxiliary gradient away from the primary one, rather than adding a weighted sum.
+            aux_loss_weight: Weight of the auxiliary objective against the adjacency loss.
+            force_action_args: Bind the slots of observed action arguments instead of assigning them.
+            per_action_slots: Give every action its own arity in slots, rather than num_slots each.
+            learn_preconditions: Gate the predicted change on the learned preconditions.
+            action_arities: Arity of every action. (linked from the datamodule)
+            action_arg_positions: Argument positions the labels observe, per action. (linked from the datamodule)
+            successor_relations: Show the encoder what the transition changed.
+            random_node_embeddings: Start each object from noise, so symmetric objects differ.
+            gmean_temperature: Schedule for tau. None holds it at 1.
+            pcgrad_dyn_clip: Clip the projected auxiliary gradient to the primary one's norm.
+            state_dependent_effects: Predict effects from the state with an MLP (the baseline).
+            use_slot_weights: Learn which slots an action uses, which is its recovered arity.
+            use_precondition_loss: Include the restrictive-precondition auxiliary term.
+            use_effect_loss: Include the minimal-effects auxiliary term.
+            use_pcgrad: Project the auxiliary gradient rather than adding a weighted sum.
             encoder_hidden_dims: Widths of the relational convolutions.
         """
         super().__init__()
         self.save_hyperparameters()
         self.gmean_temperature = as_schedule(gmean_temperature)
-        # Hyperparameters must stay primitive: torch.load defaults to weights_only=True since 2.6 and refuses to unpickle a dataclass, which would make the whole checkpoint unloadable.
+        # Hyper-parameters must stay primitive; see dias.hparams.
         self.hparams["gmean_temperature"] = to_mapping(self.gmean_temperature)
 
-        # Everything else is handed to the module that owns it; what is kept here is what something reads back later: the losses, the optimizer, the reporting callback, and the validators.
+        # Kept here because something reads them back; the rest goes to the module that owns it.
         self.num_objects = num_objects
         self.num_actions = num_actions
         self.num_relations = len(arity_relations)
@@ -129,7 +126,6 @@ class DIAS(L.LightningModule):
             use_effect_loss=use_effect_loss,
             use_precondition_loss=use_precondition_loss,
         )
-        # Whether the auxiliary objective contributes any gradient is fixed at construction: alpha = 0, or both of its terms ablated away.
         self.gradients = gradient_combiner(
             use_pcgrad=use_pcgrad,
             auxiliary_weight=aux_loss_weight,
@@ -140,7 +136,6 @@ class DIAS(L.LightningModule):
 
         self.automatic_optimization = False
 
-        # What the ablation flags actually did. They are otherwise visible only in the saved config, which is not where anyone looks when a run is behaving unlike its neighbours.
         auxiliary = [
             name
             for name, active in (
@@ -174,10 +169,7 @@ class DIAS(L.LightningModule):
 
     @classmethod
     def load_from_checkpoint(cls, checkpoint_path, *args, **kwargs):
-        """Load a checkpoint, bringing an older layout up to date on the way in.
-
-        The version stamp decides, not a failed load: Lightning drops hyper-parameters it does not recognise instead of raising, so a renamed one would silently fall back to its default and quietly change what the archived run means.
-        """
+        """Load a checkpoint, bringing an older layout up to date on the way in."""
         checkpoint = torch.load(checkpoint_path, map_location="cpu")
         version = checkpoint.get(VERSION_KEY, UNVERSIONED)
         if version != CHECKPOINT_VERSION:
@@ -209,9 +201,9 @@ class DIAS(L.LightningModule):
         return prediction
 
     def schema_logits(self) -> SchemaLogits:
-        """The learned schema as the model would apply it, on the CPU.
+        """The learned schema as the model applies it, arity-masked, on the CPU.
 
-        The supported way to read a schema off a trained model. The arity mask is applied here, so the raw parameters are not a faithful record of what the model can express: reading them directly finds effects on cells the model never uses.
+        The supported way to read a schema off a trained model: the raw parameters hold noise at masked cells.
         """
         with torch.no_grad():
             preconditions = self.graph_edit.preconditions.action_logits()
@@ -229,17 +221,11 @@ class DIAS(L.LightningModule):
         selection: torch.Tensor,
         y_action: torch.Tensor,
     ) -> torch.Tensor:
-        """The successor state this model predicts for a known slot binding.
-
-        For a model whose effects are predicted from the state, this is the only way to see them: `schema_logits` reports None for it, because there is no lifted effect tensor to report.
-        """
+        """The successor state predicted for a known slot binding, preconditions not consulted."""
         return self.graph_edit.apply(adjacency, selection, y_action)
 
     def retarget(self, num_objects: int) -> None:
-        """Point the model at an instance with a different number of objects.
-
-        A learned schema is lifted, so it transfers; the recorded instance size does not, and the losses and the target adjacency are built from it. An instance with fewer objects than the model has slots cannot bind them all, so it is refused rather than silently mis-scored.
-        """
+        """Point the model at an instance with a different number of objects."""
         if num_objects < self.num_slots:
             raise ValueError(
                 f"This instance has {num_objects} objects, fewer than the model's {self.num_slots} slots; it cannot bind them all."
@@ -266,7 +252,6 @@ class DIAS(L.LightningModule):
         )
 
     def on_train_batch_start(self, batch, batch_idx):
-        # Scheduled on global_step, not epoch, so it advances per optimizer step.
         self.log(
             "scheduled_w/gmean_temperature", self.gmean_temperature(self.global_step)
         )
@@ -285,7 +270,7 @@ class DIAS(L.LightningModule):
         optimizer.step()
 
         self.log_results("train", losses.logged(self.aux_loss_weight))
-        # Lightning's automatic backward is off: `gradients` set p.grad itself.
+        # Automatic optimization is off: `gradients` set p.grad itself.
         return None
 
     def _eval_step(self, prefix: str, batch) -> torch.Tensor:

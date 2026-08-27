@@ -40,7 +40,6 @@ class ModelValidation:
     ):
         self.logs_path_abs = logs_path_abs
 
-        # Read both files
         original_domain_text = Path(original_domain_path).read_text()
         learned_domain_text = Path(learned_domain_path).read_text()
 
@@ -104,7 +103,7 @@ class ModelValidation:
 
         original_problem_path_to_use = problem_path
         if fluent_equal_predicates:
-            # The original domain needs the same reflexive atoms the stripped problem got, or the two would not enumerate the same actions.
+            # The original domain needs the same reflexive atoms, or the two enumerate different actions.
             original_problem_path_to_use = self.workspace.write(
                 "original-problem.pddl",
                 inject_reflexive_atoms(
@@ -125,14 +124,11 @@ class ModelValidation:
         original_domain_text: str = "",
         has_equality: bool = False,
     ) -> str:
-        """Declare every predicate the merged domain uses but does not define.
-
-        Three sources go missing: predicates an action body references that the header never declared, the `eq` replacement for `=` (strip_problem_types puts `(eq o o)` in :init even when no action mentions equality), and the type names, which become unary atoms like `(locatable bob)` for every parent in the chain.
-        """
+        """Declare every predicate the merged domain uses but does not define: ones an action body references, the `eq` replacement for `=`, and the type names, which became unary atoms."""
         defined_words = {
             m.group(1).lower() for m in re.finditer(r"\(\s*([a-zA-Z0-9_\-]+)", header)
         }
-        # `eq` is deliberately absent: it is a user-defined predicate here, not a keyword, and must be declared.
+        # `eq` is absent on purpose: here it is a user predicate, not a keyword.
         keywords = {"and", "or", "not", "imply", "when", "forall", "exists", "=", "-"}
 
         missing_preds: dict[str, int] = {}
@@ -184,7 +180,6 @@ class ModelValidation:
         sample_population: int = 500,
         seed: int | None = None,
     ):
-        # Recorded, so a result drawn without a fixed seed can still be redrawn.
         self.sample_seed = resolve_sample_seed(seed)
         states = sample_reachable_states(
             self.original_problem, num_samples, sample_population, self.sample_seed
@@ -200,7 +195,7 @@ class ModelValidation:
 
     @staticmethod
     def _fluent_equal_predicates(domain_text: str) -> list[str]:
-        """Return names of binary fluent predicates that look like reflexive equality (e.g. `equal`, `eq`) declared in the domain's :predicates block. The kr_2024 problem.pddl files initialize these as `(equal X X)` for every object; new problem files don't, so we need to bootstrap them on the merged problem."""
+        """Binary fluent predicates that look like reflexive equality (`equal`, `eq`). Some problem files initialize them as ``(equal X X)`` and others do not, so they are bootstrapped onto the merged problem."""
         preds_match = re.search(r"\(:predicates(.*?)\n\s*\)", domain_text, re.DOTALL)
         if not preds_match:
             return []

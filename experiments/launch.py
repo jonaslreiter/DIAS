@@ -1,50 +1,26 @@
-"""Launch DIAS paper experiments: one training array + a dependent validation array per domain.
+"""Launch DIAS experiments: per domain, a training array plus a validation array that depends on it.
 
-For each selected domain this submits (Slurm backend):
+Array task id = seed, so ``--dependency=aftercorr`` pairs training task i with validation task i, and ``--seeds`` becomes a sparse spec such as ``--array=3,7-8``. Runs are identified by a deterministic ``<experiment>-<domain>-s<seed>`` (``validate_runs.run_id_for``), so the two arrays need no id handoff.
 
-  1. a training array job with one task per seed (array task id = seed), and
-  2. a validation array job over the same task ids with ``--dependency=aftercorr:<train_jobid>`` so validation task i runs only after training task i succeeds.
-
-Seeds default to ``0 .. --num-runs-1``; ``--seeds`` selects an explicit subset (e.g. to re-run only the seeds that failed), which becomes a sparse sbatch array spec such as ``--array=3,7-8``.
-
-Runs are identified by a deterministic id ``<experiment>-<domain>-s<seed>`` (see ``validate_runs.run_id_for``), so the two array jobs need no id handoff: the checkpoint of task i lands at ``logs/dias/<run_id>/checkpoints/best-*.ckpt`` and validation recomputes the same id.
-
-Config composition (in order): ``configs/main.yaml`` -> ``<domain>/config.yaml`` -> optional experiment overlay (``configs/experiments/{mlp,noise}.yaml``) -> optional ablation overlay (``configs/experiments/ablation-*.yaml``, selected by ``--ablation``) -> launcher ``--set`` overrides. The experiment type also selects the validator (``mlp`` uses the MLP baseline; ``dias``/``noise`` use the DIAS validator) and its schema-derivation threshold (0.5, but 0.75 for ``noise``, as in the paper; override with ``--validation-threshold``); ablations always use the DIAS validator.
-
-``--sweep AXIS`` turns one launch into a hyperparameter sweep: the whole domain x seed grid is submitted once per value of that axis (see ``SWEEP_AXES``), each into its own sub-experiment ``<experiment>-<tag><value>`` (see ``sweep_experiment_name``), with the swept parameter overridden last so it wins over per-domain values in ``pddl/<domain>/config.yaml``.
-
-Per-domain Slurm resources come from ``experiments/configs/slurm-resources.yaml``.
+Config chain: ``configs/main.yaml`` -> ``pddl/<domain>/config.yaml`` -> ``--experiment-type`` overlay -> ``--ablation`` overlay -> ``--set`` overrides. The experiment type also picks the validator and its schema-derivation threshold. ``--sweep AXIS`` submits the whole grid once per value of that axis, each into its own sub-experiment.
 
 Examples
 --------
-    # Full grid on Slurm (all domains, 10 seeds each), grouped as "paper-main":
+    # Full grid: all domains, 10 seeds each.
     python experiments/launch.py --experiment paper-main
 
-    # MLP baseline on two domains:
-    python experiments/launch.py --experiment-type mlp --domains gripper satellite --experiment mlp-main
-
-    # Noise sweep point (expected 2 added / 2 removed atoms):
+    # Noise sweep point, 2 added / 2 removed atoms.
     python experiments/launch.py --experiment-type noise --experiment noise-a2r2 --set data.init_args.noise.added_atoms=2 --set data.init_args.noise.removed_atoms=2
 
-    # Ablation (no PCGrad) on the default DIAS model:
+    # An ablation, and a sweep into sub-experiments aux-sweep-aux0.01 .. -aux1.
     python experiments/launch.py --ablation no-pcgrad --experiment abl-no-pcgrad
-
-    # aux_loss_weight sweep: all domains x {0.01,0.03,0.1,0.3,1.0} x 3 seeds,
-    # submitted as sub-experiments aux-sweep-aux0.01 ... aux-sweep-aux1:
     python experiments/launch.py --experiment aux-sweep --sweep aux-loss-weight --num-runs 3
 
-    # Dataset-size sweep, clean and noisy (2 atom flips per transition), on the
-    # six-domain subset; sub-experiments <experiment>-n20 ... <experiment>-n2000:
-    python experiments/launch.py --experiment datasize-clean --sweep dataset-size --domains blocks-3 delivery gripper hanoi logistics miconic --num-runs 3
-    python experiments/launch.py --experiment datasize-noise --sweep dataset-size --experiment-type noise --num-runs 3 --domains blocks-3 delivery gripper hanoi logistics miconic --set data.init_args.noise.removed_atoms=0.5 --set data.init_args.noise.added_atoms=0.5
-
-    # Re-run just the seeds that failed, into the same experiment/group:
+    # Re-run only the seeds that failed, into the same experiment.
     python experiments/launch.py --experiment paper-main --domains gripper --seeds 3 7-8
 
-    # See exactly what would be submitted, without submitting:
+    # Print without submitting, or run here instead of on Slurm.
     python experiments/launch.py --domains gripper --num-runs 3 --dry-run
-
-    # Run locally (no Slurm), sequentially, good for smoke tests:
     python experiments/launch.py --backend local --domains gripper --num-runs 2 --experiment smoke --no-wandb
 """
 
@@ -90,10 +66,10 @@ EXPERIMENT_OVERLAYS = {
     "mlp": OVERLAYS_DIR / "mlp.yaml",
     "noise": OVERLAYS_DIR / "noise.yaml",
 }
-# Schema-derivation threshold (Eq. 14) per experiment type; the paper raises it to 0.75 under noise. Override per launch with --validation-threshold.
+# Schema-derivation threshold (Eq. 14) per experiment type; the paper raises it under noise.
 DEFAULT_VALIDATION_THRESHOLD = 0.5
 VALIDATION_THRESHOLD = {"noise": 0.75}
-# Model ablation overlays, orthogonal to --experiment-type (all use the DIAS validator). Composed after the experiment overlay.
+# Orthogonal to --experiment-type, composed after it; all use the DIAS validator.
 ABLATION_OVERLAYS = {
     "no-slot-weights": OVERLAYS_DIR / "ablation-no-slot-weights.yaml",
     "no-precondition-loss": OVERLAYS_DIR / "ablation-no-precondition-loss.yaml",
@@ -113,9 +89,7 @@ VALIDATE_SCRIPT = SLURM_DIR / "validate.sh"
 class SweepAxis:
     """One hyperparameter axis that ``--sweep`` varies over the full grid.
 
-    ``values`` is the default grid of the bare flag and ``tag`` the sub-experiment infix.
-
-    ``linked`` maps one axis value to *further* Lightning overrides that have to move with it (see ``_dataset_size_overrides``); ``param`` alone is what the axis is named and reported by. All of them are appended last on the command line, so they beat both ``pddl/<domain>/config.yaml`` and the overlays, and all of them are rejected as ``--set`` targets.
+    ``values`` is the bare flag's default grid, ``tag`` the sub-experiment infix, and ``linked`` further overrides that move with the axis value. All are appended last, so they beat the domain config and the overlays, and all are rejected as ``--set`` targets.
     """
 
     param: str
@@ -128,9 +102,7 @@ class SweepAxis:
 def _dataset_size_overrides(value: float) -> dict[str, int]:
     """Sampling knobs that move with ``min_per_label_train`` on the size axis.
 
-    Pinning ``max_per_label_train`` to the same N (and both ``*_valid`` to N/2) makes the dataset size *exact* rather than a lower bound: sampling stops once every action has 1.5N transitions and the cap trims every action back to 1.5N, so the pool is exactly ``num_actions * 1.5N``. The 2:1 train:valid weight then splits it into ~N train / ~N/2 valid per action (the ratio is enforced on the pool as a whole, so individual actions drift a few percent). The per-domain configs instead pair a tuned minimum with a loose cap, so no point of this sweep reproduces a domain's default run exactly, which is why the axis has no reusable ``default``.
-
-    The ``*_floor`` overrides exist for ``--experiment-type noise``: that overlay floors the minima at 200/100, which is composed after the domain config and would otherwise silently clamp the 20/50/100 points back up. Setting each floor to the value it floors makes it a no-op.
+    Pinning the caps to the same N makes the dataset size exact rather than a lower bound. The ``*_floor`` overrides neutralise the noise overlay's 200/100 floors, which are composed later and would clamp the small points back up.
     """
     n = int(value)
     half = max(1, n // 2)
@@ -182,10 +154,7 @@ def _axis_params(axis: SweepAxis) -> list[str]:
 
 
 def sweep_experiment_name(experiment: str, axis: SweepAxis, value: float) -> str:
-    """Sub-experiment name for one point of a sweep.
-
-    Also used by ``experiments/collect_results.py`` to rebuild the per-value experiment names, so keep the two in sync by importing this function rather than re-deriving it.
-    """
+    """Sub-experiment name for one point of a sweep; ``collect_results.py`` imports it to rebuild these."""
     return f"{experiment}-{axis.tag}{value:g}"
 
 
@@ -208,10 +177,7 @@ def _sweep_override_args(axis: SweepAxis, value: float) -> list[str]:
 
 @dataclass(frozen=True)
 class SweepPoint:
-    """One value of the swept axis: its sub-experiment and the args pinning it.
-
-    Without a sweep there is exactly one point, carrying the launch's own name and only the ``--set`` overrides.
-    """
+    """One value of the swept axis: its sub-experiment and the args pinning it. Without a sweep, one point carrying the launch's own name."""
 
     experiment: str
     overrides: list[str]
@@ -219,10 +185,7 @@ class SweepPoint:
 
 @dataclass(frozen=True)
 class LaunchPlan:
-    """Everything a launch does, decided before anything is submitted.
-
-    Building this is where every ``SystemExit`` lives, so an invalid launch fails before the first sbatch rather than half way through the grid.
-    """
+    """Everything a launch does, decided before anything is submitted: every ``SystemExit`` lives in `build_plan`, so an invalid launch fails before the first sbatch."""
 
     experiment: str
     experiment_type: str
@@ -250,7 +213,7 @@ class LaunchPlan:
         args = ["--config", str(self.train_config)]
         for path in [domain_config(domain), *self.overlays]:
             args += ["--config", str(path)]
-        # Absolute, and appended after the config chain: a Slurm job does not run from the repository root, where the configs' relative paths resolve.
+        # Absolute and appended last: a Slurm job does not run from the repository root.
         args += [
             "--data.init_args.domain_path",
             str(domain_pddl(domain)),
@@ -265,7 +228,7 @@ class LaunchPlan:
                 str(self.log_dir),
             ]
         else:
-            # Without a logger the run directory comes from default_root_dir, which run_directory_args sets to the path validation looks the checkpoint up under.
+            # Without a logger the run directory comes from default_root_dir; see run_directory_args.
             args += ["--trainer.logger=false"]
         return args + point.overrides
 
@@ -273,7 +236,7 @@ class LaunchPlan:
 def run_directory_args(run_id: str, logs_dir: Path, log_wandb: bool) -> list[str]:
     """Per-seed args putting this run's checkpoints where validation looks.
 
-    ``validation.checkpoint.load_run`` resolves ``<logs>/dias/<run_id>/ checkpoints``. With W&B that path is the logger's own (project / run id); without one, ModelCheckpoint falls back to ``default_root_dir``, so the same path has to be named explicitly; otherwise a --no-wandb run writes its checkpoint to ./checkpoints and validation cannot find it. Mirrored in experiments/slurm/train.sh, which builds the same args for an array task.
+    ``load_run`` resolves ``<logs>/dias/<run_id>/checkpoints``: the logger's own path with W&B, and ``default_root_dir`` without one. Mirrored in experiments/slurm/train.sh.
     """
     if not log_wandb:
         return ["--trainer.default_root_dir", str(logs_dir / "dias" / run_id)]
@@ -286,10 +249,7 @@ def run_directory_args(run_id: str, logs_dir: Path, log_wandb: bool) -> list[str
 
 
 def _sweep_points(args: argparse.Namespace) -> tuple:
-    """The sweep points of a launch, and the axis they came from.
-
-    Returns ``(points, axis, axis_name, values)``; without ``--sweep`` that is the single point named by ``--experiment``.
-    """
+    """``(points, axis, axis_name, values)``; without ``--sweep``, the single point named by ``--experiment``."""
     overrides = []
     for override in args.overrides:
         if "=" not in override:
@@ -398,10 +358,9 @@ def describe(plan: LaunchPlan) -> None:
 
 def submit_domain(plan: LaunchPlan, point: SweepPoint, domain: str) -> None:
     """Submit one domain's training array plus its dependent validation array."""
-    # Array task id == seed, so a seed subset becomes a sparse array spec and aftercorr still pairs train/validate tasks of the same seed.
     array = format_array(plan.seeds)
 
-    # EXPERIMENT/DOMAIN go through --export (single tokens, needed to build the run id); the Lightning config chain is passed as positional args so sbatch preserves argv exactly (no fragile string splitting).
+    # Single tokens via --export; the Lightning config chain goes positionally, so sbatch preserves argv exactly.
     train_vars = [
         "ALL",
         f"DIAS_ROOT={PROJECT_ROOT}",
@@ -421,7 +380,7 @@ def submit_domain(plan: LaunchPlan, point: SweepPoint, domain: str) -> None:
     if not plan.log_wandb:
         train_vars.append("NO_WANDB=1")
         val_vars.append("NO_WANDB=1")
-    # validate.sh only forwards --threshold when THRESHOLD is set, so leave it unset at the default and keep the plain pipeline unchanged.
+    # validate.sh forwards --threshold only when THRESHOLD is set.
     if plan.threshold != DEFAULT_VALIDATION_THRESHOLD:
         val_vars.append(f"THRESHOLD={plan.threshold:g}")
 
@@ -457,7 +416,7 @@ def submit_domain(plan: LaunchPlan, point: SweepPoint, domain: str) -> None:
 
 def run_domain(plan: LaunchPlan, point: SweepPoint, domain: str) -> None:
     """Train and validate one domain's seeds here, one after another."""
-    # Imported here so Slurm submission never needs torch/pymimir installed.
+    # Imported here so Slurm submission never needs torch/pymimir.
     from validate_runs import run_id_for, validate_run
 
     val_cfg = load_yaml(plan.validation_config)
@@ -467,14 +426,14 @@ def run_domain(plan: LaunchPlan, point: SweepPoint, domain: str) -> None:
             "dias",
             "fit",
             *plan.train_args(point, domain),
-            # One seed, not two: the datamodule's own seed follows this one unless a config gave it one of its own (dias.main.CLI._seed_the_data_from_the_run).
+            # The datamodule's seed follows this one unless a config gave it one.
             "--seed_everything",
             str(seed),
             *run_directory_args(run_id, plan.log_dir, plan.log_wandb),
         ]
         print(f"\n[{domain} seed={seed}] train  (run_id={run_id})", flush=True)
         try:
-            # Not captured: this is the step that takes hours, and watching it is the only way to see where it is.
+            # Not captured: this step takes hours, and its output is the only sign of progress.
             run_command(train_cmd, plan.dry_run, capture=False)
         except subprocess.CalledProcessError as error:
             print(f"[skip] {domain} seed={seed}: training failed ({error})", flush=True)
@@ -587,7 +546,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    # The local backend runs training and validation in this process, so their log lines need a handler; the Slurm backend only prints what it submits.
+    # The local backend runs both steps in this process, so their log lines need a handler.
     configure_logging(args)
     plan = build_plan(args)
     describe(plan)

@@ -10,7 +10,7 @@ import torch
 from dias.models.dias import DIAS
 from dias.schema import DomainSchema
 
-# Sampling parameters that PddlGraphDataModule no longer accepts. Dropping them is what lets checkpoints from before the sampling refactor still load.
+# Sampling parameters PddlGraphDataModule no longer accepts; dropped so older checkpoints still load.
 RETIRED_HPARAMS = frozenset(
     {
         "method",
@@ -38,9 +38,9 @@ class TrainedRun:
 
 
 def resolve_best_checkpoint(checkpoint_dir: Path) -> Path:
-    """Return the ``best-epoch*.ckpt`` most recently written in `checkpoint_dir`.
+    """The ``best-epoch*.ckpt`` most recently written in `checkpoint_dir`.
 
-    Re-running a seed (``launch.py --seeds``) reuses the run id and therefore the checkpoint directory, and Lightning does not delete the previous attempt's file: it side-steps the name clash with a ``-v1`` suffix. Selecting by mtime picks the current attempt; glob order is arbitrary and could silently validate the stale one.
+    Re-running a seed reuses the directory and Lightning keeps the old file under a ``-v1`` suffix, so mtime picks the current attempt rather than an arbitrary glob hit.
     """
     matches = list(checkpoint_dir.glob("best-epoch*.ckpt"))
     if not matches:
@@ -62,7 +62,7 @@ def load_run(model_id: str, logs_path: str) -> TrainedRun:
         for key, value in checkpoint["datamodule_hyper_parameters"].items()
         if not key.startswith("_") and key not in RETIRED_HPARAMS
     }
-    # Paths in a checkpoint were relative to the directory the run was launched from, which is the repository root.
+    # Paths in a checkpoint are relative to the repository root, where the run was launched.
     for key in ("domain_path", "problem_path", "pt_file"):
         if hparams.get(key) is not None:
             hparams[key] = str(Path(hparams[key]).resolve())

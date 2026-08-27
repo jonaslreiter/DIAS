@@ -9,22 +9,15 @@ Reads per-run results (written by ``experiments/validate_runs.py``) from local J
   N_SC  #seeds sound *and* complete
   n     #seeds aggregated
 
-Per seed, the seed's validation problems are reduced to a single precision / recall by micro-averaging the per-action tp/fp/fn in ``action_stats`` (so a seed is sound iff every problem has zero false positives); when tp/fp/fn are absent (e.g. W&B summaries) it falls back to the mean of per-problem precision/recall.
+A seed's problems are reduced to one precision / recall by micro-averaging their tp/fp/fn, falling back to the mean of per-problem rates when the counts are absent.
 
-With ``--sweep AXIS`` it instead reads the sub-experiments written by ``experiments/launch.py --sweep AXIS`` (``<experiment>-<tag><value>``) and prints one domain x value matrix per metric; ``--markdown`` writes the same matrices as markdown tables.
-
-``--threshold-sweep`` does the same for the *validation* binarization threshold (sub-experiments ``<experiment>-thr<T>`` written by ``experiments/launch_threshold_validation.py``). Those columns share one set of trained checkpoints, so they isolate the effect of the threshold alone.
-
-Without a sweep, ``--experiment`` takes any number of unrelated experiments (an ablation set, say): each gets its own table, and ``--markdown`` writes them into one document with a cross-experiment summary on top.
+``--sweep AXIS`` instead reads the sub-experiments ``launch.py --sweep`` wrote and prints one domain x value matrix per metric; ``--threshold-sweep`` does the same over the thresholds of ``launch_threshold_validation.py``, whose columns share one set of checkpoints. Without a sweep, ``--experiment`` takes any number of unrelated experiments, each with its own table.
 
 Usage:
-    python experiments/collect_results.py --experiment paper-main
-    python experiments/collect_results.py --experiment paper-main --source wandb
-    python experiments/collect_results.py --experiment noise-a2r2 --domains gripper hanoi
+    python experiments/collect_results.py --experiment paper-main [--source wandb] [--domains gripper hanoi]
     python experiments/collect_results.py --experiment dias-full abl-no-pcgrad --markdown experiments/results/ablations-summary.md
-    python experiments/collect_results.py --experiment dias-full --threshold-sweep --markdown experiments/results/threshold-sweep.md
     python experiments/collect_results.py --experiment aux-sweep --sweep aux-loss-weight --markdown experiments/results/aux-sweep.md
-    python experiments/collect_results.py --experiment dias --sweep num-slots --markdown experiments/results/num-slots-sweep.md
+    python experiments/collect_results.py --experiment dias-full --threshold-sweep --markdown experiments/results/threshold-sweep.md
 """
 
 from __future__ import annotations
@@ -56,7 +49,7 @@ ONE = 1.0 - 1e-9
 def _seed_precision_recall(per_problem: dict) -> tuple[float, float] | None:
     """Reduce one seed's per-problem results to a single (precision, recall).
 
-    Micro-averaged: the per-problem tp/fp/fn are summed, so a problem with many reachable successors counts for more than a small one. Those counts are per-action: a successor reached under the wrong operator is an error, which is why summing `action_stats` gives the same answer and is what results written before the totals existed are read through. The mean of per-problem precisions is a last resort for older W&B runs whose summaries carry nothing else. The counts arrive as floats from JSON.
+    Micro-averaged, so a problem with many reachable successors counts for more. Summing `action_stats` is the same answer, for a result written before the totals existed; the mean of per-problem rates is a last resort for W&B summaries carrying nothing else.
     """
 
     def counts(result: dict) -> tuple[int, int, int] | None:
@@ -176,7 +169,7 @@ METRIC_LABELS = {
 def _collect(
     experiment: str, args: argparse.Namespace
 ) -> dict[str, list[tuple[float, float]]]:
-    """Per-domain (precision, recall) pairs of an experiment, from the chosen source."""
+    """Per-domain (precision, recall) pairs, from the chosen source."""
     if args.source == "local":
         by_domain = collect_local(experiment, args.log_dir)
     else:
@@ -265,16 +258,12 @@ def write_sweep_markdown(
 def run_sweep(args: argparse.Namespace, axis_name: str, values: list[float]) -> None:
     """Collect one sub-experiment per value and print/write the domain x value grid."""
     axis = SWEEP_AXES[axis_name]
-    # Same name derivation as the launcher, so a column reads the sub-experiment that launch.py wrote.
     names = {v: sweep_experiment_name(args.experiment, axis, v) for v in values}
     _report_matrix(args, axis_name, axis.param, values, names)
 
 
 def run_threshold_sweep(args: argparse.Namespace, values: list[float]) -> None:
-    """Collect the re-validations written by launch_threshold_validation.py.
-
-    Unlike --sweep this varies a *validation* parameter, so every column reads the same trained checkpoints, so differences between columns are purely the effect of how the learned schema is binarized.
-    """
+    """Collect the re-validations written by launch_threshold_validation.py, whose columns all read the same checkpoints."""
     names = {v: threshold_experiment_name(args.experiment, v) for v in values}
     _report_matrix(args, "threshold", "binarization threshold", values, names)
 
@@ -356,12 +345,9 @@ def write_experiments_markdown(
     domains: list[str],
     source: str,
 ) -> None:
-    """Write one domain table per experiment, plus a cross-experiment summary.
-
-    Every table spans the union of the domains, so an experiment that is missing a domain entirely shows a row of ``-`` instead of silently dropping it.
-    """
+    """Write one domain table per experiment, plus a cross-experiment summary. Every table spans the union of the domains, so a missing one shows ``-`` rather than vanishing."""
     columns = (*METRICS, "n")
-    # Per domain, the seed count of the most complete experiment in the set: the yardstick for "is this experiment fully collected?".
+    # Per domain, the seed count of the most complete experiment in the set.
     expected = sum(
         max(len(results[e].get(d, [])) for e in experiments) for d in domains
     )
@@ -496,7 +482,6 @@ def main() -> int:
         raise SystemExit(
             f"--sweep / --threshold-sweep read the sub-experiments of a single base experiment; got {len(experiments)}: {', '.join(experiments)}"
         )
-    # The sweep paths derive sub-experiment names from one base name.
     args.experiment = experiments[0]
 
     if args.threshold_sweep is not None:

@@ -1,6 +1,6 @@
 """Unit tests for PDDL source manipulation.
 
-These helpers previously existed as private static methods duplicated across the three validator classes, where testing them meant constructing a ModelValidation: a checkpoint, a datamodule and two pymimir problems. As pure string functions they need none of that.
+They are pure string functions, so none of this needs a checkpoint, a datamodule or a pymimir problem.
 """
 
 import unittest

@@ -1,28 +1,24 @@
 #!/usr/bin/env python
 """Regenerate the scaling-study instances from the upstream PDDL generators.
 
-One instance per (domain, size) entry of ``experiments/scaling/configs/sizes.yaml``, written to ``experiments/scaling/instances/<domain>/n<num_objects>.pddl`` plus an ``index.json`` describing the ladder. Both are committed, so the study is reproducible without re-running the generators, which is why the repository does not vendor them: running the scaling study needs neither this script nor its toolchain.
-
-To change the ladder, clone and build the generators yourself and point ``--generators-dir`` at the checkout:
+One instance per (domain, size) entry of ``sizes.yaml``, written to ``instances/<domain>/n<num_objects>.pddl`` plus an ``index.json``. Both are committed, so running the study needs neither this script nor the generators, which is why they are not vendored. To change the ladder, build them yourself and point ``--generators-dir`` at the checkout:
 
     git clone https://github.com/AI-Planning/pddl-generators.git
 
-The generators emit their own dialect of each domain; this script rewrites their output to match the *repository's* ``pddl/<domain>/domain.pddl``, which is what training loads:
+Each generator emits its own dialect, rewritten here into the repository's ``pddl/<domain>/domain.pddl``:
 
 blocks-3
-    ``blocksworld <ops> <blocks> <seed>`` emits the ``blocksworld-3ops`` domain (no static equality predicate, untyped objects). Rewritten to the repo's ``blocksworld`` domain: objects get the ``- object`` type, and one ``(eq b b)`` fact per block is added; without it the ``(not (eq ?x ?y))`` preconditions are vacuously true and the transitions are wrong.
+    ``blocksworld-3ops`` to ``blocksworld``: objects get the ``- object`` type, and one ``(eq b b)`` fact per block, without which the ``(not (eq ?x ?y))`` preconditions are vacuously true.
 
 logistics
-    ``logistics -c .. -s .. -p .. -a ..`` emits the ``logistics-strips`` domain, which spells the package type ``OBJ``, the city topology ``in-city`` and has no ``vehicle`` supertype. Rewritten to the repo's ``logistics`` domain: ``OBJ`` -> ``object``, ``in-city`` -> ``loc``, plus a ``(vehicle ?v)`` fact for every truck and airplane.
+    ``logistics-strips`` to ``logistics``: ``OBJ`` -> ``object``, ``in-city`` -> ``loc``, plus a ``(vehicle ?v)`` fact per truck and airplane.
 
 delivery
-    ``delivery/generate.py`` already emits exactly the repo's ``delivery`` domain, so only the problem name changes. It needs `tarski`, which is not in the training environment, so it runs out of a throwaway venv created on demand under ``experiments/scaling/.venv-delivery`` (``--delivery-venv`` to reuse another one). Its CLI generates a whole (size x packages) tree in one go and seeds nothing, so it is invoked once per domain through a small wrapper that seeds ``random`` first, and the needed instances are picked out of the tree.
+    Already the repo's domain, so only the problem name changes. It needs `tarski`, so it runs from a throwaway venv under ``experiments/scaling/.venv-delivery``; its CLI seeds nothing and emits a whole tree at once, so a wrapper seeds ``random`` first and the needed instances are picked out.
 
 Usage
 -----
-    python experiments/scaling/generate_instances.py --generators-dir ../pddl-generators
-    python experiments/scaling/generate_instances.py --generators-dir DIR --domains blocks-3
-    python experiments/scaling/generate_instances.py --generators-dir DIR --force
+    python experiments/scaling/generate_instances.py --generators-dir ../pddl-generators [--domains blocks-3] [--force]
 """
 
 from __future__ import annotations
@@ -45,11 +41,11 @@ SIZES_CONFIG = SCALING_DIR / "configs" / "sizes.yaml"
 INSTANCES_DIR = SCALING_DIR / "instances"
 DEFAULT_DELIVERY_VENV = SCALING_DIR / ".venv-delivery"
 
-# The repo's own domain file, which generated instances are rewritten into and checked against. Imported rather than re-derived (see experiments/scaling/README.md).
+# The repo's own domain file, which instances are rewritten into and checked against.
 sys.path.append(str(SCALING_DIR.parent))
 from pipeline import domain_pddl  # noqa: E402
 
-# Number of objects implied by a size entry, per generator. Checked against the generated instance; the id (n<count>) is built from it.
+# Objects implied by a size entry. Checked against the instance; the id is built from it.
 OBJECT_COUNT = {
     "blocksworld": lambda s: s["blocks"],
     # airplanes + cities + trucks (= cities, the generator default) + locations
@@ -74,10 +70,7 @@ UPSTREAM_GENERATORS = "https://github.com/AI-Planning/pddl-generators.git"
 
 
 def require_generators(path: Path | None) -> Path:
-    """The generator checkout, or an error naming how to obtain one.
-
-    The generators are not vendored: the instances they produce are committed, so nothing but this script needs them.
-    """
+    """The generator checkout, or an error naming how to obtain one."""
     if path is None:
         raise SystemExit(
             f"--generators-dir is required to regenerate instances. Clone the upstream generators first:\n    git clone {UPSTREAM_GENERATORS}"
@@ -165,7 +158,7 @@ def _gen_delivery_tree(
 ) -> dict:
     """Run the delivery generator once; return {(grid, packages): pddl text}.
 
-    Its CLI has no seed and no single-instance mode: it always writes the full (grid size x package count) cross product below the requested maximum into ``./output``. So it is executed once per domain, in a scratch directory, through a wrapper that seeds ``random`` for reproducibility.
+    Its CLI has no seed and no single-instance mode, always writing the full cross product into ``./output``, so it runs once per domain in a scratch directory behind a seeding wrapper.
     """
     generator = generators / "delivery" / "generate.py"
     domain = generators / "delivery" / "domain.pddl"
@@ -226,7 +219,7 @@ def _parse_init_atoms(text: str) -> list[str]:
 def _rewrite_blocksworld(text: str, num_objects: int) -> str:
     objects = _parse_objects(text)
     atoms = _parse_init_atoms(text)
-    # Static equality: the repo domain guards its parameters with (not (eq ?x ?y)), which needs the reflexive facts to mean anything.
+    # The repo domain guards its parameters with (not (eq ?x ?y)), which needs these.
     atoms += [f"(eq {o} {o})" for o in objects]
     return _emit_problem(
         name=f"blocksworld-n{num_objects}",
@@ -251,7 +244,7 @@ def _rewrite_logistics(text: str, num_objects: int) -> str:
         elif lowered in ("truck", "airplane"):
             vehicles.append(args[0])
         atoms.append(f"({' '.join([name, *args])})")
-    # The repo domain shares load/unload across trucks and airplanes via a `vehicle` supertype predicate, which the generator does not emit.
+    # The repo domain shares load/unload via a `vehicle` predicate the generator omits.
     atoms = [f"(vehicle {v})" for v in vehicles] + atoms
     return _emit_problem(
         name=f"logistics-n{num_objects}",
@@ -262,7 +255,7 @@ def _rewrite_logistics(text: str, num_objects: int) -> str:
 
 
 def _rewrite_delivery(text: str, num_objects: int) -> str:
-    # The generator's domain is the repo's domain, so the text passes through (goal included) with only the problem renamed.
+    # Already the repo's domain, so only the problem name changes.
     return re.sub(
         r"\(problem\s+[^)]*\)", f"(problem delivery-n{num_objects})", text, count=1
     ).lstrip()
@@ -270,7 +263,7 @@ def _rewrite_delivery(text: str, num_objects: int) -> str:
 
 def _emit_problem(name: str, domain: str, objects: str, atoms: list[str]) -> str:
     body = "\n".join(f"    {atom}" for atom in atoms)
-    # Goals are irrelevant here (training samples transitions by random walk from the initial state), so the rebuilt problems get the empty goal, like pddl/blocks-3/train.pddl. (Delivery keeps the generator's goal; it is passed through rather than rebuilt.)
+    # Training walks from the initial state, so a rebuilt problem gets the empty goal.
     return f"(define (problem {name})\n (:domain {domain})\n (:objects {objects})\n (:init\n{body})\n (:goal  (and)))\n"
 
 
@@ -285,10 +278,7 @@ REWRITERS = {
 
 
 def _verify(domain_file: Path, problem_pddl: Path, expected_objects: int) -> dict:
-    """Load the instance with pymimir and confirm the derived object count.
-
-    Returns the metadata that goes into ``index.json`` (object / predicate / action counts), or ``{}`` when pymimir is unavailable: the check is a convenience, not a hard dependency of instance generation.
-    """
+    """Load the instance with pymimir and confirm the derived object count, returning the metadata for ``index.json``, or ``{}`` when pymimir is unavailable."""
     try:
         import pymimir
     except ImportError:
@@ -409,7 +399,7 @@ def main() -> int:
             args.delivery_venv,
         )
 
-    # Merge into any existing index so a per-domain run does not drop the others.
+    # Merged, so a per-domain run does not drop the others.
     index_path = INSTANCES_DIR / "index.json"
     merged = json.loads(index_path.read_text()) if index_path.exists() else {}
     merged.update(index)

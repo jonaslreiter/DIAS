@@ -1,12 +1,6 @@
-"""Reading checkpoints written before the format was versioned.
+"""Bringing an old checkpoint layout up to the current format.
 
-The current format is version 1. Everything older is the single layout that came before it (what the paper's runs were written with, which carried no stamp at all), so an absent stamp means "older than 1" and one rule brings it up to date. The refactor that produced version 1 passed through several intermediate layouts, but none of them left the branch, so there is no format between the two and no rule for one.
-
-**Version 1 is still being written.** Until this work reaches main, another change to the layout belongs in `_from_unversioned` beside the rest; nothing carries a version-1 stamp that anyone else has to keep reading. After the merge that stops being true, and a change to what the model stores needs version 2 and a rule of its own: editing this one would change what an already-published checkpoint means.
-
-Loading is driven by the stamp rather than by a failed load, because Lightning drops hyper-parameters it does not recognise instead of raising: a renamed one would quietly fall back to its default and change what an archived run means.
-
-The rules read and write plain dictionaries, never the live schedule or model classes. A rule that built today's objects would break as soon as those classes changed again, which is precisely the situation it exists to handle.
+Driven by the version stamp, not by a failed load: Lightning drops hyper-parameters it does not recognise instead of raising. The rules read and write plain dictionaries, never the live classes.
 """
 
 from __future__ import annotations
@@ -15,7 +9,7 @@ import re
 
 CHECKPOINT_VERSION = 1
 VERSION_KEY = "dias_checkpoint_version"
-# What an absent stamp means: written before the stamp existed.
+# An absent stamp: written before the stamp existed.
 UNVERSIONED = 0
 
 EXPONENTIAL = "dias.schedules.Exponential"
@@ -37,7 +31,7 @@ _ENCODER_CONV = re.compile(r"^state_encoder\.convs\.(\d+)\.")
 # Derived from the constructor arguments, and rebuilt from them on load.
 _DROPPED_KEYS = ("graph_edit.action_arities_t", "_action_rel_lookup")
 
-# Hyper-parameters the constructor no longer takes. Plotting is a callback's business now, and the batch size was the datamodule's all along: the model stored it and never read it. Neither affected any weights.
+# Hyper-parameters the constructor no longer takes; neither ever affected any weights.
 _DROPPED_HPARAMS = ("parameter_plotting", "batch_size")
 
 
@@ -46,12 +40,7 @@ def _spec(class_path: str, **init_args) -> dict:
 
 
 def _drop_final_encoder_bias(state: dict) -> None:
-    """Remove the last convolution's bias, which the loss never saw.
-
-    Nothing is normalised after that convolution, so its bias added the same vector to every object embedding; the slot scores are a plain inner product, so it reached the assignment as a per-slot constant, which Sinkhorn's row scaling removes exactly. Its gradient was therefore float32 round-off, which Adam normalised into a random walk. Discarding a learned value is safe precisely because no learning ever reached it.
-
-    Which convolution is last follows `encoder_hidden_dims`, so the index is read off the state dict rather than assumed.
-    """
+    """Remove the last convolution's bias, which no gradient ever reached (see `RelationalEncoder`). Which one is last follows `encoder_hidden_dims`, so the index is read off the state dict."""
     indices = [
         int(match.group(1))
         for key in state
@@ -86,7 +75,7 @@ def _migrate_state_dict(state: dict) -> None:
 def _migrate_tau_schedule(hparams: dict) -> None:
     """Rebuild tau from the unversioned schedule dictionary and its offset.
 
-    That layout held a collection of named loss-weight schedules that only ever had one member, and added `gmean_offset` to whatever it returned. The offset was an asymptote the schedule had to be pre-scaled around, so it becomes the floor; the decay itself was anchored on its value at step T rather than stated as a rate, so ``factor`` per ``every`` steps replaces it. The trajectory is identical, which is what the noise runs depend on.
+    The offset was the asymptote, so it becomes the floor; the decay was anchored on its value at step T, so ``factor`` per ``every`` steps replaces it. Same trajectory.
     """
     if "loss_weight_schedule" not in hparams and "gmean_offset" not in hparams:
         return
@@ -119,10 +108,7 @@ def _migrate_tau_schedule(hparams: dict) -> None:
 
 
 def _from_unversioned(checkpoint: dict) -> None:
-    """Bring the layout the paper's runs were written with up to date.
-
-    Finding nothing to change is not an error: not every old checkpoint contains everything version 1 renamed.
-    """
+    """Bring the pre-versioning layout up to date. Finding nothing to change is not an error."""
     if checkpoint.get("state_dict") is not None:
         _migrate_state_dict(checkpoint["state_dict"])
     hparams = checkpoint.get("hyper_parameters")

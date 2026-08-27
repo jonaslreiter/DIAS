@@ -1,7 +1,4 @@
-"""What an action changes about a state.
-
-Two sources, one interface: DIAS learns one effect tensor per action, while the MLP baseline predicts the effects from the state the action is applied to.
-"""
+"""What an action changes about a state: one learned tensor per action (DIAS), or predicted from the state (the MLP baseline)."""
 
 from __future__ import annotations
 
@@ -16,10 +13,7 @@ HIDDEN_DIM = 64
 
 
 class EffectSource(nn.Module):
-    """Per-action effect logits over ignore / add / delete.
-
-    Subclasses supply the raw logits; the arity mask is applied here, so a source cannot emit an effect on a cell no lifted schema could express.
-    """
+    """Per-action effect logits over ignore / add / delete. Subclasses supply the raw logits; the arity mask is applied here, so no source can skip it."""
 
     def __init__(self, arity_relations: Sequence[int], num_slots: int):
         super().__init__()
@@ -47,10 +41,7 @@ class EffectSource(nn.Module):
         raise NotImplementedError
 
     def action_logits(self) -> torch.Tensor | None:
-        """Masked logits for every action, or None if they depend on the state.
-
-        None is what tells a reader (schema decoding, plotting) that this model has no lifted effects to report, rather than letting it find out by hitting a missing attribute.
-        """
+        """Masked logits for every action, or None if they depend on the state."""
         raise NotImplementedError
 
 
@@ -74,10 +65,7 @@ class StaticEffects(EffectSource):
 
 
 class StateDependentEffects(EffectSource):
-    """Effects predicted from the current state: the MLP baseline.
-
-    The state is projected onto the action's slots first, so the network sees the lifted state a schema would be read against rather than the instance.
-    """
+    """Effects predicted from the current state: the MLP baseline. The state is projected onto the action's slots first, so the network sees a lifted state rather than the instance."""
 
     def __init__(
         self, num_actions: int, arity_relations: Sequence[int], num_slots: int

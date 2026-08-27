@@ -1,16 +1,11 @@
 #!/usr/bin/env python
-"""Walk one domain's size ladder for one seed (compute-side driver).
+"""Walk one domain's size ladder for one seed: what a Slurm array task runs, and the analogue of ``experiments/validate_runs.py``.
 
-This is what a Slurm array task runs (``experiments/scaling/slurm/benchmark.sh``, array task id = seed) and what ``experiments/scaling/launch_scaling.py --backend local`` calls directly. It is the analogue of ``experiments/validate_runs.py`` in the main pipeline.
-
-Every size runs as its own ``experiments/scaling/benchmark.py`` subprocess. That is the point of the indirection: a CUDA OOM (expected at the top of the ladder) leaves the process's allocator in a state not worth trusting for the next measurement, and one dead subprocess costs one point instead of the whole ladder. The subprocess still records the OOM to JSON, so the ladder keeps its data.
-
-All sizes of one (domain, seed) run in the same task, hence on the same physical GPU, so a curve is never stitched together across cards.
+Every size is its own ``benchmark.py`` subprocess, which is the point of the indirection: a CUDA OOM is expected at the top of the ladder, and one dead subprocess costs one point rather than the whole ladder. All sizes of one (domain, seed) share a task, hence one physical GPU, so a curve is never stitched across cards.
 
 Usage
 -----
-    python experiments/scaling/run_scaling.py --domain blocks-3 --seed 0
-    python experiments/scaling/run_scaling.py --domain delivery --seed 2 --experiment scaling-a10
+    python experiments/scaling/run_scaling.py --domain blocks-3 --seed 0 [--experiment scaling-a10]
 """
 
 from __future__ import annotations
@@ -32,10 +27,7 @@ PROJECT_ROOT = SCALING_DIR.parents[1]
 
 
 def ladder_for(domain: str, cfg: dict) -> list[tuple[int, str]]:
-    """(target rung, instance id) of a domain's ladder, smallest first.
-
-    The rung is what makes the three domains comparable: they scale in different units and cannot all land on the same object count (see sizes.yaml).
-    """
+    """(target rung, instance id) of a domain's ladder, smallest first. The rung is what makes the domains comparable: they scale in different units."""
     spec = cfg["domains"][domain]
     generator = spec["generator"]
     rungs = [
@@ -100,7 +92,7 @@ def run_ladder(
         proc = subprocess.run(cmd)
         elapsed = time.perf_counter() - t0
         if proc.returncode != 0:
-            # An OOM exits 0 with status="oom" recorded; a non-zero exit is a real failure (crash, missing config, killed task).
+            # An OOM exits 0 with status="oom" recorded; a non-zero exit is a real failure.
             failures += 1
             print(
                 f"[{domain} seed={seed}] {instance}: benchmark failed (exit {proc.returncode}, {elapsed:.0f}s)",

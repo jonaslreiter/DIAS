@@ -34,10 +34,7 @@ class CLI(LightningCLI):
             )
 
     def before_instantiate_classes(self):
-        """Say what this run is, before anything slow starts.
-
-        A run is composed from two or three config files and then overridden on the command line, so which domain it ended up on is not something a reader can see from the command they typed. Reported from the parsed config rather than from the datamodule, so it comes first.
-        """
+        """Say what this run is, before anything slow starts: a chain of config files plus command-line overrides does not say on its face which domain it landed on."""
         super().before_instantiate_classes()
         config = self.config.get(self.subcommand, self.config)
         self._seed_the_data_from_the_run(config)
@@ -55,13 +52,10 @@ class CLI(LightningCLI):
 
     @staticmethod
     def _seed_the_data_from_the_run(config) -> None:
-        """Let the walk follow the run's seed unless it was given one of its own.
-
-        Two seeds that a launcher always sets to the same value are one seed with two places to forget it, and the one that gets forgotten is silent: the run trains on a different sample under the same name. The datamodule's `seed` therefore defaults to None, meaning "whatever seeded this run", and is filled in here rather than read back from the global state, so the config the run saves records the number it actually sampled under.
-        """
+        """Let the walk follow the run's seed unless it was given one of its own, so the saved config records the number it sampled under."""
         data = config.get("data", {}).get("init_args", {})
         seed = config.get("seed_everything")
-        # `seed_everything` is a union of bool and int, and in Python a bool passes for one: True means "draw one", which by here has been replaced by the drawn number unless the run is not seeding at all.
+        # A bool passes for an int here: True means "draw one", already replaced by the drawn number unless the run is not seeding at all.
         if isinstance(seed, bool) or not isinstance(seed, int):
             return
         if getattr(data, "seed", False) is None:
@@ -77,7 +71,6 @@ class SaveAndLogConfigCallback(SaveConfigCallback):
             os.makedirs(Path(trainer.log_dir) / run_dir, exist_ok=True)
             self.config_filename = run_dir / self.config_filename
             super().setup(trainer, pl_module, stage)
-            # The one line a user needs when a run lands somewhere unexpected.
             logger.info("Writing this run to %s.", Path(trainer.log_dir) / run_dir)
         else:
             logger.info("Writing this run to %s.", trainer.default_root_dir)
@@ -92,12 +85,12 @@ class SaveAndLogConfigCallback(SaveConfigCallback):
 
 
 def main():
-    # The library reports through `logging`, which discards INFO until someone configures a handler; the entry point is the one place that may.
+    # The library discards INFO until someone configures a handler; an entry point is the only place that may.
     logging.basicConfig(level=logging.INFO, format="%(name)s: %(message)s")
     torch.set_float32_matmul_precision("medium")
 
     CLI(
-        # No logger here: which W&B account a run belongs to is a property of whoever is running it, so it is declared in configs/main.yaml (where it can be edited or overridden) rather than compiled into the library. Without a config, Lightning's own account-free default applies.
+        # No logger: the W&B account belongs in configs/main.yaml, not the library.
         trainer_defaults={
             "callbacks": [
                 ModelCheckpoint(filename="final-{epoch}-{step}"),
@@ -108,9 +101,9 @@ def main():
             ],
         },
         save_config_callback=SaveAndLogConfigCallback,
-        # Let a re-launched (experiment, domain, seed) overwrite its own saved config instead of aborting: deterministic run ids mean re-runs reuse the same run directory.
+        # Run ids are deterministic, so a re-run reuses its directory and overwrites its own saved config.
         save_config_kwargs={"overwrite": True},
-        # A run that names no seed still records the one it drew, in the config it saves: reproducible after the fact, without every unseeded run being the same run. The range is the one Lightning accepts for a seed.
+        # An unseeded run still records the seed it drew, in the config it saves.
         seed_everything_default=random.randrange(2**32),
     )
 

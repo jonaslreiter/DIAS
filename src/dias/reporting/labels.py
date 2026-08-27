@@ -4,7 +4,7 @@
 def resolve_label_names(
     datamodule, num_actions: int, num_relations: int, num_objects: int
 ):
-    """Resolve action / relation / object display names from a datamodule with numeric fallbacks."""
+    """Display names from a datamodule, with numeric fallbacks."""
 
     def _normalise(names, target_len, prefix):
         lst = [] if names is None else list(names)

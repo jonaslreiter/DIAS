@@ -1,7 +1,4 @@
-"""Parsing and rewriting of PDDL source text.
-
-Strings in, strings out: nothing here touches the filesystem or pymimir, so it is all unit-testable without either.
-"""
+"""Parsing and rewriting of PDDL source text. Strings in, strings out: nothing here touches the filesystem or pymimir."""
 
 from __future__ import annotations
 
@@ -14,10 +11,7 @@ REQUIREMENTS_PATTERN = re.compile(r"\(:requirements([^)]*)\)", re.IGNORECASE)
 
 
 def find_balanced_expr(text: str, start_idx: int) -> tuple[str, int]:
-    """Return the first parenthesised expression at or after `start_idx`.
-
-    Yields the expression and the index just past its closing paren.
-    """
+    """The first parenthesised expression at or after `start_idx`, and the index past its closing paren."""
     left = text.find("(", start_idx)
     if left == -1:
         raise ValueError("Expected balanced expression but found no '('")
@@ -78,10 +72,7 @@ def parse_typed_parameters(
 
 
 def parse_type_groups(domain_text: str) -> list[tuple[list[str], str]]:
-    """The domain's ``(:types ...)`` as ``(children, parent)`` groups, in order.
-
-    Grouping is kept rather than flattened to a child -> parent map because callers that emit text depend on children and their parent staying adjacent.
-    """
+    """The domain's ``(:types ...)`` as ``(children, parent)`` groups, in order. Kept grouped rather than flattened: callers that emit text need children and parent adjacent."""
     match = TYPES_PATTERN.search(domain_text)
     if match is None:
         return []

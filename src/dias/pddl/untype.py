@@ -1,7 +1,4 @@
-"""Rewriting typed PDDL as untyped PDDL.
-
-Learned schemas are untyped, so validating them against a typed domain means compiling the types away: the type hierarchy becomes unary static predicates asserted in ``:init``, and ``(= ?x ?y)`` becomes an ordinary predicate. Both functions take and return PDDL source.
-"""
+"""Rewriting typed PDDL as untyped PDDL, which is what validating an untyped learned schema against a typed domain needs: the type hierarchy becomes unary static predicates in ``:init``, and ``(= ?x ?y)`` an ordinary predicate."""
 
 from __future__ import annotations
 
@@ -21,13 +18,13 @@ def strip_problem_types(
 ) -> str:
     """Remove the type annotations from a problem's ``:objects``.
 
-    With *domain_text*, the type hierarchy is read from the domain and the type-derived unary atoms (``(cell c_0_0)``, ``(locatable p1)``) are added to ``:init``, so the untyped learned domain can use them as static preconditions. Named reflexive predicates get ``(name o o)`` for every object, which is how ``(= ?x ?y)`` survives the translation.
+    With *domain_text*, type-derived unary atoms (``(cell c_0_0)``) go into ``:init`` so the untyped domain can use them as static preconditions. Named reflexive predicates get ``(name o o)`` per object, which is how ``(= ?x ?y)`` survives.
     """
     type_atoms: list[str] = []
 
     if domain_text is not None:
         parents = pddl_text.type_parents(domain_text)
-        # Tokenize "obj1 obj2 - typename" rather than splitting on '-', so object names containing a hyphen (e.g. "p1-0") stay intact.
+        # Tokenize rather than split on '-', so object names like "p1-0" stay intact.
         match = re.search(r"\(:objects(.*?)\)", problem_text, re.DOTALL)
         tokens = match.group(1).split() if match else []
         pending: list[str] = []
@@ -80,9 +77,7 @@ def extract_domain_header(
 ) -> str:
     """Return everything before the first ``:action``, untyped.
 
-    ``:requirements`` is rewritten to guarantee ``:negative-preconditions``, and ``:equality`` is kept only if the original declared it, so pymimir does not materialise reflexive ``(= x x)`` atoms the original domain would not have.
-
-    Given *rel_names* and *predicate_arities*, the ``:predicates`` block is rebuilt from scratch: the learned relations, then the type-derived predicates, then anything the original declared that neither covers. That makes the generated domain self-contained.
+    ``:requirements`` gains ``:negative-preconditions``, and keeps ``:equality`` only if the original declared it, so pymimir does not materialise reflexive ``(= x x)`` atoms. Given *rel_names* and *predicate_arities*, ``:predicates`` is rebuilt so the generated domain is self-contained.
     """
     action_start = domain_text.find("(:action")
     if action_start == -1:
@@ -90,6 +85,7 @@ def extract_domain_header(
     else:
         header = domain_text[:action_start].rstrip()
 
+    # Rewrite :requirements in place, after the (define (domain ...)) line.
     orig_reqs_match = re.search(r"\(:requirements([^)]*)\)", domain_text)
     needs_equality = bool(orig_reqs_match and ":equality" in orig_reqs_match.group(1))
     reqs = ":negative-preconditions"
@@ -101,6 +97,7 @@ def extract_domain_header(
         pos = m_def.end()
         header = header[:pos] + f"\n  (:requirements {reqs})" + header[pos:]
 
+    # Drop the type declarations and every typed parameter annotation.
     header = re.sub(r"\(:types[^)]*\)\s*", "", header)
     header = re.sub(r":typing\s*", "", header)
     header = re.sub(r"(\?\w+)\s+-\s+\w+", r"\1", header)
@@ -108,6 +105,7 @@ def extract_domain_header(
     if rel_names is None or predicate_arities is None:
         return header
 
+    # Rebuild :predicates from the learned relations, the type names and whatever the original declared beyond both.
     pred_start = header.find("(:predicates")
     if pred_start != -1:
         block, _ = pddl_text.find_balanced_expr(header, pred_start)
@@ -169,10 +167,7 @@ def problem_object_names(problem_text: str) -> list[str]:
 
 
 def inject_reflexive_atoms(problem_text: str, predicate_names: list[str]) -> str:
-    """Assert ``(p o o)`` in :init for each named predicate and every object.
-
-    Domains that declare their own equality-like predicate expect those atoms in the initial state; problem files written elsewhere do not supply them.
-    """
+    """Assert ``(p o o)`` in :init for each named predicate and every object, which a domain with its own equality-like predicate expects and a foreign problem file does not supply."""
     objects = problem_object_names(problem_text) if predicate_names else []
     if not objects:
         return problem_text
@@ -188,10 +183,7 @@ def untype_action(
     equality_predicate_name: str | None = None,
     ignored_types: frozenset[str] = frozenset(),
 ) -> str:
-    """Rewrite one ``(:action ...)`` block without types.
-
-    Each typed parameter becomes an ordinary unary precondition, which is what lets an untyped learned schema be compared against a typed domain. Types in *ignored_types* carry no information and are dropped instead.
-    """
+    """Rewrite one ``(:action ...)`` block without types: each typed parameter becomes a unary precondition, except the uninformative ones in *ignored_types*."""
     match = re.match(r"\(\s*:action\s+(\S+)", action_block)
     if match is None:
         raise ValueError("Failed to parse action name")

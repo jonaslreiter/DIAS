@@ -1,7 +1,4 @@
-"""The gradient combiners, on gradients whose right answer is known by hand.
-
-Every case here uses losses that are linear in the parameters, so each loss's gradient *is* the vector it was built from and the expected result can be written down rather than recomputed by the code under test.
-"""
+"""The gradient combiners, on losses linear in the parameters: each gradient *is* the vector it was built from, so the expected result is written down rather than recomputed by the code under test."""
 
 import unittest
 

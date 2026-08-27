@@ -14,7 +14,6 @@ class ProcessModelLogitsTest(unittest.TestCase):
         precondition_logits[..., 1] = 10.0
         effect_logits[..., -1] = 10.0
         slot_logits = torch.tensor([[10.0, -10.0, -10.0], [-10.0, -10.0, -10.0]])
-        # By keyword: the two used to be passed the other way round, and the call sites cancelled the swap by passing them backwards too.
         result = process_model_logits(
             effect_logits=effect_logits,
             precondition_logits=precondition_logits,

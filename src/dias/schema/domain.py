@@ -1,7 +1,4 @@
-"""The shape of a planning domain: its relations, actions, and objects.
-
-Everything downstream (tensor layout, model dimensions, schema transpilation, validation) is a function of these lists. Keeping them in one immutable value means a consumer that only needs metadata does not have to build a datamodule, sample transitions, or touch a dataset.
-"""
+"""The shape of a planning domain: its relations, actions and objects. Everything downstream is a function of these lists, so a consumer that only needs metadata builds this instead of a datamodule."""
 
 from __future__ import annotations
 
@@ -16,7 +13,7 @@ DEFAULT_STATICS = ("number", "object")
 class DomainSchema:
     """Relation, action and object metadata for one (domain, problem) pair.
 
-    ``relation_*`` covers only the predicates represented as tensor channels: arity <= 2, after the static filter. ``action_arg_positions`` is the supervision projection: empty lists when action arguments are unobserved.
+    ``relation_*`` covers only the predicates that become tensor channels; ``action_arg_positions`` is empty where action arguments are unobserved.
     """
 
     relation_names: tuple[str, ...]
@@ -161,10 +158,7 @@ def tensor_relations(
     include_statics: bool = False,
     default_statics: Sequence[str] | None = None,
 ) -> list[Mapping]:
-    """The predicates that become channels of the adjacency tensor.
-
-    Arity above two has no dense representation, and a static predicate is a property of the instance rather than of its state, except when statics are asked for, where the ones every domain declares are dropped anyway.
-    """
+    """The predicates that become channels of the adjacency tensor: arity at most two, and statics only when asked for, minus the ones every domain declares."""
     default_statics = default_statics or DEFAULT_STATICS
     keep = []
     for p in predicates:

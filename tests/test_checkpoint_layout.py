@@ -1,8 +1,6 @@
-"""Executable record of the unversioned checkpoint layout.
+"""Executable record of the unversioned checkpoint layout: the keys a checkpoint with no format stamp has.
 
-The paper's trained checkpoints carry no format stamp and have exactly the keys listed below. Nothing here reads a real checkpoint: the dict is built by hand, so the layout stays documented even after the code that produced it is gone.
-
-That layout is the only one older than version 1, so it is the only one the migration has a rule for. While version 1 is still unmerged, a further rename or regrouping extends that rule and this record; once it is released, such a change makes a second older format and needs version 2 instead.
+Nothing here reads a real one; the dict is built by hand, so the layout stays documented after the code that produced it is gone.
 """
 
 import unittest
@@ -47,7 +45,7 @@ UNVERSIONED_HPARAMS = {
     },
 }
 
-# The unversioned layout kept the schema flat on the prediction module and declared the encoder's layers one attribute at a time. `checkpoints.pre_split_name` maps today's names back; it is stated there independently of the migration, so a rename that forgets a rule fails a test rather than an archived run.
+# That layout kept the schema flat on the prediction module and declared the encoder's layers one attribute at a time; `checkpoints.pre_split_name` maps today's names back.
 UNVERSIONED_SCHEMA_KEYS = (
     "graph_edit.slot_encodings",
     "graph_edit.slot_weight_logits",
@@ -55,7 +53,7 @@ UNVERSIONED_SCHEMA_KEYS = (
     "graph_edit.effects",
 )
 
-# Derived from constructor arguments yet persisted then. Both are rebuilt on load now, so the migration drops them and nothing derived is checkpointed.
+# Derived from constructor arguments yet persisted then; both are rebuilt on load now, so the migration drops them.
 UNVERSIONED_DERIVED_KEYS = ("_action_rel_lookup", "graph_edit.action_arities_t")
 UNVERSIONED_ENCODER_KEYS = tuple(
     f"dynamics_model.conv{i}.{suffix}"
@@ -67,11 +65,11 @@ UNVERSIONED_ENCODER_KEYS = tuple(
     for suffix in ("weight", "bias")
 )
 
-# The last convolution's bias, which that layout stored and the current encoder does not declare: the loss could never see it (nothing is normalised after that layer, so it shifted every object embedding alike, and Sinkhorn removes a per-slot constant exactly). Archived runs carry a learned value for it, and dropping that on load is what this key is here to pin.
+# Stored by that layout, not declared by the current encoder. Pins that it is dropped on load.
 RETIRED_ENCODER_KEY = "dynamics_model.conv6.bias"
 
 
-# Hyper-parameters that layout had which the current constructor no longer takes. Each one needs a matching rule in dias.models.checkpoints, which is what keeps archived runs loadable.
+# Hyper-parameters that layout had which the current constructor no longer takes; each needs a matching rule in dias.models.checkpoints.
 UNVERSIONED_ONLY_HPARAMS = {
     "loss_weight_schedule",
     "gmean_offset",
@@ -121,7 +119,7 @@ def build_unversioned_checkpoint(marker: float = 0.125) -> dict:
         UNVERSIONED_HPARAMS["action_arities"]
     )
     state_dict["_action_rel_lookup"] = torch.tensor([[0, 1], [2, -1]])
-    # Not produced by the current model, so it is put back by hand, with a value no zero-initialised bias would have, so a migration that kept it would be visible rather than plausible.
+    # Put back by hand, at a value no zero-initialised bias would have, so a migration that kept it is visible rather than plausible.
     state_dict[RETIRED_ENCODER_KEY] = torch.full(
         (UNVERSIONED_HPARAMS["object_dim"],), 0.75
     )

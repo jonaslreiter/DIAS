@@ -7,7 +7,7 @@ import torch
 
 from dias.schema import DomainSchema
 
-# What today's parameters were called before the models/ split, stated here rather than read out of dias.models.checkpoints: a rename that forgets its migration rule has to fail a test, not an archived run.
+# What today's parameters were called before the models/ split. Stated independently of dias.models.checkpoints, so a rename that forgets its migration rule fails here.
 _PRE_SPLIT_NAMES = {
     "graph_edit.selector.slot_encodings": "graph_edit.slot_encodings",
     "graph_edit.selector.slot_weight_logits": "graph_edit.slot_weight_logits",
@@ -53,10 +53,7 @@ def domain_schema() -> DomainSchema:
 
 
 def build_model(**overrides):
-    """A small untrained DIAS for blocks-3, plus the hparams it was built from.
-
-    The narrow encoder keeps the golden fixtures small; nothing here depends on the widths.
-    """
+    """A small untrained DIAS for blocks-3, plus the hparams it was built from."""
     from dias.models.dias import DIAS
 
     schema = domain_schema()
@@ -89,7 +86,7 @@ def save(directory: Path, model, model_hparams: dict, model_id: str = "run0") ->
         "epoch": 1,
         "global_step": 10,
     }
-    # Stamped the way Lightning would, so it is not mistaken for a v1 file.
+    # Stamped as Lightning would, so it is not mistaken for an older layout.
     model.on_save_checkpoint(checkpoint)
     torch.save(checkpoint, checkpoints / "best-epoch=1-step=10.ckpt")
     model.teardown("build")

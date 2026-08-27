@@ -1,8 +1,6 @@
-"""What every script in the DIAS experiment pipeline shares.
+"""What every script in the DIAS experiment pipeline shares: the paths, the domain-folder layout, the sbatch flag builders, the seed parsing and the validator table.
 
-The launchers, the per-run validation step, the result collector and the scaling study all need the same handful of things: where the repository is, how to read a YAML config, how to turn resource settings into sbatch flags, which seeds a run covers, and which validator a name refers to. Each of those is declared here once, so the scripts cannot drift apart on any of them, which they had, down to spelling the same option ``--log-dir`` in one place and ``--logs-dir`` in another.
-
-Nothing here imports torch or pymimir: submitting jobs must work on a login node with nothing but PyYAML installed.
+Nothing here imports torch or pymimir: submitting jobs must work on a login node with nothing but PyYAML.
 """
 
 from __future__ import annotations
@@ -19,7 +17,7 @@ import yaml
 
 # ── where everything is ───────────────────────────────────────────────────────
 #
-# This file sits in experiments/, the folder you run the pipeline from: the launchers, the Slurm scripts, the orchestration configs and the collected tables are its siblings. What stays at the repository root is what is not about running a sweep: the Lightning configs `dias fit` reads (CONFIGS_DIR) and the domains (PDDL_DIR).
+# The launchers, Slurm scripts, orchestration configs and collected tables are this file's siblings. At the repository root sits what is not about running a sweep: the Lightning configs `dias fit` reads (CONFIGS_DIR) and the domains (PDDL_DIR).
 
 EXPERIMENTS_ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = EXPERIMENTS_ROOT.parent
@@ -29,7 +27,7 @@ PIPELINE_CONFIGS = EXPERIMENTS_ROOT / "configs"
 RESULTS_DIR = EXPERIMENTS_ROOT / "results"
 
 CONFIGS_DIR = PROJECT_ROOT / "configs"
-# The `dias fit` overlays: mlp, noise, ablation-*. Named for the --experiment -type / --ablation flags that select them, not for the folder above.
+# The `dias fit` overlays: mlp, noise, ablation-*, selected by --experiment-type / --ablation.
 OVERLAYS_DIR = CONFIGS_DIR / "experiments"
 PDDL_DIR = PROJECT_ROOT / "pddl"
 
@@ -39,7 +37,7 @@ SLURM_RESOURCES = PIPELINE_CONFIGS / "slurm-resources.yaml"
 SLURM_RESOURCES_VALIDATION = PIPELINE_CONFIGS / "slurm-resources-validation.yaml"
 LOGS_DIR = PROJECT_ROOT / "logs"
 
-# Which W&B account and project the runs live in. An unset entity means "whichever account is logged in", so a clone needs no edit here.
+# An unset entity means whichever account is logged in, so a clone needs no edit here.
 WANDB_PROJECT = os.environ.get("WANDB_PROJECT", "dias")
 WANDB_ENTITY = os.environ.get("WANDB_ENTITY") or None
 
@@ -50,7 +48,7 @@ def load_yaml(path: Path) -> dict:
 
 # ── where a domain's files are ────────────────────────────────────────────────
 #
-# A domain is a folder under pddl/ with standardized filenames in it, and the folder name is the domain name. There is no manifest: a list repeating what the layout already says is a second source of truth, and the two drift.
+# A domain is a folder under pddl/, named for the domain. There is no manifest; these names are the layout.
 
 DOMAIN_FILE = "domain.pddl"
 TRAIN_PROBLEM = "train.pddl"
@@ -94,9 +92,9 @@ def available_domains() -> list[str]:
 def run_command(cmd: list[str], dry_run: bool, capture: bool = True) -> str | None:
     """Print a command and run it, or only print it.
 
-    ``capture`` is what an sbatch call needs: the job id comes back on stdout. A long-running child such as a training run wants the opposite: with ``capture=False`` it inherits this terminal, so its progress appears while it happens rather than being swallowed and thrown away at the end.
+    sbatch needs ``capture``, for the job id on stdout; a training run wants the opposite, so its progress appears while it happens.
     """
-    # shlex.join keeps the printed command copy-pasteable: sweep overrides can carry a JSON value, whose quotes a plain join would lose.
+    # shlex.join keeps the printed command copy-pasteable.
     print("  " + shlex.join(cmd), flush=True)
     if dry_run:
         return None
@@ -114,7 +112,7 @@ def run_command(cmd: list[str], dry_run: bool, capture: bool = True) -> str | No
 class Validator:
     """One way of scoring a learned action model against the real domain.
 
-    ``binarizes_schema`` says whether a derivation threshold applies: only a model that emits lifted precondition/effect tensors has anything to binarize. ``from_checkpoint`` separates the two that read a trained model from L1, which is handed a learned PDDL domain someone else produced.
+    ``binarizes_schema``: only a model with lifted schema tensors has anything to threshold. ``from_checkpoint``: L1 is handed a learned PDDL domain instead of a trained model.
     """
 
     name: str
@@ -148,7 +146,7 @@ VALIDATORS: dict[str, Validator] = {
     ),
 }
 
-# Which validator each experiment type scores with. Noise is a training-side setting, so its runs are still DIAS models.
+# Noise is a training-side setting, so its runs are still DIAS models.
 EXPERIMENT_VALIDATOR = {"dias": "dias", "noise": "dias", "mlp": "mlp"}
 EXPERIMENT_TYPES = tuple(EXPERIMENT_VALIDATOR)
 
@@ -164,10 +162,7 @@ def validator_class(name: str):
 
 
 def parse_seeds(specs: list[str]) -> list[int]:
-    """Parse ``--seeds`` tokens into a sorted, deduplicated seed list.
-
-    Accepts single seeds and inclusive ranges, space- or comma-separated: ``--seeds 3 7-9`` and ``--seeds 3,7-9`` both give ``[3, 7, 8, 9]``.
-    """
+    """Parse ``--seeds`` into a sorted, deduplicated list. Single values and inclusive ranges, space- or comma-separated: ``3 7-9`` gives ``[3, 7, 8, 9]``."""
     seeds: set[int] = set()
     for spec in specs:
         for part in spec.split(","):
@@ -189,10 +184,7 @@ def parse_seeds(specs: list[str]) -> list[int]:
 
 
 def resolve_seeds(args: argparse.Namespace) -> list[int]:
-    """The seeds a launch covers: an explicit subset, or ``0 .. num_runs-1``.
-
-    Without either flag the count comes from ``experiments/configs/validation.yaml``, which is what the paper's ten seeds per domain are declared in.
-    """
+    """The seeds a launch covers: an explicit subset, or ``0 .. num_runs-1``, counted from validation.yaml."""
     if args.seeds is not None:
         if args.num_runs is not None:
             raise SystemExit("--seeds and --num-runs are mutually exclusive")
@@ -237,18 +229,12 @@ def sbatch_resource_opts(res: dict) -> list[str]:
 
 
 def sbatch_output_opt(log_dir: Path) -> str:
-    """Where an array task's stdout goes, as an absolute path.
-
-    The ``#SBATCH --output`` line inside each script is relative, so it only resolves when sbatch is invoked from the repository root. Naming it on the command line instead makes a submission from anywhere work, and makes ``--log-dir`` apply to the job output too.
-    """
+    """Where an array task's stdout goes, absolute: the scripts' own ``#SBATCH --output`` is relative and would only resolve from the repository root."""
     return f"--output={Path(log_dir).resolve()}/slurm/%x-%A_%a.out"
 
 
 def prepare_slurm_logs(log_dir: Path) -> None:
-    """Create the directory the ``#SBATCH --output`` patterns write into.
-
-    Under ``--log-dir``, not the repository's own ``logs/``: sbatch refuses a job whose output directory does not exist, and it used to be created in the wrong place whenever the logs were redirected elsewhere.
-    """
+    """Create the directory ``#SBATCH --output`` writes into, under ``--log-dir``: sbatch refuses a job whose output directory is missing."""
     (Path(log_dir) / "slurm").mkdir(parents=True, exist_ok=True)
 
 
@@ -305,10 +291,7 @@ def add_logging_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def configure_logging(args: argparse.Namespace | None = None) -> None:
-    """Install the one log handler a script gets.
-
-    Only entry points may do this: the library reports through ``logging`` and configures nothing, which is what keeps ``dias`` importable inside someone else's application. ``DIAS_LOG_LEVEL`` overrides the default for a script whose CLI has no flag for it, such as a Slurm job.
-    """
+    """Install the one log handler a script gets. ``DIAS_LOG_LEVEL`` overrides the flags, for a script whose command line is fixed by a Slurm job."""
     level = logging.INFO
     if getattr(args, "verbose", False):
         level = logging.DEBUG

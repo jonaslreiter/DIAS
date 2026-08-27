@@ -1,6 +1,6 @@
-"""End-to-end coverage for the L1 validator, which had none.
+"""End-to-end coverage for the L1 validator, which compares two PDDL domains directly.
 
-L1 compares two PDDL domains directly, with no model involved, so a domain validated against itself must score perfectly, which pins the whole path: untyping, merging, the reflexive-atom injection, pymimir grounding and the successor comparison. Removing one precondition from the learned copy must then lower the score.
+A domain validated against itself must score perfectly, pinning the whole path: untyping, merging, reflexive-atom injection, grounding and the successor comparison. Removing one precondition from the learned copy must lower the score.
 """
 
 import random

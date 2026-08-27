@@ -15,7 +15,7 @@ measure_steps: 100
 
 # Slurm resources for one array task = one (domain, seed), which walks the whole size ladder of that domain sequentially on the same physical GPU.
 #
-# NOTE: unlike the main training arrays (experiments/configs/slurm-resources.yaml) this asks for a *whole* GPU (`gpu:1`, not a `shard:N` slice) and pins the partition. A shared GPU would put co-tenant load into the iterations/second numbers, and a free choice of partition would mix GPU models within one curve, and the reported memory ceiling is only meaningful against one card.
+# Unlike the main training arrays (experiments/configs/slurm-resources.yaml) this asks for a *whole* GPU (`gpu:1`, not a `shard:N` slice) and pins the partition: a shared GPU would put co-tenant load into the iterations/second numbers, and a free choice of partition would mix GPU models within one curve.
 #
 # Pinned to the 24 GB A10 partition. One ladder is a handful of minutes of GPU time (120 steps per point plus sampling), so the time budget is small.
 slurm:

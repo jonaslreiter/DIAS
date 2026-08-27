@@ -1,24 +1,18 @@
 #!/usr/bin/env python
-"""Launch the instance-size scaling study: one Slurm array per domain.
+"""Launch the instance-size scaling study: one Slurm array per domain, each task walking that domain's whole size ladder on one exclusive GPU. No validation array; this study produces timings, not schemas.
 
-Per selected domain this submits one array over the seeds (array task id = seed); each task walks that domain's whole size ladder on one exclusive GPU via ``experiments/scaling/slurm/benchmark.sh`` -> ``experiments/scaling/run_scaling.py``. There is no second (validation) array: this study produces timings, not schemas.
+Unlike ``experiments/launch.py`` the arrays are not one-task-per-run: the sizes of one (domain, seed) share a task so the curve is measured on one card, and the ``slurm:`` block of ``sizes.yaml`` asks for a whole GPU on a pinned partition rather than a shard.
 
-Unlike ``experiments/launch.py`` the arrays are *not* one-task-per-run: the sizes of one (domain, seed) deliberately share a task so the whole curve is measured on the same card. Resources come from the ``slurm:`` block of ``experiments/scaling/configs/sizes.yaml``, which asks for a whole GPU on a pinned partition (a shard would put co-tenant load into the throughput numbers, and an unpinned partition would mix GPU models within one curve).
-
-Results land in ``logs/scaling/<experiment>/<domain>/<instance>-s<seed>.json``; aggregate them with ``experiments/scaling/collect_scaling.py``.
+Results land in ``logs/scaling/<experiment>/<domain>/<instance>-s<seed>.json``; aggregate with ``experiments/scaling/collect_scaling.py``.
 
 Examples
 --------
-    # Full grid (3 domains x 6 sizes x 3 seeds) on Slurm:
+    # Full grid (3 domains x 6 sizes x 3 seeds) on Slurm, or one domain, printed only.
     python experiments/scaling/launch_scaling.py --experiment scaling-a10
-
-    # One domain, see what would be submitted:
     python experiments/scaling/launch_scaling.py --domains delivery --dry-run
 
-    # Re-run only the seeds that died, keeping the finished points:
+    # Re-run the seeds that died, keeping the finished points; or run here.
     python experiments/scaling/launch_scaling.py --experiment scaling-a10 --domains blocks-3 --seeds 1 2 --skip-existing
-
-    # Run here instead of on Slurm (sequential; good for a smoke test):
     python experiments/scaling/launch_scaling.py --backend local --domains blocks-3 --seeds 0 --experiment smoke
 """
 
@@ -34,11 +28,11 @@ SCALING_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCALING_DIR.parents[1]
 SLURM_SCRIPT = SCALING_DIR / "slurm" / "benchmark.sh"
 
-# Appended, not prepended: this directory must stay ahead of the pipeline folder above so the sibling imports below cannot be shadowed.
+# Appended, not prepended, so the sibling imports below are not shadowed.
 sys.path.append(str(SCALING_DIR.parent))
 from benchmark import DEFAULT_RESULTS_DIR, SIZES_CONFIG  # noqa: E402
 
-# Reused rather than re-derived so this study's sbatch flags mean exactly what the main pipeline's mean (see AGENTS.md on keeping launchers in sync).
+# Reused, so this study's sbatch flags mean what the main pipeline's mean.
 from pipeline import (  # noqa: E402
     format_array,
     prepare_slurm_logs,

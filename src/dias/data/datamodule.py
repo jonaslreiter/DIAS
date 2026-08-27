@@ -39,9 +39,7 @@ class PddlGraphDataModule(L.LightningDataModule):
 
     A random walk draws transitions until `SampleQuota` is met, they are split by action, and the train half is optionally corrupted by a `NoiseModel`. `batch_sampling_strategy` is ``"random"`` (a shuffled pass over the split) or ``"stratified"`` (an unbounded action-balanced stream, in which case training length comes from ``trainer.max_steps``).
 
-    The sampling arguments stay flat here rather than nesting into the quota, because they are what configs, sweeps and archived hyper-parameters name.
-
-    ``domain_path`` and ``problem_path`` have no default: which transitions a run learns from is not something this class can stand in for, and a base config that named one would train that domain under whatever name the launch gave it. The sampling bounds default to ``None`` in the same spirit, and ``SampleQuota`` refuses a construction where nothing says how much to sample. Everything else defaults to what the paper's setup does with it, so a config states only what it changes.
+    The sampling arguments stay flat rather than nesting into the quota: they are what configs, sweeps and archived hyper-parameters name.
     """
 
     def __init__(
@@ -73,24 +71,24 @@ class PddlGraphDataModule(L.LightningDataModule):
         Args:
             domain_path: PDDL domain to learn the action schemas of.
             problem_path: Instance whose transitions are the training data.
-            seed: Seed for the walk and the split. Unset follows the seed the run was started under.
+            seed: Seed for the walk and the split. Unset follows the run's own seed.
             include_statics: Give static predicates channels of their own, so preconditions can name types.
             default_statics: Static predicates to leave out even then.
             action_arguments: Label a transition with the action's arguments, not only its name.
-            strips_plus_actions: Restrict those labels to the STRIPS+ positions in the domain folder's strips+.yaml.
+            strips_plus_actions: Restrict those labels to the STRIPS+ positions in strips+.yaml.
             pt_file: Load transitions from this file instead of exploring the state space.
-            min_per_label_train: Transitions per action the walk samples for the training split.
-            min_per_label_valid: The same for the validation split; their ratio is how the pool is divided.
-            min_per_label_train_floor: Raise (never lower) min_per_label_train to this, which is how an overlay lifts the domains that sample least.
+            min_per_label_train: Transitions per action sampled for the training split.
+            min_per_label_valid: The same for the validation split; their ratio divides the pool.
+            min_per_label_train_floor: Raise (never lower) min_per_label_train to this.
             min_per_label_valid_floor: The same for min_per_label_valid.
-            max_per_label_train: Cap per action for the training split, trimming a walk that overshot.
+            max_per_label_train: Cap per action, trimming a walk that overshot.
             max_per_label_valid: The same for the validation split. Set both or neither.
-            num_train: Total training transitions, an alternative to the per-action minima. Either says how much to sample; both must agree on the ratio.
+            num_train: Total training transitions, an alternative to the per-action minima.
             num_valid: The same for the validation split.
-            max_steps: Walk length at which sampling gives up on an unmet quota, with a warning.
+            max_steps: Walk length at which sampling gives up on an unmet quota.
             batch_size: Transitions per batch, in both splits.
-            batch_sampling_strategy: 'stratified' for an endless action-balanced stream (bound by trainer.max_steps), 'random' for a shuffled pass per epoch.
-            shuffle_train: Shuffle the training split. The stratified stream samples with replacement and ignores this.
+            batch_sampling_strategy: 'stratified' for an endless action-balanced stream, 'random' for a shuffled pass per epoch.
+            shuffle_train: Shuffle the training split. The stratified stream ignores this.
             num_workers: Dataloader worker processes.
             noise: Corruption applied to the training split's states. Unset trains on clean transitions.
         """
@@ -99,7 +97,7 @@ class PddlGraphDataModule(L.LightningDataModule):
 
         self.domain_path = domain_path
         self.problem_path = problem_path
-        # Unset means "the seed this run was started under": dias.main fills it in from `seed_everything`, whose own default is a fresh draw, and a datamodule built outside the CLI reads the same number back off torch, which `seed_everything` set. Either way an archived run records the number it sampled under rather than the None that stood in for it.
+        # Unset means the run's own seed: dias.main fills it in from `seed_everything`, and outside the CLI it comes off torch, which `seed_everything` set.
         self.seed = torch.initial_seed() if seed is None else seed
         self.hparams["seed"] = self.seed
         self.pt_file = pt_file
@@ -117,7 +115,7 @@ class PddlGraphDataModule(L.LightningDataModule):
             raise ValueError(
                 f"batch_sampling_strategy must be 'random' or 'stratified', got {batch_sampling_strategy!r}."
             )
-        # The floors mutate the minima, so the quota is derived rather than read back off `hparams`, which keep the per-domain values as written.
+        # The floors raise the minima, so `hparams` keep the per-domain values as written.
         self.quota = SampleQuota.with_floors(
             min_per_label_train=min_per_label_train,
             min_per_label_valid=min_per_label_valid,
@@ -162,7 +160,7 @@ class PddlGraphDataModule(L.LightningDataModule):
         assert self._base is not None, "Call .setup() first."
         return self._base
 
-    # Metadata comes from the schema, so it is available before setup().
+    # From the schema, so available before setup().
     @property
     def num_relations(self) -> int:
         return self.schema.num_relations
@@ -304,7 +302,7 @@ class PddlGraphDataModule(L.LightningDataModule):
         )
 
     def _measure_relations(self) -> RelationStats:
-        """How often each relation holds, and which of them an action can change."""
+        """How often each relation holds, and which an action can change."""
         base = self._base
         static_names = {p["name"] for p in self.metadata["predicates"] if p["static"]}
         is_fluent = [name not in static_names for name in base.relation_names]
@@ -362,7 +360,7 @@ class PddlGraphDataModule(L.LightningDataModule):
         return PyGDataLoader(
             dataset,
             batch_size=self.batch_size,
-            # A stream decides its own order; the loader may not shuffle it.
+            # A stream decides its own order.
             shuffle=shuffle and not isinstance(dataset, IterableDataset),
             num_workers=self.num_workers,
             drop_last=False,

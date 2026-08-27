@@ -1,7 +1,4 @@
-"""Tests for the estimator that turns per-problem results into one P/R pair.
-
-Defect: the DIAS validators emitted `action_stats` and the MLP baseline did not, so `_seed_precision_recall` micro-averaged one column of the paper table and macro-averaged the other. Every validator now emits pooled tp/fp/fn.
-"""
+"""Tests for `_seed_precision_recall`, which turns a seed's per-problem results into one P/R pair. Every validator emits pooled tp/fp/fn, so every column of the paper table is micro-averaged the same way."""
 
 import json
 import sys

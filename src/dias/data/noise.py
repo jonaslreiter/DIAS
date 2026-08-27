@@ -1,8 +1,6 @@
 """Corrupting observed states, for the noise ablations.
 
-Both models flip cells of the adjacency tensor; they differ in how the flip budget is chosen. `Ratio` flips each eligible cell independently with a fixed probability, `ExpectedCount` spends a Poisson budget of atoms across the relations. A model is one or the other, so the parameters of the one in use are the only ones that exist: there is no combination of the two to rule out.
-
-Noise is applied to the training split only; validation sees clean states.
+Both models flip cells of the adjacency tensor and differ in how the budget is chosen: `Ratio` per cell, `ExpectedCount` per tensor. Applied to the training split only.
 """
 
 from __future__ import annotations
@@ -17,10 +15,7 @@ from dias.adjacency import valid_cells
 
 @dataclass(frozen=True)
 class RelationStats:
-    """What the sampled transitions say about each relation.
-
-    `true_ratio` is how many of a relation's cells hold against how many do not, within the region its arity allows. `is_fluent` is false for a relation no action can change.
-    """
+    """Per relation: `true_ratio`, how many cells hold against how many do not within the region its arity allows, and `is_fluent`, false when no action can change it."""
 
     arities: list[int] = field(default_factory=list)
     true_ratio: list[float] = field(default_factory=list)
@@ -61,10 +56,7 @@ def _partition(
 
 @dataclass(frozen=True)
 class Ratio:
-    """Flip every eligible cell independently, at a fixed probability.
-
-    `add` is scaled per relation by how often that relation holds, so a sparse relation is not swamped by spurious atoms at the same nominal rate.
-    """
+    """Flip every eligible cell independently. `add` is scaled by how often the relation holds, so a sparse one is not swamped by spurious atoms."""
 
     remove: float = 0.0
     add: float = 0.0
@@ -107,9 +99,7 @@ class Ratio:
 class ExpectedCount:
     """Spend a Poisson budget of atom flips across the relations.
 
-    Each relation's share of the budget is proportional to ``min(num_true, num_false)``, so the relations closest to an even split (the ones where a flip is least likely to be obvious) carry most of the noise. Counts are drawn per relation, clipped to what is available, and applied without replacement.
-
-    Unlike `Ratio`, the budget is per adjacency tensor rather than per cell, so the amount of corruption does not grow with the size of the instance.
+    Each relation's share is proportional to ``min(num_true, num_false)``, so the ones closest to an even split carry most of the noise. Being per tensor rather than per cell, the corruption does not grow with the instance.
     """
 
     removed_atoms: float = 0.0
@@ -155,7 +145,7 @@ class ExpectedCount:
             if weight <= 0.0:
                 continue
             share = weight / total
-            # Both counts are drawn before either is spent, so that changing one budget does not shift the draws made for the other.
+            # Both counts are drawn before either is spent, so changing one budget does not shift the other's draws.
             remove_count = _poisson(self.removed_atoms * share, generator)
             add_count = _poisson(self.added_atoms * share, generator)
             removed = _sample_without_replacement(ones, remove_count, generator)

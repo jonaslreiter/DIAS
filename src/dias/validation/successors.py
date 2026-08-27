@@ -1,7 +1,4 @@
-"""Sampling states and scoring a learned domain against the original one.
-
-Validation is behavioural: the learned schemas are correct to the extent that they generate the same successor states as the domain they were learned from.
-"""
+"""Sampling states and scoring a learned domain against the original one, behaviourally: the learned schemas are correct to the extent that they generate the same successor states."""
 
 from __future__ import annotations
 
@@ -17,18 +14,15 @@ from dias.pddl.states import state_fluents, transfer_state
 
 logger = logging.getLogger(__name__)
 
-# Learned actions are merged into the original domain under this prefix, which is the only thing telling the two apart when scoring.
+# Learned actions are merged into the original domain under this prefix, which is what tells the two apart when scoring.
 LEARNED_ACTION_PREFIX = "learned_"
 
-# One state's successors: what the original domain reaches, and what the learned one reached, each keyed by action name.
+# One state's successors, expected and produced, each keyed by action name.
 SuccessorSets = tuple[Mapping[str, set], Mapping[str, set]]
 
 
 def resolve_sample_seed(seed: int | None) -> int:
-    """The seed to draw with, drawn itself when the caller named none.
-
-    An *unfixed* draw and an *unrecorded* one are different things. The states a result is computed on stay a fresh sample per run (nothing in this pipeline pins a draw to a constant), but the seed that produced them is written into the result, so passing it back reproduces those exact states.
-    """
+    """The seed to draw with, drawn itself when the caller named none. It is recorded in the result, so passing it back reproduces those exact states."""
     return random.randrange(2**32) if seed is None else seed
 
 
@@ -38,10 +32,7 @@ def sample_reachable_states(
     sample_population: int,
     seed: int,
 ) -> list:
-    """Draw `num_samples` distinct states from a BFS over `problem`.
-
-    `seed` decides which ones, and callers get it from `resolve_sample_seed`, so there is no path here that draws without a seed something recorded. The draw comes from a generator of its own, never the global one, so it neither depends on nor disturbs anything else's random state.
-    """
+    """Draw `num_samples` distinct states from a BFS over `problem`, from a generator of its own rather than the global one."""
     if num_samples > sample_population:
         logger.warning(
             "num_samples (%d) exceeds the population, clamping to %d.",
@@ -69,10 +60,7 @@ def sample_reachable_states(
 
 
 def transfer_states(states: list, target_problem, source_domain, target_domain) -> list:
-    """Re-host each state on `target_problem`, checking the shared fluents agree.
-
-    The two domains only overlap on the predicates both declare, so that is the view the transfer can be verified on.
-    """
+    """Re-host each state on `target_problem`, checking that the predicates both domains declare agree."""
     shared = {p.get_name() for p in source_domain.get_predicates()} & {
         p.get_name() for p in target_domain.get_predicates()
     }
@@ -93,13 +81,9 @@ def transfer_states(states: list, target_problem, source_domain, target_domain) 
 def score_successors(per_state: Iterable[SuccessorSets]) -> dict:
     """Score produced successors against expected ones, state by state.
 
-    Each element is one state's ``(expected, produced)`` pair, both keyed by action name. A successor is whatever identifies one: a pymimir state index where the learned domain is symbolic, a binarized adjacency where a network produced it. So this is the one scorer for every validator, and the only thing they have to agree on is that equal states compare equal.
+    The one scorer for every validator: a successor is a pymimir state index or a binarized adjacency, and all they must agree on is that equal successors compare equal.
 
-    **Counts are attributed to actions, and that is the measure.** A successor the learned domain reaches under the wrong operator is a false positive there and a false negative under the operator that should have reached it, not a hit. The alternative (pooling the union across actions first, and asking only which states are reachable in one step) scores the learned domain as a transition model rather than as a set of action schemas, and this repository learns schemas. The two agree almost always (3330 of 3348 archived results) and never disagreed about whether a run was sound or complete, but where they part the attributed one is the claim being made: one archived ablation reproduces 12% of transitions under the union view and 0% under this one, because it had permuted the operators.
-
-    ``matches`` and ``accuracy`` keep the state-level view: a state counts as a match when the two successor *sets* agree exactly, which is the "same search tree" question, and holding at every state is the same thing as the union view scoring perfectly.
-
-    Micro-averaged: one pooled tp/fp/fn over every state and action, so a state with many successors weighs more than one with few.
+    Counts are attributed to actions, so a successor reached under the wrong operator is a false positive there and a false negative under the right one. ``matches`` keeps the state-level view: the two successor sets agreed exactly. Micro-averaged over every state and action.
     """
     states = 0
     matches = 0
@@ -130,7 +114,7 @@ def score_successors(per_state: Iterable[SuccessorSets]) -> dict:
         "accuracy": matches / states if states else 0.0,
         "precision": _ratio(tp_total, fp_total),
         "recall": _ratio(tp_total, fn_total),
-        # Totals, so several problems can be micro-averaged downstream instead of averaging their precisions. They are the sums of `action_stats`.
+        # Totals (the sums of `action_stats`), so problems can be micro-averaged downstream.
         "tp": tp_total,
         "fp": fp_total,
         "fn": fn_total,
@@ -147,10 +131,7 @@ def score_successors(per_state: Iterable[SuccessorSets]) -> dict:
 
 
 def compare_successors(states: list, learned_action_prefix: str) -> dict:
-    """Score a merged domain's learned actions against its original ones.
-
-    Every state carries both sets of actions, so applying all of them and comparing the successors needs no planning. A successor is its pymimir state index; the scoring itself is `score_successors`.
-    """
+    """Score a merged domain's learned actions against its original ones. Every state carries both sets, so this needs no planning: apply all of them and compare state indices."""
     prefix_length = len(learned_action_prefix)
 
     def sets_for(state) -> SuccessorSets:

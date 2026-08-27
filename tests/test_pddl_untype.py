@@ -1,6 +1,6 @@
 """Unit tests for compiling typed PDDL down to untyped PDDL.
 
-These used to be private static methods duplicated across the validator classes, taking file paths, which made them reachable only by constructing a validator. They now take source text.
+The functions take and return PDDL source text, so a rewrite can be checked without constructing a validator.
 """
 
 import unittest

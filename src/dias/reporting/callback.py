@@ -21,19 +21,14 @@ GRID_FIELDS = {
 
 
 def _slots(count: int) -> list[int]:
-    """Slot numbers, as numbers.
-
-    The column names say these are slots, so spelling it again in every cell cost a third of the table. It also sorts them correctly: a chart of ten slots ordered "slot 1", "slot 10", "slot 2".
-    """
+    """Slot numbers, as numbers: they sort correctly, where "slot 10" would come before "slot 2"."""
     return list(range(count))
 
 
 class SchemaChartCallback(L.Callback):
     """Log the learned schema to W&B as interactive heatmaps.
 
-    Six panels: add and delete effects, positive and negative preconditions, `selection_samples` slot-to-object assignments per action from one validation batch, and the slot weights. Each is drawn in the browser from the numbers it is made of, by a Vega specification registered in the run's own entity.
-
-    Charts go out every `log_every_n_validations` validation epochs and once more when training ends. Without a W&B logger nothing is logged at all.
+    Six panels: add and delete effects, positive and negative preconditions, slot-to-object assignments from one validation batch, and the slot weights. Sent every `log_every_n_validations` validation epochs and once at the end; without a W&B logger, not at all.
     """
 
     def __init__(
@@ -87,7 +82,7 @@ class SchemaChartCallback(L.Callback):
     def _capture_selection(self, pl_module, batch) -> None:
         """The slot assignment the model makes on one validation batch.
 
-        Re-running the forward pass is what keeps the model free of a side-channel written for a plotter. The initial node features are random, though, so it runs on a forked generator: a diagnostic must not shift the stream the run would otherwise have drawn from.
+        Re-run rather than captured through a side-channel, on a forked generator: the initial node features are random, and a diagnostic must not shift the run's stream.
         """
         devices = [pl_module.device] if pl_module.device.type == "cuda" else []
         with torch.random.fork_rng(devices=devices), torch.no_grad():
@@ -114,7 +109,7 @@ class SchemaChartCallback(L.Callback):
     def _panel_step(self, trainer) -> int:
         """The step each panel's history query names, fixed at the first log.
 
-        W&B rewrites a panel's configuration every time the chart is logged, so naming the newest step here would keep pointing the page at a table that is still uploading, which is what made a live run's panels blink in and out. Written once, the configuration stops moving; the slider opens on the first logged schema and reaches the rest.
+        W&B rewrites the configuration on every log, so naming the newest step would point the page at a table still uploading. The slider opens here and reaches the rest.
         """
         if self._first_step is None:
             self._first_step = int(trainer.global_step)
@@ -138,7 +133,7 @@ class SchemaChartCallback(L.Callback):
 
     def _schema_charts(self, schema, actions, relations, specs, step) -> dict:
         panels = []
-        # A model whose effects come from the state has no lifted effects to show; its preconditions are still a schema.
+        # No lifted effects to show when they come from the state; preconditions still apply.
         if schema.effects is not None:
             effects = Channels.from_logits(schema.effects)
             panels += [
@@ -180,7 +175,7 @@ class SchemaChartCallback(L.Callback):
             by_action.setdefault(int(action), []).append(selection[index])
 
         order = sorted(by_action)
-        # One column per sample. A batch does not hold every action equally often and the grid has to be rectangular, so the rarest one sets the width: a batch short of samples shows fewer, not a ragged chart.
+        # The grid must be rectangular, so the rarest action in the batch sets the width.
         count = min(self.selection_samples, *(len(by_action[a]) for a in order))
         assignments = torch.stack(
             [torch.stack(by_action[action][:count]) for action in order]
@@ -214,7 +209,7 @@ class SchemaChartCallback(L.Callback):
                 weights.numpy(),
                 columns=("action", "slot", "weight"),
                 axis_labels=(actions, _slots(weights.shape[-1])),
-                # One strip per action; the panel has no second axis to place.
+                # One strip per action; no second axis to place.
                 fields={"row_facet": "action", "x": "slot", "value": "weight"},
                 step=step,
             ),

@@ -1,6 +1,6 @@
 """Dataclass-typed arguments that have to survive a checkpoint.
 
-Hyper-parameters must be primitives: `torch.load` defaults to ``weights_only=True`` since torch 2.6 and refuses to unpickle a dataclass, which makes the whole checkpoint unloadable rather than just that one field. So an argument typed as one of a few dataclasses is stored as the same ``class_path`` / ``init_args`` mapping jsonargparse writes for it in a config file, and rebuilt from that mapping on the way back in.
+`torch.load` defaults to ``weights_only=True`` and refuses to unpickle a dataclass, which makes the whole checkpoint unloadable. So they are stored as the ``class_path`` / ``init_args`` mapping jsonargparse writes in a config file, and rebuilt from it on the way in.
 """
 
 from __future__ import annotations

@@ -1,7 +1,4 @@
-"""Dividing the sampled transitions into a train and a validation split.
-
-The split is stratified by action: each action that has at least two samples gets one reserved in each split before the rest is dealt out at the requested ratio, so no action can be missing from a split just by being rare.
-"""
+"""Dividing the sampled transitions into a train and a validation split, stratified by action: each action with at least two samples gets one reserved in each split before the rest is dealt out at the requested ratio."""
 
 from __future__ import annotations
 
@@ -82,10 +79,7 @@ def check_every_action_survives(
     action_names: list[str],
     splits: dict[str, list[int]],
 ) -> None:
-    """Refuse a split that lost an action the pool had.
-
-    Stratified batching draws one batch per action, so an action missing from the validation split would be scored on nothing at all.
-    """
+    """Refuse a split that lost an action the pool had: stratified batching draws one batch per action, so a missing one would be scored on nothing."""
     sampled = set(action_indices.tolist())
     for name, indices in splits.items():
         if not indices:

@@ -1,7 +1,4 @@
-"""Lifted action schemas and the atoms they are built from.
-
-Both types serialise to PDDL, so a learned schema can be written out and read back by a planner. Slot indices are the parameter identity: an atom refers to ``?x{slot}``, and the schema's parameter list is the union of the slots its atoms mention.
-"""
+"""Lifted action schemas and the atoms they are built from, serialising to PDDL. Slot indices are the parameter identity: an atom refers to ``?x{slot}``, and the parameter list is the union of the slots its atoms mention."""
 
 from __future__ import annotations
 

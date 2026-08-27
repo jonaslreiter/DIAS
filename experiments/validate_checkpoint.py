@@ -1,21 +1,10 @@
-"""Validate one learned action model on one PDDL problem.
+"""Validate one learned action model on one PDDL problem and print the result, where ``experiments/validate_runs.py`` walks a whole grid.
 
-The counterpart of ``experiments/validate_runs.py``, which walks a whole ``(experiment, domain, seed)`` grid: this validates a single model against a single problem and prints the result, which is what a debugging session or a one-off comparison wants.
-
-``--validator`` picks what is being scored:
-
-  dias  a trained DIAS checkpoint, whose lifted schema is read off the model and binarized at ``--threshold``
-  mlp   a trained MLP-baseline checkpoint, which predicts effects from the state and so has no lifted schema to read
-  l1    a learned PDDL domain produced outside this repository, compared with the ground-truth domain directly
-
-The first two locate their checkpoint under ``--log-dir`` by run id; ``l1`` takes ``--original-domain`` and ``--learned-domain`` instead. Sampling defaults come from ``experiments/configs/validation.yaml``, so a single-problem check uses the same numbers the sweep does.
+``--validator`` picks what is scored: ``dias`` a trained checkpoint, whose lifted schema is binarized at ``--threshold``; ``mlp`` a baseline checkpoint, which has no lifted schema; ``l1`` a learned PDDL domain from outside this repository, given as ``--original-domain`` / ``--learned-domain`` rather than a run id. Sampling defaults come from ``experiments/configs/validation.yaml``.
 
 Examples
 --------
     python experiments/validate_checkpoint.py --validator dias --model-id <run-id> --problem pddl/satellite/test-1.pddl
-
-    python experiments/validate_checkpoint.py --validator mlp --model-id <run-id> --problem pddl/satellite/test-1.pddl
-
     python experiments/validate_checkpoint.py --validator l1 --original-domain pddl/satellite/domain.pddl --learned-domain learned/satellite.pddl --problem pddl/satellite/test-1.pddl
 """
 
@@ -94,7 +83,7 @@ def main() -> int:
     p.add_argument("--original-domain", type=Path, default=None, help="l1 only.")
     p.add_argument("--learned-domain", type=Path, default=None, help="l1 only.")
     p.add_argument("--log-dir", type=Path, default=LOGS_DIR)
-    # Defaulted from experiments/configs/validation.yaml rather than repeated as literals, which is how the runners this replaced came to sample 250 of 500 states while the config said something else.
+    # From validation.yaml, so a single-problem check samples what the sweep does.
     p.add_argument("--num-samples", type=int, default=int(defaults["num_samples"]))
     p.add_argument(
         "--sample-population", type=int, default=int(defaults["sample_population"])
@@ -103,7 +92,7 @@ def main() -> int:
         "--sample-seed",
         type=int,
         default=defaults.get("sample_seed"),
-        help="Fix the state draw. Unset draws freshly; either way the seed used is reported and reproduces the same states.",
+        help="Fix the state draw. Unset draws freshly; either way the seed is reported and reproduces the states.",
     )
     p.add_argument(
         "--threshold",
@@ -125,7 +114,7 @@ def main() -> int:
         seed=args.sample_seed,
     )
     result = validation.validate()
-    # The seed the states were drawn with, configured or drawn: passing it back as --sample-seed scores the next run on exactly these states.
+    # Passing this back as --sample-seed scores the next run on these exact states.
     result = {"sample_seed": validation.sample_seed, **result}
 
     text = json.dumps(result, indent=2, default=str)

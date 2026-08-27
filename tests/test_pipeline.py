@@ -1,7 +1,4 @@
-"""Tests for what the experiment scripts share.
-
-These are the pieces every launcher had its own copy of, so a divergence used to be invisible: an sbatch array spec built two ways, a validator named in four places, ``--log-dir`` in one script and ``--logs-dir`` in the next.
-"""
+"""Tests for what the experiment scripts share: the sbatch flag builders, the seed parsing, the validator table and the domain-folder layout."""
 
 import argparse
 import sys
@@ -106,7 +103,7 @@ class ResourceTest(unittest.TestCase):
 
 class SlurmLogTest(unittest.TestCase):
     def test_the_output_directory_follows_the_log_dir(self):
-        """sbatch refuses a job whose --output directory does not exist, and this used to be created under the repository's logs/ even when the run was directed elsewhere."""
+        """sbatch refuses a job whose --output directory does not exist, and it has to be the one --log-dir names."""
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -117,7 +114,7 @@ class SlurmLogTest(unittest.TestCase):
 class DomainTest(unittest.TestCase):
     """A domain is a folder under pddl/; nothing lists them.
 
-    Every file of a domain follows from its name, so these check that the layout the whole pipeline assumes actually holds for all of them. The manifest that used to state it is gone, and with it the drift between the two; what is left to get wrong is a folder missing a file.
+    Every file of a domain follows from its name, so these check that the layout the whole pipeline assumes holds for all of them.
     """
 
     def test_no_selection_means_every_domain_folder(self):

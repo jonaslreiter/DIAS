@@ -1,10 +1,6 @@
-"""End-to-end characterization of the DIAS validation path.
+"""End-to-end characterization of the DIAS validation path, which the unit tests do not cover: a transposed einsum, a changed enumeration order or a flipped logit channel would pass them all.
 
-Phase 3 collapses three near-identical validator classes into one. That is only provably behaviour-preserving if the current output is pinned first, and the existing tests are unit-level: none of them would catch a transposed einsum, a changed successor-enumeration order, or a flipped logit channel.
-
-Rather than train a model, this plants a schema by hand: the `stack` action of blocks-3 is written into the checkpoint exactly, and the other two actions are left inert. The expected result is therefore known independently of the numbers: `stack` must be recovered perfectly, and everything `newtower` and `move` would have reached must show up as false negatives.
-
-That makes the assertion sensitive in both directions, which P = R = 0 from an untrained model would not be. It exercises the whole chain: threshold binarization, slot activation, the add/delete and positive/negative channel convention, the transpiler, domain untyping and merging, pymimir grounding, and the micro-averaged successor comparison.
+Rather than train a model, this plants a schema by hand: blocks-3's `stack` written into the checkpoint exactly, the other two actions left inert. The expected result then follows independently of the numbers, so the assertion is sensitive in both directions: `stack` recovered perfectly, everything the others would reach a false negative.
 """
 
 import unittest

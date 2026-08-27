@@ -17,7 +17,7 @@
 eval "$DIAS_ENV_SETUP"
 set -euo pipefail
 
-# Use the expandable-segments allocator to avoid the large reserved-vs-allocated fragmentation gap (satellite reserved ~15.7 GB for ~5.7 GB of live tensors, visitall ~10 GB for ~4 GB). Under GPU sharing co-tenants see the reserved pool, so shrinking it (satellite -> 6.2 GB, visitall -> 4.2 GB) is what lets the per-domain shard reservations in experiments/configs/slurm-resources.yaml actually hold.
+# The expandable-segments allocator, which closes most of the reserved-vs-allocated fragmentation gap. Co-tenants on a shared GPU see the reserved pool, so shrinking it is what lets the per-domain shard reservations in experiments/configs/slurm-resources.yaml hold.
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 SEED=${SLURM_ARRAY_TASK_ID:-0}
@@ -34,7 +34,7 @@ else
            --trainer.logger.init_args.name "$RUN_ID")
 fi
 
-# One seed, not two: the datamodule's own seed follows this one unless a config gave it one of its own.
+# The datamodule's own seed follows this one unless a config gave it one.
 python -m dias.main fit "$@" \
   --seed_everything "$SEED" \
   "${RUN_DIR[@]}"

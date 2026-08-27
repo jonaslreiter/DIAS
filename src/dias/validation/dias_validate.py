@@ -67,10 +67,7 @@ class ModelValidation:
         self.state_set = None
 
     def _read_learned_schemas(self, run, has_equality: bool, threshold: float):
-        """Binarize the model's logits and transpile them into action schemas.
-
-        Returns the transpiler rather than the schemas, because it also carries the predicate names and arities the merged domain has to declare.
-        """
+        """Binarize the model's logits into action schemas. Returns the transpiler, which also carries the predicate names and arities the merged domain must declare."""
         hparams = run.datamodule_hparams
         schema = self.model.schema_logits()
         add_eff, del_eff, pos_prec, neg_prec, _ = process_model_logits(
@@ -159,7 +156,6 @@ class ModelValidation:
         sample_population: int = 500,
         seed: int | None = None,
     ):
-        # Recorded, so a result drawn without a fixed seed can still be redrawn.
         self.sample_seed = resolve_sample_seed(seed)
         states = sample_reachable_states(
             self.original_problem, num_samples, sample_population, self.sample_seed

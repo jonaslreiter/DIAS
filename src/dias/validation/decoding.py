@@ -23,9 +23,7 @@ def process_model_logits(
 ):
     """Binarize the learned schema tensors at *threshold*.
 
-    ``threshold`` is applied uniformly to every probability the schema is read off from: slot activation and the four add/delete/positive/negative tensors. Lowering it yields more active slots (higher learned arity) and both more effects and more preconditions; raising it yields fewer of each. 0.5 is the default the paper's numbers use.
-
-    `effect_logits` is None for a model whose effects are predicted from the state: there is no lifted effect tensor to read off, and the add and delete arrays come back as None with it.
+    It applies uniformly to slot activation and all four schema tensors, so lowering it yields more active slots (higher learned arity) and more effects and preconditions. 0.5 is what the paper reports. `effect_logits` of None gives None back for the add and delete arrays.
     """
     effects = None if effect_logits is None else Channels.from_logits(effect_logits)
     add_effects_probs = None if effects is None else effects.positive
@@ -37,9 +35,7 @@ def process_model_logits(
 
     slot_probs = F.sigmoid(slot_weight_logits)
 
-    # When force_action_args is enabled, compute a mask of known argument slots per action and force those slots to be active in slot_probs.
-    # - strips_plus: only the positions listed in strips+.yaml are known
-    # - otherwise:   all argument positions (up to action arity) are known
+    # Slots whose object the labels already name are active by construction.
     if action_arguments and force_action_args:
         if strips_plus_actions:
             forced_slot_mask = torch.zeros(
@@ -50,16 +46,14 @@ def process_model_logits(
                     if pos < num_slots:
                         forced_slot_mask[a_idx, pos] = True
         else:
-            # All positions up to the action arity are known
             slot_indices = torch.arange(num_slots).unsqueeze(0)
             arity_t = torch.tensor(action_arities, dtype=torch.long).unsqueeze(1)
             forced_slot_mask = slot_indices < arity_t  # (num_actions, num_slots)
         slot_probs[forced_slot_mask] = 1.0
 
-    # (num_actions, num_slots)
-    active_slots = slot_probs.detach().cpu().numpy() > threshold
+    active_slots = slot_probs.detach().cpu().numpy() > threshold  # (actions, slots)
 
-    # An inactive slot is not a parameter of the learned action, so nothing may be asserted over it. Shapes: (actions, relations, slots, slots).
+    # An inactive slot is not a parameter of the learned action, so nothing may be asserted over it.
     schema = [pos_precond_probs, neg_precond_probs]
     if effects is not None:
         schema += [add_effects_probs, del_effects_probs]
@@ -69,7 +63,6 @@ def process_model_logits(
             probabilities[action, :, inactive, :] = 0
             probabilities[action, :, :, inactive] = 0
 
-    # Threshold after masking
     add_eff = _binarize(add_effects_probs, threshold)
     del_eff = _binarize(del_effects_probs, threshold)
     pos_prec = _binarize(pos_precond_probs, threshold)

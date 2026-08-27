@@ -1,6 +1,6 @@
 """What the prediction module returns.
 
-The schema tensors encode three mutually exclusive states per cell, softmaxed over the last axis: leave the atom alone, assert it, or negate it. Effects read that as ignore / add / delete and preconditions as ignore / positive / negative, but it is one convention and it is decoded in one place.
+Schema tensors hold three mutually exclusive states per cell, softmaxed over the last axis: ignore the atom, assert it, negate it. Effects read that as ignore / add / delete and preconditions as ignore / positive / negative.
 """
 
 from __future__ import annotations
@@ -62,10 +62,7 @@ class SchemaPrediction:
 
 @dataclass(frozen=True)
 class SchemaLogits:
-    """A trained model's lifted schema, masked and detached, ready to read off.
-
-    `effects` is None for a model whose effects are predicted from the state: it has no lifted effects to report, only preconditions and slot weights.
-    """
+    """A trained model's lifted schema, masked and detached. `effects` is None when they are predicted from the state."""
 
     preconditions: torch.Tensor
     effects: torch.Tensor | None
