@@ -27,6 +27,9 @@ REGENERATE = os.environ.get("DIAS_REGENERATE_GOLDEN") == "1"
 # Above float32 accumulation error, below anything a real behaviour change moves.
 TOLERANCE = 1e-6
 
+# Two orders wider than the forward golden, because Adam hands a relative gradient perturbation to the parameter at roughly `lr` times its size, so two CPUs dispatching different kernels part by ~1e-6 over three steps.
+TRAJECTORY_TOLERANCE = 1e-4
+
 # `torch.use_deterministic_algorithms` does not replace this: the thread count decides how a parallel reduction is split, and float addition is not associative. A golden has to hold on machines with different core counts.
 torch.set_num_threads(1)
 
@@ -99,14 +102,20 @@ class Golden:
         self.stored = {} if REGENERATE else torch.load(FIXTURE, weights_only=True)
         self.produced = {}
 
-    def check(self, case: unittest.TestCase, key: str, value: torch.Tensor) -> None:
+    def check(
+        self,
+        case: unittest.TestCase,
+        key: str,
+        value: torch.Tensor,
+        atol: float = TOLERANCE,
+    ) -> None:
         value = value.detach().clone()
         self.produced[key] = value
         if REGENERATE:
             return
         case.assertIn(key, self.stored, f"{key} missing from {FIXTURE.name}")
         torch.testing.assert_close(
-            value, self.stored[key], rtol=0, atol=TOLERANCE, msg=lambda m: f"{key}: {m}"
+            value, self.stored[key], rtol=0, atol=atol, msg=lambda m: f"{key}: {m}"
         )
 
     def save(self) -> None:
@@ -210,7 +219,12 @@ class TrainingTrajectoryTest(unittest.TestCase):
                 flags = {} if name == "full" else {"use_pcgrad": False}
                 model = self.run_steps(**flags)
                 for param_name, value in sorted(trained_values(model).items()):
-                    GOLDEN.check(self, f"train/{name}/{param_name}", value)
+                    GOLDEN.check(
+                        self,
+                        f"train/{name}/{param_name}",
+                        value,
+                        atol=TRAJECTORY_TOLERANCE,
+                    )
 
 
 if __name__ == "__main__":
