@@ -41,7 +41,7 @@ dias = "dias.main:main"
 # metadata and travels with the package, while a group is a property of this
 # checkout -- which is what dev tooling is. Needs pip >= 25.1.
 [dependency-groups]
-dev = ["pytest>=8", "coverage>=7", "black>=24", "isort>=5.13"]
+dev = ["pytest>=8", "coverage>=7", "black>=24", "isort>=5.13", "pre-commit>=3"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

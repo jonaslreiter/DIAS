@@ -1,22 +1,23 @@
 # Formatting, enforced before a commit rather than discovered in review.
-#   pip install pre-commit && pre-commit install
-# Versions are pinned so a hook cannot reformat the tree on its own schedule;
-# `pre-commit autoupdate` moves them deliberately.
+#   pip install -e . --group dev && pre-commit install
+# black and isort run from the dev group rather than from an environment pre-commit builds itself, so a commit and the CI `format` job are checked by the same versions and there is one place to bump them: `[dependency-groups] dev` in pyproject.toml. The hooks below have no CI counterpart, so their pin cannot disagree with anything; pre-commit requires an immutable `rev` in any case.
 repos:
-  - repo: https://github.com/psf/black
-    rev: 24.10.0
+  - repo: local
     hooks:
       - id: black
-  - repo: https://github.com/PyCQA/isort
-    rev: 5.13.2
-    hooks:
+        name: black
+        entry: black
+        language: system
+        types: [python]
       - id: isort
+        name: isort
+        entry: isort
+        language: system
+        types: [python]
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
       - id: end-of-file-fixer
       - id: trailing-whitespace
       - id: check-yaml
-        # The Lightning configs and the per-domain configs are plain YAML.
-        exclude: ^\.pre-commit-config\.yaml$
       - id: check-merge-conflict
