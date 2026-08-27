@@ -130,9 +130,9 @@ SWEEP_AXES: dict[str, SweepAxis] = {
         cast=int,
     ),
     # 0 means tau sits at its floor from step 0; with the default floor of 0 that is the exact precondition product rather than a relaxation. Exponential handles the degenerate case.
-    "gmean-temperature": SweepAxis(
+    "tau": SweepAxis(
         param=f"{SCHEDULE_KEY}.init_args.every",
-        tag="gmeanT",
+        tag="tau",
         values=(0, 100, 500, 1000, 5000),
         cast=int,
     ),

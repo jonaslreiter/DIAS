@@ -3,6 +3,7 @@
 import unittest
 
 import torch
+from torch_geometric.loader import DataLoader as PyGDataLoader
 
 from dias.data.datasets import (
     PddlGraphDataset,
@@ -62,6 +63,13 @@ class GraphDatasetTest(unittest.TestCase):
         state_graph, _, _, state, _, _, _ = self.sample(noisy_states=noisy_states)
         self.assertTrue(torch.equal(state, noisy_states[0]))
         self.assertEqual(state_graph.edge_index.size(1), int(noisy_states[0].sum()))
+
+    def test_the_action_label_survives_collation(self):
+        """PyG offsets any Data attribute whose name contains "index" by num_nodes per graph, so the label is `y_action`. Renaming it to `action_index` would corrupt it here and nowhere else."""
+        base = PddlTransitionDataset(make_data())
+        graphs = [PddlGraphDataset(base, [index])[0][0] for index in (0, 1)]
+        batch = next(iter(PyGDataLoader(graphs, batch_size=2)))
+        self.assertEqual(batch.y_action.tolist(), [0, 1])
 
 
 class StratifiedStreamTest(unittest.TestCase):

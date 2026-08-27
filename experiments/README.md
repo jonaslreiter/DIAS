@@ -127,7 +127,7 @@ python experiments/collect_results.py --experiment dias-full abl-no-pcgrad abl-n
 |---|---|---|---|
 | `aux-loss-weight` | `model.init_args.aux_loss_weight` | `aux` | 0.01, 0.03, 0.1, 0.3, 1.0 |
 | `num-slots` | `model.init_args.num_slots` | `slots` | 5, 7, 9 |
-| `gmean-temperature` | the τ schedule's `every` | `gmeanT` | 0, 100, 500, 1000, 5000 |
+| `tau` | the τ schedule's `every` | `tau` | 0, 100, 500, 1000, 5000 |
 | `dataset-size` | transitions per action | `n` | 20 … 2000 |
 
 ```bash
@@ -137,7 +137,7 @@ python experiments/collect_results.py --experiment aux-sweep --sweep aux-loss-we
 
 Every point of the grid is submitted, including one that matches what another experiment already ran: a column collected from runs launched under a different chain is a column nothing pins to this axis.
 
-`gmean-temperature = 0` means τ sits at its floor from step 0, the `every → 0` limit of the decay. With the default floor of 0 that is the *exact* precondition product rather than a relaxation.
+`tau = 0` means τ sits at its floor from step 0, the `every → 0` limit of the decay. With the default floor of 0 that is the *exact* precondition product rather than a relaxation.
 
 ### Dataset size
 
