@@ -1,32 +1,17 @@
 """Validate one ``(experiment, domain, seed)`` run and write its results.
 
-This is the compute-side validation step. It is invoked once per seed by
-``slurm/validate.sh`` (as an array task) and directly by ``launch.py --backend
-local``. The validator is chosen by experiment type:
+This is the compute-side validation step. It is invoked once per seed by ``slurm/validate.sh`` (as an array task) and directly by ``launch.py --backend local``. The validator is chosen by experiment type:
 
   dias / noise -> dias.validation.dias_validate.ModelValidation  (checkpoint)
   mlp          -> dias.validation.mlp_baseline.ModelValidation   (checkpoint)
 
-(The L1 baseline validates an externally-produced symbolic domain and has no
-training checkpoint, so no sweep iterates over it; reach it through
-``validate_checkpoint.py --validator l1``.)
+(The L1 baseline validates an externally-produced symbolic domain and has no training checkpoint, so no sweep iterates over it; reach it through ``validate_checkpoint.py --validator l1``.)
 
-The training run is located by a *deterministic* run id
-(``<experiment>-<domain>-s<seed>``) so no job-to-job id handoff is needed:
-its checkpoint lives at ``<logs>/dias/<run_id>/checkpoints/best-*.ckpt``.
+The training run is located by a *deterministic* run id (``<experiment>-<domain>-s<seed>``) so no job-to-job id handoff is needed: its checkpoint lives at ``<logs>/dias/<run_id>/checkpoints/best-*.ckpt``.
 
-Validation problems are the domain folder's held-out instances
-(``pddl/<domain>/test-{1,2,3}.pddl``); the sampling knobs come from
-``experiments/configs/validation.yaml``. Results are written to
-``<logs>/validation/<experiment>/<domain>/seed<seed>.json`` and, when W&B is
-reachable, also logged to the resumed run under ``validation/<stem>/<metric>``.
+Validation problems are the domain folder's held-out instances (``pddl/<domain>/test-{1,2,3}.pddl``); the sampling knobs come from ``experiments/configs/validation.yaml``. Results are written to ``<logs>/validation/<experiment>/<domain>/seed<seed>.json`` and, when W&B is reachable, also logged to the resumed run under ``validation/<stem>/<metric>``.
 
-``--threshold`` re-reads the same checkpoint at a different binarization
-threshold (DIAS validator only; 0.5 is what the paper reports), and
-``--results-experiment`` redirects only the *output* directory (and W&B group)
-while the checkpoint is still located via ``--experiment``. Together they let a
-finished experiment be re-validated into a sibling results directory without
-touching its original JSONs — see ``experiments/launch_threshold_validation.py``.
+``--threshold`` re-reads the same checkpoint at a different binarization threshold (DIAS validator only; 0.5 is what the paper reports), and ``--results-experiment`` redirects only the *output* directory (and W&B group) while the checkpoint is still located via ``--experiment``. Together they let a finished experiment be re-validated into a sibling results directory without touching its original JSONs; see ``experiments/launch_threshold_validation.py``.
 """
 
 from __future__ import annotations
@@ -80,12 +65,9 @@ def validate_run(
 ) -> dict:
     """Validate a single run over its held-out problems; write + return results.
 
-    The checkpoint is always found via *experiment*; *results_experiment*
-    (default: *experiment*) only picks the directory the JSON is written to, so
-    a re-validation at another *threshold* can be kept apart from the original.
+    The checkpoint is always found via *experiment*; *results_experiment* (default: *experiment*) only picks the directory the JSON is written to, so a re-validation at another *threshold* can be kept apart from the original.
     """
-    # Imported here, not at module scope: submitting jobs must not need torch
-    # or pymimir, and this is the compute side of the script.
+    # Imported here, not at module scope: submitting jobs must not need torch or pymimir, and this is the compute side of the script.
     from dias.validation.successors import resolve_sample_seed
 
     run_id = run_id or run_id_for(experiment, domain, seed)
@@ -96,14 +78,12 @@ def validate_run(
     ModelValidation = validator_class(validator.name)
     if not validator.binarizes_schema and threshold != 0.5:
         raise SystemExit(
-            f"--threshold applies to a validator that reads a lifted schema; "
-            f"{validator.summary}"
+            f"--threshold applies to a validator that reads a lifted schema; {validator.summary}"
         )
     num_samples = int(val_cfg["num_samples"])
     sample_population = int(val_cfg["sample_population"])
     configured_seed = val_cfg.get("sample_seed")
-    # Resolved once for the whole run, so every problem of a seed is drawn from
-    # one seed and re-running with it reproduces all of them together.
+    # Resolved once for the whole run, so every problem of a seed is drawn from one seed and re-running with it reproduces all of them together.
     sample_seed = resolve_sample_seed(
         None if configured_seed is None else int(configured_seed)
     )
@@ -166,8 +146,7 @@ def validate_run(
 def _plain(value: Any) -> Any:
     """Coerce numpy scalars to Python numbers, keeping counts integral.
 
-    _write_json falls back to str() for anything it cannot serialise, so a
-    numpy int would otherwise land in the JSON as a string.
+    _write_json falls back to str() for anything it cannot serialise, so a numpy int would otherwise land in the JSON as a string.
     """
     if isinstance(value, bool):
         return value
@@ -199,10 +178,7 @@ def _write_json(
                 "seed": seed,
                 "run_id": run_id,
                 "threshold": threshold,
-                # Always a number, whether it was configured or drawn:
-                # passing it back as the sample_seed of
-                # experiments/configs/validation.yaml reproduces exactly the
-                # states these numbers were computed on.
+                # Always a number, whether it was configured or drawn: passing it back as the sample_seed of experiments/configs/validation.yaml reproduces exactly the states these numbers were computed on.
                 "sample_seed": sample_seed,
                 "status": "ok" if ok else "validation_failed",
                 "per_problem": per_problem,
@@ -262,15 +238,12 @@ def main() -> int:
         "--threshold",
         type=float,
         default=0.5,
-        help="Binarization threshold for slot activations and the learned "
-        "precondition/effect tensors (DIAS validator only). Default 0.5.",
+        help="Binarization threshold for slot activations and the learned precondition/effect tensors (DIAS validator only). Default 0.5.",
     )
     p.add_argument(
         "--results-experiment",
         default=None,
-        help="Write results under logs/validation/<this>/ instead of "
-        "<experiment>/. The checkpoint is still located via --experiment, so a "
-        "re-validation at another --threshold leaves the original JSONs alone.",
+        help="Write results under logs/validation/<this>/ instead of <experiment>/. The checkpoint is still located via --experiment, so a re-validation at another --threshold leaves the original JSONs alone.",
     )
     add_path_arguments(p)
     add_logging_arguments(p)

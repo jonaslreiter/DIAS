@@ -20,10 +20,7 @@ def resolve_num_slots(
 ) -> int:
     """How many slots every action gets, given what the instance supports.
 
-    With `per_action_slots` each action uses exactly as many slots as its own
-    arity, so the widest action sizes the tensors. Otherwise the count is
-    configured, but capped at the number of objects: a slot that no object can
-    bind to is dead weight in every tensor indexed by it.
+    With `per_action_slots` each action uses exactly as many slots as its own arity, so the widest action sizes the tensors. Otherwise the count is configured, but capped at the number of objects: a slot that no object can bind to is dead weight in every tensor indexed by it.
     """
     if per_action_slots:
         assert (
@@ -46,20 +43,16 @@ def resolve_num_slots(
         num_slots,
         num_objects,
     )
-    assert num_objects >= widest_action, (
-        f"Clamped num_slots ({num_objects}) is smaller than max action arity "
-        f"({widest_action}); problem instance has too few objects for this domain."
-    )
+    assert (
+        num_objects >= widest_action
+    ), f"Clamped num_slots ({num_objects}) is smaller than max action arity ({widest_action}); problem instance has too few objects for this domain."
     return num_objects
 
 
 class SlotSelector(nn.Module):
     """A soft assignment of slots to objects, one per sample.
 
-    Each (action, slot) has a learned query that scores the encoded objects;
-    Sinkhorn normalisation turns those scores into an assignment. The extended
-    matrix has a slack row and no slack column, so a slot may bind to nothing
-    while every object still has to be accounted for.
+    Each (action, slot) has a learned query that scores the encoded objects; Sinkhorn normalisation turns those scores into an assignment. The extended matrix has a slack row and no slack column, so a slot may bind to nothing while every object still has to be accounted for.
     """
 
     def __init__(
@@ -83,8 +76,7 @@ class SlotSelector(nn.Module):
             0.1 * torch.randn(num_actions, num_slots, object_dim)
         )
         self.slot_weight_logits = nn.Parameter(torch.zeros(num_actions, num_slots))
-        # Derived from the constructor arguments, so it is rebuilt on load
-        # rather than carried in the checkpoint.
+        # Derived from the constructor arguments, so it is rebuilt on load rather than carried in the checkpoint.
         self.register_buffer(
             "action_arities",
             (
@@ -145,9 +137,7 @@ class SlotSelector(nn.Module):
     ) -> torch.Tensor:
         """How strongly each slot participates, ``(B, k)``.
 
-        Without learned slot weights every slot is fully active. Given the
-        action's arguments, slots whose object is already known keep their full
-        weight: their binding is not something the model has to learn.
+        Without learned slot weights every slot is fully active. Given the action's arguments, slots whose object is already known keep their full weight: their binding is not something the model has to learn.
         """
         logits = self.slot_weight_logits[y_action]
         if not self.use_slot_weights:
@@ -166,8 +156,7 @@ class SlotSelector(nn.Module):
     def _pin_known_arguments(logits: torch.Tensor, y_action_args: torch.Tensor) -> None:
         """Force slots with a known object onto it, by hard-masking the logits.
 
-        The slot's row and the object's column are ruled out everywhere else,
-        leaving Sinkhorn a single admissible cell for that pair.
+        The slot's row and the object's column are ruled out everywhere else, leaving Sinkhorn a single admissible cell for that pair.
         """
         known = y_action_args >= 0  # (B, k)
         if not known.any():

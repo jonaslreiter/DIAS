@@ -1,8 +1,6 @@
 """Tests for what the experiment scripts share.
 
-These are the pieces every launcher had its own copy of, so a divergence used
-to be invisible: an sbatch array spec built two ways, a validator named in four
-places, ``--log-dir`` in one script and ``--logs-dir`` in the next.
+These are the pieces every launcher had its own copy of, so a divergence used to be invisible: an sbatch array spec built two ways, a validator named in four places, ``--log-dir`` in one script and ``--logs-dir`` in the next.
 """
 
 import argparse
@@ -108,9 +106,7 @@ class ResourceTest(unittest.TestCase):
 
 class SlurmLogTest(unittest.TestCase):
     def test_the_output_directory_follows_the_log_dir(self):
-        """sbatch refuses a job whose --output directory does not exist, and
-        this used to be created under the repository's logs/ even when the run
-        was directed elsewhere."""
+        """sbatch refuses a job whose --output directory does not exist, and this used to be created under the repository's logs/ even when the run was directed elsewhere."""
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -121,10 +117,7 @@ class SlurmLogTest(unittest.TestCase):
 class DomainTest(unittest.TestCase):
     """A domain is a folder under pddl/; nothing lists them.
 
-    Every file of a domain follows from its name, so these check that the
-    layout the whole pipeline assumes actually holds for all of them. The
-    manifest that used to state it is gone, and with it the drift between the
-    two; what is left to get wrong is a folder missing a file.
+    Every file of a domain follows from its name, so these check that the layout the whole pipeline assumes actually holds for all of them. The manifest that used to state it is gone, and with it the drift between the two; what is left to get wrong is a folder missing a file.
     """
 
     def test_no_selection_means_every_domain_folder(self):
@@ -163,8 +156,7 @@ class ValidatorRegistryTest(unittest.TestCase):
                 self.assertIn(validator, VALIDATORS)
 
     def test_only_a_lifted_schema_can_be_binarized(self):
-        """The threshold is a property of reading a schema off a model, so the
-        two validators that produce no lifted schema must refuse one."""
+        """The threshold is a property of reading a schema off a model, so the two validators that produce no lifted schema must refuse one."""
         self.assertTrue(VALIDATORS["dias"].binarizes_schema)
         self.assertFalse(VALIDATORS["mlp"].binarizes_schema)
         self.assertFalse(VALIDATORS["l1"].binarizes_schema)

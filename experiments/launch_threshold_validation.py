@@ -1,26 +1,12 @@
 """Re-validate the checkpoints of a finished experiment at several thresholds.
 
-Validation reads a learned schema off the trained model by binarizing the slot
-activations and the precondition/effect probabilities; the number reported in
-the paper uses a threshold of 0.5 for all of them. This script re-runs *only*
-the validation step of an existing experiment (no training) once per threshold,
-so the sensitivity of P / R / N_S / N_C / N_SC to that choice can be measured on
-exactly the runs the paper reports.
+Validation reads a learned schema off the trained model by binarizing the slot activations and the precondition/effect probabilities; the number reported in the paper uses a threshold of 0.5 for all of them. This script re-runs *only* the validation step of an existing experiment (no training) once per threshold, so the sensitivity of P / R / N_S / N_C / N_SC to that choice can be measured on exactly the runs the paper reports.
 
-Per (domain, threshold) it submits one Slurm array over the seeds — the same
-``experiments/slurm/validate.sh`` the normal pipeline uses, with ``THRESHOLD`` and
-``RESULTS_EXPERIMENT`` exported. Checkpoints are located via the *source*
-experiment's run id ``<experiment>-<domain>-s<seed>``, while results are written
-to a sibling directory ``logs/validation/<experiment>-thr<t>/<domain>/``, so the
-original ``logs/validation/<experiment>/`` JSONs are never touched.
+Per (domain, threshold) it submits one Slurm array over the seeds, the same ``experiments/slurm/validate.sh`` the normal pipeline uses, with ``THRESHOLD`` and ``RESULTS_EXPERIMENT`` exported. Checkpoints are located via the *source* experiment's run id ``<experiment>-<domain>-s<seed>``, while results are written to a sibling directory ``logs/validation/<experiment>-thr<t>/<domain>/``, so the original ``logs/validation/<experiment>/`` JSONs are never touched.
 
-W&B logging is always disabled here: ``validate_runs`` mirrors metrics by
-*resuming* the training run, so logging a second threshold would overwrite the
-0.5 numbers in that run's summary. The JSONs are the source of truth.
+W&B logging is always disabled here: ``validate_runs`` mirrors metrics by *resuming* the training run, so logging a second threshold would overwrite the 0.5 numbers in that run's summary. The JSONs are the source of truth.
 
-Validation is CPU-only (the DIAS validator runs the model on CPU and spends its
-time in pymimir successor generation), so resources come from
-``experiments/configs/slurm-resources-validation.yaml``, which requests no GPU.
+Validation is CPU-only (the DIAS validator runs the model on CPU and spends its time in pymimir successor generation), so resources come from ``experiments/configs/slurm-resources-validation.yaml``, which requests no GPU.
 
 Aggregate the result with::
 
@@ -29,12 +15,10 @@ Aggregate the result with::
 Examples
 --------
     # Default grid (0.1, 0.25, 0.5, 0.75, 0.9) over all domains x 3 seeds:
-    python experiments/launch_threshold_validation.py --experiment dias-full \
-        --num-runs 3
+    python experiments/launch_threshold_validation.py --experiment dias-full --num-runs 3
 
     # One domain, two thresholds, printed but not submitted:
-    python experiments/launch_threshold_validation.py --experiment dias-full \
-        --domains gripper --thresholds 0.1 0.9 --num-runs 3 --dry-run
+    python experiments/launch_threshold_validation.py --experiment dias-full --domains gripper --thresholds 0.1 0.9 --num-runs 3 --dry-run
 """
 
 from __future__ import annotations
@@ -64,8 +48,7 @@ from pipeline import (
     select_domains,
 )
 
-# Grid of the bare --thresholds flag; 0.5 is the default the paper reports and
-# is re-run here too, so every column of the sweep comes from the same code path.
+# Grid of the bare --thresholds flag; 0.5 is the default the paper reports and is re-run here too, so every column of the sweep comes from the same code path.
 THRESHOLD_VALUES = (0.1, 0.25, 0.5, 0.75, 0.9)
 THRESHOLD_TAG = "thr"
 
@@ -73,9 +56,7 @@ THRESHOLD_TAG = "thr"
 def threshold_experiment_name(experiment: str, threshold: float) -> str:
     """Results directory / group for one threshold of the sweep.
 
-    Also used by ``experiments/collect_results.py --threshold-sweep`` to rebuild the
-    per-threshold names, so keep the two in sync by importing this function
-    rather than re-deriving it.
+    Also used by ``experiments/collect_results.py --threshold-sweep`` to rebuild the per-threshold names, so keep the two in sync by importing this function rather than re-deriving it.
     """
     return f"{experiment}-{THRESHOLD_TAG}{threshold:g}"
 
@@ -109,8 +90,7 @@ def _submit_slurm(
     logs_dir: Path,
     args: argparse.Namespace,
 ) -> None:
-    # Array task id == seed, exactly as in the normal validation array, so a
-    # seed subset becomes a sparse array spec.
+    # Array task id == seed, exactly as in the normal validation array, so a seed subset becomes a sparse array spec.
     array = format_array(seeds)
     export = ",".join(
         [
@@ -197,10 +177,7 @@ def main() -> int:
     )
     add_domain_arguments(p)
     p.add_argument("--backend", default="slurm", choices=["slurm", "local"])
-    # Overrides for experiments/configs/slurm-resources-validation.yaml,
-    # applied to every
-    # array: the sweep is 5x the usual validation volume, so it is usually worth
-    # trading the per-domain defaults for smaller, CPU-partition-friendly asks.
+    # Overrides for experiments/configs/slurm-resources-validation.yaml, applied to every array: the sweep is 5x the usual validation volume, so it is usually worth trading the per-domain defaults for smaller, CPU-partition-friendly asks.
     p.add_argument(
         "--time", default=None, help="Override --time for every array (HH:MM:SS)."
     )
@@ -209,10 +186,7 @@ def main() -> int:
     p.add_argument(
         "--partition",
         default=None,
-        help="Override the partition list. Validation is CPU-only (the DIAS "
-        "validator runs the model on CPU and spends its time in pymimir), so "
-        "no --gres is ever requested; pinning CPU partitions here just keeps "
-        "the arrays off the GPU nodes.",
+        help="Override the partition list. Validation is CPU-only (the DIAS validator runs the model on CPU and spends its time in pymimir), so no --gres is ever requested; pinning CPU partitions here just keeps the arrays off the GPU nodes.",
     )
     p.add_argument(
         "--dry-run", action="store_true", help="Print commands without submitting."
@@ -247,19 +221,13 @@ def main() -> int:
         head = ", ".join(missing[:5]) + (" ..." if len(missing) > 5 else "")
         if not args.allow_missing:
             raise SystemExit(
-                f"{len(missing)} of {len(domains) * len(seeds)} runs have no "
-                f"best-epoch*.ckpt under {args.log_dir}/dias/: {head}\n"
-                "Re-validation needs trained checkpoints; pass --allow-missing "
-                "to submit anyway (those tasks will fail)."
+                f"{len(missing)} of {len(domains) * len(seeds)} runs have no best-epoch*.ckpt under {args.log_dir}/dias/: {head}\nRe-validation needs trained checkpoints; pass --allow-missing to submit anyway (those tasks will fail)."
             )
         print(f"[warn] {len(missing)} runs have no checkpoint: {head}")
 
     print(f"source     : {args.experiment}  (validator={args.experiment_type})")
     print(
-        f"domains    : {len(domains)} x {len(seeds)} seeds x "
-        f"{len(thresholds)} thresholds = "
-        f"{len(domains) * len(seeds) * len(thresholds)} validations "
-        f"(seeds={format_array(seeds)}, backend={args.backend})"
+        f"domains    : {len(domains)} x {len(seeds)} seeds x {len(thresholds)} thresholds = {len(domains) * len(seeds) * len(thresholds)} validations (seeds={format_array(seeds)}, backend={args.backend})"
     )
     print(f"thresholds : {', '.join(f'{t:g}' for t in thresholds)}")
     print(

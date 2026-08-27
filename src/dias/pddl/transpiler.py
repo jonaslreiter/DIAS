@@ -10,11 +10,7 @@ from dias.schema.action import ActionSchema, GroundAtom
 class PDDLTranspiler:
     """Reads action schemas off binarized effect/precondition tensors.
 
-    Each tensor has shape ``(actions, predicates, slots, slots)`` and holds only
-    0/1. A set cell ``(a, r, s1, s2)`` means action ``a`` asserts predicate
-    ``r`` over slots ``s1``, ``s2``, truncated to the predicate's arity -- so a
-    unary predicate is read off the ``s1`` axis and the ``s2`` axis is
-    redundant, which is why atoms are deduplicated.
+    Each tensor has shape ``(actions, predicates, slots, slots)`` and holds only 0/1. A set cell ``(a, r, s1, s2)`` means action ``a`` asserts predicate ``r`` over slots ``s1``, ``s2``, truncated to the predicate's arity, so a unary predicate is read off the ``s1`` axis and the ``s2`` axis is redundant, which is why atoms are deduplicated.
     """
 
     def __init__(
@@ -48,8 +44,7 @@ class PDDLTranspiler:
         for name, arr in arrays.items():
             if arr.shape != reference_shape:
                 raise ValueError(
-                    f"All arrays must have the same shape. add_effects has shape "
-                    f"{reference_shape}, but {name} has shape {arr.shape}"
+                    f"All arrays must have the same shape. add_effects has shape {reference_shape}, but {name} has shape {arr.shape}"
                 )
 
         if not isinstance(predicate_names, list) or not all(
@@ -62,22 +57,18 @@ class PDDLTranspiler:
             raise TypeError("predicate_arities must be a list of ints")
         if len(predicate_names) != len(predicate_arities):
             raise ValueError(
-                f"predicate_names and predicate_arities must have the same length, "
-                f"got {len(predicate_names)} and {len(predicate_arities)}"
+                f"predicate_names and predicate_arities must have the same length, got {len(predicate_names)} and {len(predicate_arities)}"
             )
         if len(action_names) != add_effects.shape[0]:
             raise ValueError(
-                f"There must be one action name per action (first axis of the "
-                f"effects and preconditions), got {len(action_names)} and "
-                f"{add_effects.shape[0]}"
+                f"There must be one action name per action (first axis of the effects and preconditions), got {len(action_names)} and {add_effects.shape[0]}"
             )
 
         self.add_effects = add_effects
         self.delete_effects = delete_effects
         self.positive_preconditions = positive_preconditions
         self.negative_preconditions = negative_preconditions
-        # Copied: add_unreachable_action extends these, and callers pass in
-        # lists they keep using afterwards.
+        # Copied: add_unreachable_action extends these, and callers pass in lists they keep using afterwards.
         self.predicate_names = list(predicate_names)
         self.predicate_arities = list(predicate_arities)
         self.action_names = action_names
@@ -120,10 +111,7 @@ class PDDLTranspiler:
     ) -> ActionSchema:
         """Append an action that mentions every predicate but can never fire.
 
-        A guard predicate of arity 0 that no action produces and no initial
-        state contains makes the action unreachable, without the contradictory
-        preconditions some PDDL compilers optimise away. Its purpose is to keep
-        every predicate fluent for pymimir.
+        A guard predicate of arity 0 that no action produces and no initial state contains makes the action unreachable, without the contradictory preconditions some PDDL compilers optimise away. Its purpose is to keep every predicate fluent for pymimir.
         """
         self.predicate_names.append(guard_predicate_name)
         self.predicate_arities.append(0)

@@ -1,7 +1,6 @@
 """What an action changes about a state.
 
-Two sources, one interface: DIAS learns one effect tensor per action, while the
-MLP baseline predicts the effects from the state the action is applied to.
+Two sources, one interface: DIAS learns one effect tensor per action, while the MLP baseline predicts the effects from the state the action is applied to.
 """
 
 from __future__ import annotations
@@ -19,8 +18,7 @@ HIDDEN_DIM = 64
 class EffectSource(nn.Module):
     """Per-action effect logits over ignore / add / delete.
 
-    Subclasses supply the raw logits; the arity mask is applied here, so a
-    source cannot emit an effect on a cell no lifted schema could express.
+    Subclasses supply the raw logits; the arity mask is applied here, so a source cannot emit an effect on a cell no lifted schema could express.
     """
 
     def __init__(self, arity_relations: Sequence[int], num_slots: int):
@@ -51,9 +49,7 @@ class EffectSource(nn.Module):
     def action_logits(self) -> torch.Tensor | None:
         """Masked logits for every action, or None if they depend on the state.
 
-        None is what tells a reader -- schema decoding, plotting -- that this
-        model has no lifted effects to report, rather than letting it find out
-        by hitting a missing attribute.
+        None is what tells a reader (schema decoding, plotting) that this model has no lifted effects to report, rather than letting it find out by hitting a missing attribute.
         """
         raise NotImplementedError
 
@@ -80,8 +76,7 @@ class StaticEffects(EffectSource):
 class StateDependentEffects(EffectSource):
     """Effects predicted from the current state: the MLP baseline.
 
-    The state is projected onto the action's slots first, so the network sees
-    the lifted state a schema would be read against rather than the instance.
+    The state is projected onto the action's slots first, so the network sees the lifted state a schema would be read against rather than the instance.
     """
 
     def __init__(

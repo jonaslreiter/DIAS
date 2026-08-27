@@ -1,5 +1,4 @@
-# Ablation: no learned slot activation -- all M slots active, and the slot
-# weights fixed to 1 in the precondition auxiliary term.
+# Ablation: no learned slot activation; all M slots active, and the slot weights fixed to 1 in the precondition auxiliary term.
 model:
   init_args:
     use_slot_weights: false

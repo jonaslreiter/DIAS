@@ -1,21 +1,10 @@
 """End-to-end characterization of the DIAS validation path.
 
-Phase 3 collapses three near-identical validator classes into one. That is only
-provably behaviour-preserving if the current output is pinned first, and the
-existing tests are unit-level: none of them would catch a transposed einsum, a
-changed successor-enumeration order, or a flipped logit channel.
+Phase 3 collapses three near-identical validator classes into one. That is only provably behaviour-preserving if the current output is pinned first, and the existing tests are unit-level: none of them would catch a transposed einsum, a changed successor-enumeration order, or a flipped logit channel.
 
-Rather than train a model, this plants a schema by hand: the `stack` action of
-blocks-3 is written into the checkpoint exactly, and the other two actions are
-left inert. The expected result is therefore known independently of the
-numbers -- `stack` must be recovered perfectly, and everything `newtower` and
-`move` would have reached must show up as false negatives.
+Rather than train a model, this plants a schema by hand: the `stack` action of blocks-3 is written into the checkpoint exactly, and the other two actions are left inert. The expected result is therefore known independently of the numbers: `stack` must be recovered perfectly, and everything `newtower` and `move` would have reached must show up as false negatives.
 
-That makes the assertion sensitive in both directions, which P = R = 0 from an
-untrained model would not be. It exercises the whole chain: threshold
-binarization, slot activation, the add/delete and positive/negative channel
-convention, the transpiler, domain untyping and merging, pymimir grounding, and
-the micro-averaged successor comparison.
+That makes the assertion sensitive in both directions, which P = R = 0 from an untrained model would not be. It exercises the whole chain: threshold binarization, slot activation, the add/delete and positive/negative channel convention, the transpiler, domain untyping and merging, pymimir grounding, and the micro-averaged successor comparison.
 """
 
 import unittest
@@ -29,8 +18,7 @@ from support import temp_dir
 
 torch.set_num_threads(1)
 
-# Softmax over the three channels turns these into ~(1, 0, 0) or ~(0, 1, 0),
-# which the 0.5 threshold reads as a clean off/on.
+# Softmax over the three channels turns these into ~(1, 0, 0) or ~(0, 1, 0), which the 0.5 threshold reads as a clean off/on.
 OFF, ON = 10.0, 10.0
 
 SAMPLE_SEED = 0
@@ -64,8 +52,8 @@ def build_checkpoint(directory: Path) -> str:
             tensor[stack, relation[name], row, column, channel] = ON
 
         # stack(?bm=slot0, ?bt=slot1):
-        #   pre  (clear ?bm) (clear ?bt) (on-table ?bm) (not (eq ?bm ?bt))
-        #   eff  (on ?bm ?bt) (not (clear ?bt)) (not (on-table ?bm))
+        # pre  (clear ?bm) (clear ?bt) (on-table ?bm) (not (eq ?bm ?bt))
+        # eff  (on ?bm ?bt) (not (clear ?bt)) (not (on-table ?bm))
         enable(preconditions, "clear", 0, 0, 1)
         enable(preconditions, "clear", 1, 1, 1)
         enable(preconditions, "on-table", 0, 0, 1)
@@ -95,14 +83,10 @@ class ValidationCharacterizationTest(unittest.TestCase):
         result = self.validate()
 
         self.assertEqual(result["total"], NUM_SAMPLES)
-        # 54 of the original successors are reached, 138 missed, and 16 are
-        # spurious: 8 states, each produced by both of the inert learned
-        # actions. Counts are attributed to the action that produced them, so
-        # those 8 count twice -- two operators, two wrong predictions.
+        # 54 of the original successors are reached, 138 missed, and 16 are spurious: 8 states, each produced by both of the inert learned actions. Counts are attributed to the action that produced them, so those 8 count twice: two operators, two wrong predictions.
         self.assertAlmostEqual(result["precision"], 54 / 70, places=12)
         self.assertAlmostEqual(result["recall"], 54 / 192, places=12)
-        # No sampled state has both successor sets agreeing exactly, which is
-        # the state-level view the attributed counts do not carry.
+        # No sampled state has both successor sets agreeing exactly, which is the state-level view the attributed counts do not carry.
         self.assertEqual(result["matches"], 0)
         self.assertEqual(result["accuracy"], 0.0)
 
@@ -122,10 +106,7 @@ class ValidationCharacterizationTest(unittest.TestCase):
     def test_an_unseeded_run_records_the_seed_that_reproduces_it(self):
         """Unfixed is not the same as unrecorded.
 
-        `experiments/configs/validation.yaml` leaves `sample_seed` unset, so
-        each run scores on its own sample. What makes such a result checkable is
-        that the seed it drew with is written into the result JSON and, passed
-        back, redraws exactly those states.
+        `experiments/configs/validation.yaml` leaves `sample_seed` unset, so each run scores on its own sample. What makes such a result checkable is that the seed it drew with is written into the result JSON and, passed back, redraws exactly those states.
         """
         directory = temp_dir(self)
         model_id = build_checkpoint(directory)

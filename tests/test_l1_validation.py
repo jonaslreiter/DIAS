@@ -1,10 +1,6 @@
 """End-to-end coverage for the L1 validator, which had none.
 
-L1 compares two PDDL domains directly, with no model involved, so a domain
-validated against itself must score perfectly -- which pins the whole path:
-untyping, merging, the reflexive-atom injection, pymimir grounding and the
-successor comparison. Removing one precondition from the learned copy must then
-lower the score.
+L1 compares two PDDL domains directly, with no model involved, so a domain validated against itself must score perfectly, which pins the whole path: untyping, merging, the reflexive-atom injection, pymimir grounding and the successor comparison. Removing one precondition from the learned copy must then lower the score.
 """
 
 import random
@@ -46,8 +42,7 @@ class L1ValidationTest(unittest.TestCase):
         self.assertEqual(result["fn"], 0)
 
     def test_dropping_a_precondition_costs_precision(self):
-        # `stack` requires the moved block to be clear; without that it applies
-        # in states it should not, producing successors the original cannot.
+        # `stack` requires the moved block to be clear; without that it applies in states it should not, producing successors the original cannot.
         weakened = re.sub(r"\(clear \?bm\)\s*", "", DOMAIN.read_text(), count=1)
         self.assertNotEqual(weakened, DOMAIN.read_text())
         result = self.validate(weakened)

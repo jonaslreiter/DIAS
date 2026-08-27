@@ -1,22 +1,10 @@
 """Golden tests pinning the DIAS training path.
 
-These are the guard for "this change computes the same thing". They are
-deliberately coarse-grained: a full forward pass and a full three-step training
-trajectory, compared against a stored fixture.
+These are the guard for "this change computes the same thing". They are deliberately coarse-grained: a full forward pass and a full three-step training trajectory, compared against a stored fixture.
 
-The training-step golden is the one that matters most: it sees changes a
-forward-only golden cannot -- the order in which module construction consumes
-the global RNG, the order the losses are summed in, drift in the PCGrad
-projection.
+The training-step golden is the one that matters most: it sees changes a forward-only golden cannot: the order in which module construction consumes the global RNG, the order the losses are summed in, drift in the PCGrad projection.
 
-**What the fixture is, and is not.** It is the trajectory this code produces in
-a pinned environment, and any unintended change to it shows up here. It is not
-a claim about the runs behind the paper: the fixture was regenerated once,
-deliberately, when construction started drawing in the order the data flows
-through the model, so a pre-refactor seed no longer builds the same weights.
-Nothing was lost by that -- a GPU run was never reproducible from its seed
-either, unless it asked for `--trainer.deterministic=true`, which no archived
-run did.
+**What the fixture is, and is not.** It is the trajectory this code produces in a pinned environment, and any unintended change to it shows up here. It is not a claim about the runs behind the paper: the fixture was regenerated once, deliberately, when construction started drawing in the order the data flows through the model, so a pre-refactor seed no longer builds the same weights. Nothing was lost by that: a GPU run was never reproducible from its seed either, unless it asked for `--trainer.deterministic=true`, which no archived run did.
 
 To regenerate after an intended change:
 
@@ -43,18 +31,7 @@ REGENERATE = os.environ.get("DIAS_REGENERATE_GOLDEN") == "1"
 # Above float32 accumulation error, below anything a real behaviour change moves.
 TOLERANCE = 1e-6
 
-# Required, not tidiness, and `torch.use_deterministic_algorithms` does not
-# replace it. The two settle different halves of the problem: deterministic
-# kernels make a run repeat *on this machine at this thread count*, while the
-# thread count decides how a parallel reduction is split, and float addition is
-# not associative. Measured on the production-width model: three runs at 8
-# threads give three different results, deterministic mode makes them one --
-# but 1, 2, 4 and 8 threads still give four different answers, with or without
-# it. A golden has to hold on machines with different core counts, so the
-# thread count is what has to be pinned. Single-threaded is then already
-# repeatable without deterministic mode; the trajectory test asks for it anyway,
-# below, so a future operation that is nondeterministic even on one thread
-# cannot slip in unnoticed.
+# Required, not tidiness, and `torch.use_deterministic_algorithms` does not replace it. The two settle different halves of the problem: deterministic kernels make a run repeat *on this machine at this thread count*, while the thread count decides how a parallel reduction is split, and float addition is not associative. Measured on the production-width model: three runs at 8 threads give three different results, deterministic mode makes them one, but 1, 2, 4 and 8 threads still give four different answers, with or without it. A golden has to hold on machines with different core counts, so the thread count is what has to be pinned. Single-threaded is then already repeatable without deterministic mode; the trajectory test asks for it anyway, below, so a future operation that is nondeterministic even on one thread cannot slip in unnoticed.
 torch.set_num_threads(1)
 
 
@@ -72,8 +49,7 @@ MODEL_DEFAULTS = dict(
     action_arities=[2, 2],
     action_arg_positions=[[0, 1], [0]],
     successor_relations=True,
-    # Production widths would make the stored trajectory 2.6 MB of encoder
-    # weights. Narrow layers exercise the same code for ~50 KB.
+    # Production widths would make the stored trajectory 2.6 MB of encoder weights. Narrow layers exercise the same code for ~50 KB.
     encoder_hidden_dims=[4, 8, 8],
 )
 
@@ -159,8 +135,7 @@ class ForwardCharacterizationTest(unittest.TestCase):
                 torch.manual_seed(29)
                 prediction = model(*make_batch())
 
-                # The golden keys predate SchemaPrediction, so they are kept as
-                # they were: the stored values must still be what is compared.
+                # The golden keys predate SchemaPrediction, so they are kept as they were: the stored values must still be what is compared.
                 for label, value in (
                     ("adjacency_out", prediction.adjacency),
                     ("ignore_effects", prediction.effects.ignore),
@@ -179,8 +154,7 @@ class ForwardCharacterizationTest(unittest.TestCase):
 
                 torch.manual_seed(29)
                 losses = model.step(make_batch())
-                # The stored keys predate the Losses dataclass and the renaming
-                # of loss_mse, which was neither an MSE nor a loss.
+                # The stored keys predate the Losses dataclass and the renaming of loss_mse, which was neither an MSE nor a loss.
                 for key, value in (
                     ("loss_adjacency", losses.adjacency),
                     ("loss_aux", losses.auxiliary),
@@ -192,11 +166,7 @@ class ForwardCharacterizationTest(unittest.TestCase):
 def trained_values(model: DIAS) -> dict[str, torch.Tensor]:
     """Every parameter, under the name the fixture stored it as.
 
-    The two schema tensors are compared as the model applies them. The arity
-    mask moved out of the parameters and into the forward pass, so the raw
-    parameters now hold untouched noise at cells no schema can express, where
-    the fixture holds the mask itself -- and the masked logits it produced then
-    are exactly the ones it produces now.
+    The two schema tensors are compared as the model applies them. The arity mask moved out of the parameters and into the forward pass, so the raw parameters now hold untouched noise at cells no schema can express, where the fixture holds the mask itself, and the masked logits it produced then are exactly the ones it produces now.
     """
     schema = model.schema_logits()
     masked = {
@@ -213,20 +183,17 @@ def trained_values(model: DIAS) -> dict[str, torch.Tensor]:
 class TrainingTrajectoryTest(unittest.TestCase):
     """Three real training_steps, then every parameter compared to the fixture.
 
-    Catches RNG-order changes during construction, loss-term reordering, and
-    any drift in the PCGrad projection -- none of which a forward test sees.
+    Catches RNG-order changes during construction, loss-term reordering, and any drift in the PCGrad projection, none of which a forward test sees.
     """
 
     def run_steps(self, **flags) -> DIAS:
         torch.manual_seed(11)
         model = DIAS(**(MODEL_DEFAULTS | flags))
         self.addCleanup(model.teardown, "test")
-        # Lightning's `deterministic` sets a *global* torch flag and never
-        # unsets it, so it is put back before the next test module runs.
+        # Lightning's `deterministic` sets a *global* torch flag and never unsets it, so it is put back before the next test module runs.
         self.addCleanup(torch.use_deterministic_algorithms, False)
 
-        # batch_size=None disables collation, so each item arrives as the
-        # (batch_s1, batch_s2) tuple DIAS.step expects.
+        # batch_size=None disables collation, so each item arrives as the (batch_s1, batch_s2) tuple DIAS.step expects.
         batches = DataLoader([make_batch(shift=i) for i in range(3)], batch_size=None)
         trainer = L.Trainer(
             deterministic=True,

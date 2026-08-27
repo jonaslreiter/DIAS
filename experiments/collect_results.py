@@ -1,8 +1,6 @@
 """Aggregate validation results for an experiment into a paper-style table.
 
-Reads per-run results (written by ``experiments/validate_runs.py``) from local JSON
-or the W&B API, keyed by the ``--experiment`` name (= W&B group). For each
-domain it aggregates over seeds and reports:
+Reads per-run results (written by ``experiments/validate_runs.py``) from local JSON or the W&B API, keyed by the ``--experiment`` name (= W&B group). For each domain it aggregates over seeds and reports:
 
   P     mean precision over seeds
   R     mean recall over seeds
@@ -11,40 +9,22 @@ domain it aggregates over seeds and reports:
   N_SC  #seeds sound *and* complete
   n     #seeds aggregated
 
-Per seed, the seed's validation problems are reduced to a single precision /
-recall by micro-averaging the per-action tp/fp/fn in ``action_stats`` (so a seed
-is sound iff every problem has zero false positives); when tp/fp/fn are absent
-(e.g. W&B summaries) it falls back to the mean of per-problem precision/recall.
+Per seed, the seed's validation problems are reduced to a single precision / recall by micro-averaging the per-action tp/fp/fn in ``action_stats`` (so a seed is sound iff every problem has zero false positives); when tp/fp/fn are absent (e.g. W&B summaries) it falls back to the mean of per-problem precision/recall.
 
-With ``--sweep AXIS`` it instead reads the sub-experiments written by
-``experiments/launch.py --sweep AXIS`` (``<experiment>-<tag><value>``) and prints one
-domain x value matrix per metric; ``--markdown`` writes the same matrices as
-markdown tables. ``--reuse-default EXPERIMENT`` mirrors the launcher flag: the
-axis-default column is read from that existing experiment.
+With ``--sweep AXIS`` it instead reads the sub-experiments written by ``experiments/launch.py --sweep AXIS`` (``<experiment>-<tag><value>``) and prints one domain x value matrix per metric; ``--markdown`` writes the same matrices as markdown tables. ``--reuse-default EXPERIMENT`` mirrors the launcher flag: the axis-default column is read from that existing experiment.
 
-``--threshold-sweep`` does the same for the *validation* binarization threshold
-(sub-experiments ``<experiment>-thr<T>`` written by
-``experiments/launch_threshold_validation.py``). Those columns share one set of
-trained checkpoints, so they isolate the effect of the threshold alone.
+``--threshold-sweep`` does the same for the *validation* binarization threshold (sub-experiments ``<experiment>-thr<T>`` written by ``experiments/launch_threshold_validation.py``). Those columns share one set of trained checkpoints, so they isolate the effect of the threshold alone.
 
-Without a sweep, ``--experiment`` takes any number of unrelated experiments (an
-ablation set, say): each gets its own table, and ``--markdown`` writes them into
-one document with a cross-experiment summary on top.
+Without a sweep, ``--experiment`` takes any number of unrelated experiments (an ablation set, say): each gets its own table, and ``--markdown`` writes them into one document with a cross-experiment summary on top.
 
 Usage:
     python experiments/collect_results.py --experiment paper-main
     python experiments/collect_results.py --experiment paper-main --source wandb
-    python experiments/collect_results.py --experiment noise-a2r2 \
-        --domains gripper hanoi
-    python experiments/collect_results.py --experiment dias-full abl-no-pcgrad \
-        --markdown experiments/results/ablations-summary.md
-    python experiments/collect_results.py --experiment dias-full --threshold-sweep \
-        --markdown experiments/results/threshold-sweep.md
-    python experiments/collect_results.py --experiment aux-sweep \
-        --sweep aux-loss-weight \
-        --markdown experiments/results/aux-sweep.md
-    python experiments/collect_results.py --experiment dias --sweep num-slots \
-        --reuse-default dias-full --markdown experiments/results/num-slots-sweep.md
+    python experiments/collect_results.py --experiment noise-a2r2 --domains gripper hanoi
+    python experiments/collect_results.py --experiment dias-full abl-no-pcgrad --markdown experiments/results/ablations-summary.md
+    python experiments/collect_results.py --experiment dias-full --threshold-sweep --markdown experiments/results/threshold-sweep.md
+    python experiments/collect_results.py --experiment aux-sweep --sweep aux-loss-weight --markdown experiments/results/aux-sweep.md
+    python experiments/collect_results.py --experiment dias --sweep num-slots --reuse-default dias-full --markdown experiments/results/num-slots-sweep.md
 """
 
 from __future__ import annotations
@@ -76,13 +56,7 @@ ONE = 1.0 - 1e-9
 def _seed_precision_recall(per_problem: dict) -> tuple[float, float] | None:
     """Reduce one seed's per-problem results to a single (precision, recall).
 
-    Micro-averaged: the per-problem tp/fp/fn are summed, so a problem with many
-    reachable successors counts for more than a small one. Those counts are
-    per-action -- a successor reached under the wrong operator is an error --
-    which is why summing `action_stats` gives the same answer and is what
-    results written before the totals existed are read through. The mean of
-    per-problem precisions is a last resort for older W&B runs whose summaries
-    carry nothing else. The counts arrive as floats from JSON.
+    Micro-averaged: the per-problem tp/fp/fn are summed, so a problem with many reachable successors counts for more than a small one. Those counts are per-action: a successor reached under the wrong operator is an error, which is why summing `action_stats` gives the same answer and is what results written before the totals existed are read through. The mean of per-problem precisions is a last resort for older W&B runs whose summaries carry nothing else. The counts arrive as floats from JSON.
     """
 
     def counts(result: dict) -> tuple[int, int, int] | None:
@@ -262,15 +236,14 @@ def write_sweep_markdown(
     lines = [
         f"# {axis_name} sweep",
         "",
-        f"Rows are domains, columns are `{param}` (source: {source}); each cell "
-        "aggregates over the seeds of that (domain, value) pair. `ALL` pools "
-        "every seed of every domain at that value. Columns come from the "
-        "sub-experiments " + ", ".join(f"`{v:g}` → `{names[v]}`" for v in values) + ".",
+        f"Rows are domains, columns are `{param}` (source: {source}); each cell aggregates over the seeds of that (domain, value) pair. `ALL` pools every seed of every domain at that value. Columns come from the sub-experiments "
+        + ", ".join(f"`{v:g}` → `{names[v]}`" for v in values)
+        + ".",
         "",
     ]
     for metric in (*METRICS, "n"):
         lines += [
-            f"## {metric} — {METRIC_LABELS[metric]}",
+            f"## {metric}: {METRIC_LABELS[metric]}",
             "",
             "| domain | " + " | ".join(cols) + " |",
             "|" + "---|" * (len(cols) + 1),
@@ -294,11 +267,9 @@ def run_sweep(args: argparse.Namespace, axis_name: str, values: list[float]) -> 
     axis = SWEEP_AXES[axis_name]
     if args.reuse_default and axis.default is None:
         raise SystemExit(
-            f"--reuse-default: the {axis_name} axis has no reusable default "
-            "(the value is tuned per domain)"
+            f"--reuse-default: the {axis_name} axis has no reusable default (the value is tuned per domain)"
         )
-    # Same name derivation as the launcher, so the reused default column points
-    # at whatever experiment was passed to `launch.py --reuse-default`.
+    # Same name derivation as the launcher, so the reused default column points at whatever experiment was passed to `launch.py --reuse-default`.
     names = {
         v: sweep_experiment_name(args.experiment, axis, v, args.reuse_default)
         for v in values
@@ -309,9 +280,7 @@ def run_sweep(args: argparse.Namespace, axis_name: str, values: list[float]) -> 
 def run_threshold_sweep(args: argparse.Namespace, values: list[float]) -> None:
     """Collect the re-validations written by launch_threshold_validation.py.
 
-    Unlike --sweep this varies a *validation* parameter, so every column reads
-    the same trained checkpoints — differences between columns are purely the
-    effect of how the learned schema is binarized.
+    Unlike --sweep this varies a *validation* parameter, so every column reads the same trained checkpoints, so differences between columns are purely the effect of how the learned schema is binarized.
     """
     names = {v: threshold_experiment_name(args.experiment, v) for v in values}
     _report_matrix(args, "threshold", "binarization threshold", values, names)
@@ -375,15 +344,13 @@ def print_table(
         pooled += prs
         a = _aggregate(prs)
         print(
-            f"{domain:<16} {a['P']:>6.3f} {a['R']:>6.3f} "
-            f"{a['N_S']:>5} {a['N_C']:>5} {a['N_SC']:>5} {a['n']:>4}"
+            f"{domain:<16} {a['P']:>6.3f} {a['R']:>6.3f} {a['N_S']:>5} {a['N_C']:>5} {a['N_SC']:>5} {a['n']:>4}"
         )
     if pooled:
         print("-" * len(header))
         a = _aggregate(pooled)
         print(
-            f"{'ALL':<16} {a['P']:>6.3f} {a['R']:>6.3f} "
-            f"{a['N_S']:>5} {a['N_C']:>5} {a['N_SC']:>5} {a['n']:>4}"
+            f"{'ALL':<16} {a['P']:>6.3f} {a['R']:>6.3f} {a['N_S']:>5} {a['N_C']:>5} {a['N_SC']:>5} {a['n']:>4}"
         )
     else:
         print("(no results found)")
@@ -398,12 +365,10 @@ def write_experiments_markdown(
 ) -> None:
     """Write one domain table per experiment, plus a cross-experiment summary.
 
-    Every table spans the union of the domains, so an experiment that is missing
-    a domain entirely shows a row of ``-`` instead of silently dropping it.
+    Every table spans the union of the domains, so an experiment that is missing a domain entirely shows a row of ``-`` instead of silently dropping it.
     """
     columns = (*METRICS, "n")
-    # Per domain, the seed count of the most complete experiment in the set:
-    # the yardstick for "is this experiment fully collected?".
+    # Per domain, the seed count of the most complete experiment in the set: the yardstick for "is this experiment fully collected?".
     expected = sum(
         max(len(results[e].get(d, [])) for e in experiments) for d in domains
     )
@@ -416,9 +381,7 @@ def write_experiments_markdown(
         "",
         "Experiments: " + ", ".join(f"`{e}`" for e in experiments) + ".",
         "",
-        f"Rows are domains (source: {source}); each cell aggregates over the "
-        "seeds of that (experiment, domain) pair. `ALL` pools every seed of "
-        "every domain of that experiment, `-` means no results.",
+        f"Rows are domains (source: {source}); each cell aggregates over the seeds of that (experiment, domain) pair. `ALL` pools every seed of every domain of that experiment, `-` means no results.",
         "",
         "| Column | Meaning |",
         "| --- | --- |",
@@ -426,8 +389,7 @@ def write_experiments_markdown(
         "",
         "## Summary",
         "",
-        f"`n` is compared against {expected} seeds — the most complete "
-        "experiment of this set, per domain.",
+        f"`n` is compared against {expected} seeds, the most complete experiment of this set, per domain.",
         "",
         "| experiment | " + " | ".join(columns) + " |",
         "|" + "---|" * (len(columns) + 1),
@@ -487,9 +449,7 @@ def main() -> int:
         required=True,
         nargs="+",
         metavar="NAME",
-        help="Experiment name(s) (= W&B group). Several names are allowed "
-        "without a sweep: each gets its own table, and --markdown writes them "
-        "into one document. A sweep takes exactly one (its base name).",
+        help="Experiment name(s) (= W&B group). Several names are allowed without a sweep: each gets its own table, and --markdown writes them into one document. A sweep takes exactly one (its base name).",
     )
     p.add_argument("--source", default="local", choices=["local", "wandb"])
     p.add_argument(
@@ -502,9 +462,7 @@ def main() -> int:
         "--sweep",
         default=None,
         choices=sorted(SWEEP_AXES),
-        help="Aggregate the sweep launched under --experiment (sub-experiments "
-        "<experiment>-<tag><value>) into a domain x value matrix per metric. "
-        "Default grids — "
+        help="Aggregate the sweep launched under --experiment (sub-experiments <experiment>-<tag><value>) into a domain x value matrix per metric. Default grids: "
         + "; ".join(
             f"{name}: {', '.join(f'{v:g}' for v in axis.values)}"
             for name, axis in SWEEP_AXES.items()
@@ -523,8 +481,7 @@ def main() -> int:
         "--reuse-default",
         default=None,
         metavar="EXPERIMENT",
-        help="Read the axis-default column from this existing experiment "
-        "(mirrors 'launch.py --reuse-default').",
+        help="Read the axis-default column from this existing experiment (mirrors 'launch.py --reuse-default').",
     )
     p.add_argument(
         "--threshold-sweep",
@@ -532,11 +489,7 @@ def main() -> int:
         type=float,
         default=None,
         metavar="T",
-        help="Aggregate the re-validations written by "
-        "experiments/launch_threshold_validation.py (sub-experiments "
-        f"<experiment>-{THRESHOLD_TAG}<T>) into a domain x threshold matrix per "
-        "metric. "
-        "The bare flag uses the default grid "
+        help=f"Aggregate the re-validations written by experiments/launch_threshold_validation.py (sub-experiments <experiment>-{THRESHOLD_TAG}<T>) into a domain x threshold matrix per metric. The bare flag uses the default grid "
         + ", ".join(f"{t:g}" for t in THRESHOLD_VALUES)
         + ".",
     )
@@ -544,8 +497,7 @@ def main() -> int:
         "--markdown",
         type=Path,
         default=None,
-        help="Also write the tables to this markdown file: one table per metric "
-        "with --sweep / --threshold-sweep, one table per experiment otherwise.",
+        help="Also write the tables to this markdown file: one table per metric with --sweep / --threshold-sweep, one table per experiment otherwise.",
     )
     add_logging_arguments(p)
     args = p.parse_args()
@@ -555,8 +507,7 @@ def main() -> int:
     sweeping = args.sweep is not None or args.threshold_sweep is not None
     if len(experiments) > 1 and sweeping:
         raise SystemExit(
-            "--sweep / --threshold-sweep read the sub-experiments of a single "
-            f"base experiment; got {len(experiments)}: {', '.join(experiments)}"
+            f"--sweep / --threshold-sweep read the sub-experiments of a single base experiment; got {len(experiments)}: {', '.join(experiments)}"
         )
     # The sweep paths derive sub-experiment names from one base name.
     args.experiment = experiments[0]
@@ -564,13 +515,11 @@ def main() -> int:
     if args.threshold_sweep is not None:
         if args.sweep is not None:
             raise SystemExit(
-                "--threshold-sweep varies a validation parameter and cannot be "
-                "combined with the training-parameter sweeps"
+                "--threshold-sweep varies a validation parameter and cannot be combined with the training-parameter sweeps"
             )
         if args.reuse_default:
             raise SystemExit(
-                "--reuse-default does not apply to --threshold-sweep: the 0.5 "
-                "column is re-validated into its own sub-experiment"
+                "--reuse-default does not apply to --threshold-sweep: the 0.5 column is re-validated into its own sub-experiment"
             )
         run_threshold_sweep(args, list(args.threshold_sweep) or list(THRESHOLD_VALUES))
         return 0

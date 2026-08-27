@@ -1,12 +1,8 @@
 """Cells of a schema tensor that no lifted action could ever mean.
 
-Effects and preconditions are laid out over *slot pairs* for every relation,
-which is one cell too many for a unary relation: it says something about a
-single slot, so an off-diagonal cell has no reading. Those cells are pinned to
-the ignore channel rather than left free to fit noise.
+Effects and preconditions are laid out over *slot pairs* for every relation, which is one cell too many for a unary relation: it says something about a single slot, so an off-diagonal cell has no reading. Those cells are pinned to the ignore channel rather than left free to fit noise.
 
-The pinning happens on the way out of the module that owns the tensor, not on
-the parameter itself, so no effect source can forget it.
+The pinning happens on the way out of the module that owns the tensor, not on the parameter itself, so no effect source can forget it.
 """
 
 from __future__ import annotations
@@ -32,9 +28,7 @@ def unary_offdiagonal_mask(
 def forbid(logits: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
     """Pin every masked cell of `logits` to the ignore channel.
 
-    The masked values take no gradient, so what the parameter holds there never
-    matters -- including the ``-inf`` that checkpoints written before the mask
-    moved out of the parameter still carry.
+    The masked values take no gradient, so what the parameter holds there never matters, including the ``-inf`` that checkpoints written before the mask moved out of the parameter still carry.
     """
     blocked = logits.new_full((logits.shape[-1],), -torch.inf)
     blocked[IGNORE] = 0.0

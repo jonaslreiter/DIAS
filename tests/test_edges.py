@@ -50,8 +50,7 @@ class EdgeTypeLayoutTest(unittest.TestCase):
         before = transition([[0], [1]], [0])
         after = transition([[1], [0]], [1])
         _, edge_type = layout(before, after)
-        # 2 state + 2 reversed, then the deleted atom and the added one, each
-        # in both directions, at base = 2 * 2 + 1.
+        # 2 state + 2 reversed, then the deleted atom and the added one, each in both directions, at base = 2 * 2 + 1.
         self.assertEqual(edge_type.tolist()[-4:], [5, 7, 10, 12])
 
     def test_a_missing_successor_or_an_unchanged_one_adds_nothing(self):

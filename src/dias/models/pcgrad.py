@@ -38,12 +38,7 @@ class WeightedSum:
 class PCGrad:
     """Where the two gradients conflict, keep the primary one's direction.
 
-    The auxiliary objective asks the schema to explain less, which past a point
-    is at odds with explaining the transition at all. Rather than let a weight
-    arbitrate globally, this projects the auxiliary gradient onto the plane
-    orthogonal to the primary one wherever the two point against each other,
-    per parameter -- so the auxiliary term can only act in directions the
-    primary objective is indifferent to.
+    The auxiliary objective asks the schema to explain less, which past a point is at odds with explaining the transition at all. Rather than let a weight arbitrate globally, this projects the auxiliary gradient onto the plane orthogonal to the primary one wherever the two point against each other, per parameter, so the auxiliary term can only act in directions the primary objective is indifferent to.
     """
 
     # Below this the primary gradient carries no direction to project onto.
@@ -55,8 +50,7 @@ class PCGrad:
 
     def backward(self, primary, auxiliary, parameters) -> None:
         parameters = list(parameters)
-        # The weight is applied inside autograd rather than to the gradient
-        # afterwards, which is what the archived runs did.
+        # The weight is applied inside autograd rather than to the gradient afterwards, which is what the archived runs did.
         primary_grads = torch.autograd.grad(
             primary, parameters, retain_graph=True, allow_unused=True
         )
@@ -75,8 +69,7 @@ class PCGrad:
     ) -> torch.Tensor | None:
         """The gradient one parameter ends up with, or None to leave it alone.
 
-        A parameter only one of the two losses reaches gets that one's
-        gradient; a parameter neither reaches keeps whatever it had.
+        A parameter only one of the two losses reaches gets that one's gradient; a parameter neither reaches keeps whatever it had.
         """
         if primary is None or auxiliary is None:
             reached = auxiliary if primary is None else primary
@@ -103,8 +96,7 @@ class PCGrad:
     def _clip_to(cls, primary: torch.Tensor, auxiliary: torch.Tensor) -> torch.Tensor:
         """Keep the auxiliary gradient no longer than the primary one.
 
-        Orthogonality alone does not bound the step the auxiliary term takes;
-        without this it can dominate early, when the primary gradient is small.
+        Orthogonality alone does not bound the step the auxiliary term takes; without this it can dominate early, when the primary gradient is small.
         """
         primary_norm = torch.norm(primary)
         auxiliary_norm = torch.norm(auxiliary)

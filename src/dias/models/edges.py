@@ -12,21 +12,16 @@ import torch.nn.functional as F
 class EdgeTypeLayout(nn.Module):
     """The one place that knows what an edge type id means.
 
-    The encoder reads one graph per transition, whose edges carry a type from
-    four consecutive bands. Over ``R`` relations and ``A`` action-argument
-    positions:
+    The encoder reads one graph per transition, whose edges carry a type from four consecutive bands. Over ``R`` relations and ``A`` action-argument positions:
 
     ===========================  =========================================
     ``[0, R)``                   the state's atoms
     ``[R, 2R)``                  the same, reversed
-    ``[2R, 2R + A)``             action self-loops: which argument of the
-                                 action this object was passed as
-    ``[2R + A, 2R + A + 4R)``    what the transition changed -- deleted,
-                                 deleted reversed, added, added reversed
+    ``[2R, 2R + A)``             action self-loops: which argument of the action this object was passed as
+    ``[2R + A, 2R + A + 4R)``    what the transition changed: deleted, deleted reversed, added, added reversed
     ===========================  =========================================
 
-    The last band exists only with ``successor_relations``, which shows the
-    encoder the answer; it is what the ablation of the same name turns off.
+    The last band exists only with ``successor_relations``, which shows the encoder the answer; it is what the ablation of the same name turns off.
     """
 
     def __init__(
@@ -40,8 +35,7 @@ class EdgeTypeLayout(nn.Module):
         self.num_relations = num_relations
         self.successor_relations = successor_relations
 
-        # One relation per (action, argument position) pair that is actually
-        # used, so an action with no known arguments contributes none.
+        # One relation per (action, argument position) pair that is actually used, so an action with no known arguments contributes none.
         positions = action_arg_positions or [[] for _ in range(num_actions)]
         width = max((max(p) + 1 for p in positions if p), default=1)
         lookup = torch.full((num_actions, width), -1, dtype=torch.long)
@@ -84,8 +78,7 @@ class EdgeTypeLayout(nn.Module):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """A self-loop on each object the action was applied to.
 
-        The type says which argument position it filled, which is how the
-        encoder can tell the action's arguments apart from each other.
+        The type says which argument position it filled, which is how the encoder can tell the action's arguments apart from each other.
         """
         width = self._argument_relation.size(1)
         arguments = y_action_args[:, :width]

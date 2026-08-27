@@ -11,9 +11,7 @@ from dias.schema.domain import tensor_relations
 
 logger = logging.getLogger(__name__)
 
-# How often a long exploration says where it is. Sampling a large instance can
-# run for minutes with nothing else on screen; anything shorter than this stays
-# silent, so short runs are not narrated.
+# How often a long exploration says where it is. Sampling a large instance can run for minutes with nothing else on screen; anything shorter than this stays silent, so short runs are not narrated.
 PROGRESS_INTERVAL_SECONDS = 10.0
 
 
@@ -126,8 +124,7 @@ def generate_random_walk(
             if per_label.get(a, 0) < min_per_label
         }
         logger.warning(
-            "Random walk hit max_steps=%d before meeting its quota; "
-            "missing per action: %s",
+            "Random walk hit max_steps=%d before meeting its quota; missing per action: %s",
             max_steps,
             missing,
         )

@@ -1,8 +1,6 @@
 #!/usr/bin/env zsh
 # ── site configuration ────────────────────────────────────────────────────────
-# See experiments/slurm/train.sh for what this block is and how to adapt it. The
-# partition list here names CPU partitions too: validation runs the model on
-# CPU and spends its time in pymimir successor generation.
+# See experiments/slurm/train.sh for what this block is and how to adapt it. The partition list here names CPU partitions too: validation runs the model on CPU and spends its time in pymimir successor generation.
 #SBATCH --job-name=dias-val
 #SBATCH --partition=rleap_gpu_24gb,rleap_gpu_48gb,rleap_cpu,rleap_cpu_modern
 #SBATCH --qos=rleap_deadline
@@ -11,14 +9,11 @@
 : ${DIAS_ENV_SETUP:="source ~/.zshrc && conda activate ddl"}
 # ── end site configuration ────────────────────────────────────────────────────
 #
-# DIAS validation array task. Do NOT run directly — submit via
+# DIAS validation array task. Do NOT run directly; submit via
 #   python experiments/launch.py ...
-# which submits this array with --dependency=aftercorr on the training array
-# (task i validates the checkpoint from training task i) and exports the
-# DIAS_ROOT/EXPERIMENT/DOMAIN/EXP_TYPE/paths below.
+# which submits this array with --dependency=aftercorr on the training array (task i validates the checkpoint from training task i) and exports the DIAS_ROOT/EXPERIMENT/DOMAIN/EXP_TYPE/paths below.
 #
-# experiments/launch_threshold_validation.py reuses this same script to re-validate
-# already-trained checkpoints, exporting the three optional variables below.
+# experiments/launch_threshold_validation.py reuses this same script to re-validate already-trained checkpoints, exporting the three optional variables below.
 
 eval "$DIAS_ENV_SETUP"
 set -euo pipefail
@@ -38,8 +33,7 @@ if [[ "${NO_WANDB:-0}" == "1" ]]; then
   EXTRA+=(--no-wandb)
 fi
 
-# DIAS_ROOT rather than a relative path: Slurm runs the batch script from a
-# spool copy, so nothing here may assume the submission directory.
+# DIAS_ROOT rather than a relative path: Slurm runs the batch script from a spool copy, so nothing here may assume the submission directory.
 python "${DIAS_ROOT}/experiments/validate_runs.py" \
   --experiment "$EXPERIMENT" \
   --domain "$DOMAIN" \

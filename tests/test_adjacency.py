@@ -41,10 +41,7 @@ class AdjToPygDataTest(unittest.TestCase):
 class DenseFromEdgesTest(unittest.TestCase):
     """`dense_from_edges` replaced a per-relation `to_dense_adj` loop.
 
-    The two differ where an edge occurs twice -- `to_dense_adj` sums, this
-    assigns -- which cannot happen for edges built by `adj_to_pyg_data` from a
-    0/1 tensor, since they come from its non-zero cells. That is the fact the
-    round-trip below pins.
+    The two differ where an edge occurs twice: `to_dense_adj` sums, this assigns. That cannot happen for edges built by `adj_to_pyg_data` from a 0/1 tensor, since they come from its non-zero cells. That is the fact the round-trip below pins.
     """
 
     def states(self) -> torch.Tensor:

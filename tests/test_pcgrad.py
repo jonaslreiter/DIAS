@@ -1,8 +1,6 @@
 """The gradient combiners, on gradients whose right answer is known by hand.
 
-Every case here uses losses that are linear in the parameters, so each loss's
-gradient *is* the vector it was built from and the expected result can be
-written down rather than recomputed by the code under test.
+Every case here uses losses that are linear in the parameters, so each loss's gradient *is* the vector it was built from and the expected result can be written down rather than recomputed by the code under test.
 """
 
 import unittest
@@ -58,8 +56,7 @@ class PCGradTest(unittest.TestCase):
 
     def test_a_conflicting_gradient_keeps_only_its_orthogonal_part(self):
         """g_aux - (g_adj . g_aux / |g_adj|^2) g_adj, then g_adj + that."""
-        # The clip is disabled here: it has its own test, and the projected
-        # gradient below is longer than the primary one, so it would fire.
+        # The clip is disabled here: it has its own test, and the projected gradient below is longer than the primary one, so it would fire.
         primary, auxiliary = [2.0, 0.0], [-1.0, 1.5]
         grad = self.combine(primary, auxiliary, dynamic_clip=False)
 

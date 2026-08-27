@@ -1,26 +1,16 @@
 #!/usr/bin/env python
 """Walk one domain's size ladder for one seed (compute-side driver).
 
-This is what a Slurm array task runs (``experiments/scaling/slurm/benchmark.sh``,
-array task id = seed) and what ``experiments/scaling/launch_scaling.py
---backend local`` calls directly.
-It is the analogue of ``experiments/validate_runs.py`` in the main pipeline.
+This is what a Slurm array task runs (``experiments/scaling/slurm/benchmark.sh``, array task id = seed) and what ``experiments/scaling/launch_scaling.py --backend local`` calls directly. It is the analogue of ``experiments/validate_runs.py`` in the main pipeline.
 
-Every size runs as its own ``experiments/scaling/benchmark.py`` subprocess.
-That is the point
-of the indirection: a CUDA OOM — expected at the top of the ladder — leaves the
-process's allocator in a state not worth trusting for the next measurement, and
-one dead subprocess costs one point instead of the whole ladder. The subprocess
-still records the OOM to JSON, so the ladder keeps its data.
+Every size runs as its own ``experiments/scaling/benchmark.py`` subprocess. That is the point of the indirection: a CUDA OOM (expected at the top of the ladder) leaves the process's allocator in a state not worth trusting for the next measurement, and one dead subprocess costs one point instead of the whole ladder. The subprocess still records the OOM to JSON, so the ladder keeps its data.
 
-All sizes of one (domain, seed) run in the same task, hence on the same physical
-GPU, so a curve is never stitched together across cards.
+All sizes of one (domain, seed) run in the same task, hence on the same physical GPU, so a curve is never stitched together across cards.
 
 Usage
 -----
     python experiments/scaling/run_scaling.py --domain blocks-3 --seed 0
-    python experiments/scaling/run_scaling.py --domain delivery --seed 2 \
-        --experiment scaling-a10
+    python experiments/scaling/run_scaling.py --domain delivery --seed 2 --experiment scaling-a10
 """
 
 from __future__ import annotations
@@ -44,8 +34,7 @@ PROJECT_ROOT = SCALING_DIR.parents[1]
 def ladder_for(domain: str, cfg: dict) -> list[tuple[int, str]]:
     """(target rung, instance id) of a domain's ladder, smallest first.
 
-    The rung is what makes the three domains comparable: they scale in different
-    units and cannot all land on the same object count (see sizes.yaml).
+    The rung is what makes the three domains comparable: they scale in different units and cannot all land on the same object count (see sizes.yaml).
     """
     spec = cfg["domains"][domain]
     generator = spec["generator"]
@@ -75,8 +64,7 @@ def run_ladder(
 ) -> int:
     instances = instances_for(domain, cfg)
     print(
-        f"[{domain} seed={seed}] ladder: {', '.join(instances)} "
-        f"-> {results_dir / experiment / domain}",
+        f"[{domain} seed={seed}] ladder: {', '.join(instances)} -> {results_dir / experiment / domain}",
         flush=True,
     )
     failures = 0
@@ -87,8 +75,7 @@ def run_ladder(
             continue
         if not instance_path(domain, instance).exists():
             print(
-                f"[{domain} seed={seed}] {instance}: missing instance file — run "
-                "experiments/scaling/generate_instances.py first",
+                f"[{domain} seed={seed}] {instance}: missing instance file, run experiments/scaling/generate_instances.py first",
                 file=sys.stderr,
                 flush=True,
             )
@@ -113,12 +100,10 @@ def run_ladder(
         proc = subprocess.run(cmd)
         elapsed = time.perf_counter() - t0
         if proc.returncode != 0:
-            # An OOM exits 0 with status="oom" recorded; a non-zero exit is a
-            # real failure (crash, missing config, killed task).
+            # An OOM exits 0 with status="oom" recorded; a non-zero exit is a real failure (crash, missing config, killed task).
             failures += 1
             print(
-                f"[{domain} seed={seed}] {instance}: benchmark failed "
-                f"(exit {proc.returncode}, {elapsed:.0f}s)",
+                f"[{domain} seed={seed}] {instance}: benchmark failed (exit {proc.returncode}, {elapsed:.0f}s)",
                 file=sys.stderr,
                 flush=True,
             )
@@ -166,10 +151,7 @@ def main() -> int:
         rec = json.loads(path.read_text())
         its = rec.get("iterations_per_second")
         print(
-            f"  {rec['instance']} n={rec.get('num_objects', '?'):>4} "
-            f"{rec['status']:5s} "
-            f"{('%.2f it/s' % its) if its else '        -'} "
-            f"{rec.get('gpu_peak_allocated_mib', 0):8.0f} MiB allocated",
+            f"  {rec['instance']} n={rec.get('num_objects', '?'):>4} {rec['status']:5s} {('%.2f it/s' % its) if its else '        -'} {rec.get('gpu_peak_allocated_mib', 0):8.0f} MiB allocated",
             flush=True,
         )
     return 1 if failures else 0

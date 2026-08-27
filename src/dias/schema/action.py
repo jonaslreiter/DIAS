@@ -1,9 +1,6 @@
 """Lifted action schemas and the atoms they are built from.
 
-Both types serialise to PDDL, so a learned schema can be written out and read
-back by a planner. Slot indices are the parameter identity: an atom refers to
-``?x{slot}``, and the schema's parameter list is the union of the slots its
-atoms mention.
+Both types serialise to PDDL, so a learned schema can be written out and read back by a planner. Slot indices are the parameter identity: an atom refers to ``?x{slot}``, and the schema's parameter list is the union of the slots its atoms mention.
 """
 
 from __future__ import annotations
@@ -66,9 +63,4 @@ class ActionSchema:
         def conjunction(atoms: list[GroundAtom]) -> str:
             return "(and " + " ".join(str(a) for a in atoms) + ")" if atoms else "()"
 
-        return (
-            f"(:action {self.name}\n"
-            f"  :parameters ({params})\n"
-            f"  :precondition {conjunction(self.preconditions)}\n"
-            f"  :effect {conjunction(self.effects)})\n\n"
-        )
+        return f"(:action {self.name}\n  :parameters ({params})\n  :precondition {conjunction(self.preconditions)}\n  :effect {conjunction(self.effects)})\n\n"

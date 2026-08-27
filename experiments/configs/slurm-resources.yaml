@@ -10,8 +10,7 @@
 #
 # Fill in real per-domain values as needed; an empty {} means "use defaults".
 #
-# These configure the TRAINING array. Validation-array resources are configured
-# separately in experiments/configs/slurm-resources-validation.yaml.
+# These configure the TRAINING array. Validation-array resources are configured separately in experiments/configs/slurm-resources-validation.yaml.
 
 defaults:
   time: "04:00:00"

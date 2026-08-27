@@ -9,9 +9,7 @@ from pathlib import Path
 class PddlWorkspace:
     """A self-deleting directory for one validator's generated PDDL files.
 
-    pymimir parses from paths, so merged domains and stripped problems must
-    exist as files for as long as the validator (and any worker process reading
-    them) does. The directory is removed when the workspace is collected.
+    pymimir parses from paths, so merged domains and stripped problems must exist as files for as long as the validator (and any worker process reading them) does. The directory is removed when the workspace is collected.
     """
 
     def __init__(self) -> None:

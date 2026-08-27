@@ -3,33 +3,21 @@
 
 Measures how the DIAS *training step* behaves as the instance grows:
 
-  * throughput      — iterations (training steps) per second, steady state
-  * GPU memory      — peak allocated / reserved bytes over the measured window
-  * host memory     — peak RSS, and the size of the pre-computed sample pool
-  * setup time      — transition sampling + tensor construction
+  * throughput      : iterations (training steps) per second, steady state
+  * GPU memory      : peak allocated / reserved bytes over the measured window
+  * host memory     : peak RSS, and the size of the pre-computed sample pool
+  * setup time      : transition sampling + tensor construction
 
-What runs is the ordinary training path: the Lightning config chain of a real
-run (``configs/main.yaml`` -> ``pddl/<domain>/config.yaml`` ->
-``experiments/scaling/configs/scaling.yaml``) instantiated through
-``dias.main.CLI``, with a
-callback that times the steps. Nothing about the model or the training step is
-stubbed; the overlay only pins the data pipeline and turns off validation,
-logging and checkpointing (see the comments in that overlay).
+What runs is the ordinary training path: the Lightning config chain of a real run (``configs/main.yaml`` -> ``pddl/<domain>/config.yaml`` -> ``experiments/scaling/configs/scaling.yaml``) instantiated through ``dias.main.CLI``, with a callback that times the steps. Nothing about the model or the training step is stubbed; the overlay only pins the data pipeline and turns off validation, logging and checkpointing (see the comments in that overlay).
 
-The first ``--warmup`` steps are discarded and the CUDA peak-memory counters are
-reset right after them, so neither the CUDA context nor the first-step allocator
-growth is counted. The remaining ``--measure`` steps give the throughput; each
-step is bracketed by ``torch.cuda.synchronize()`` so the times are real.
+The first ``--warmup`` steps are discarded and the CUDA peak-memory counters are reset right after them, so neither the CUDA context nor the first-step allocator growth is counted. The remaining ``--measure`` steps give the throughput; each step is bracketed by ``torch.cuda.synchronize()`` so the times are real.
 
-Out-of-memory is a result, not a crash: it is caught and written out as
-``status: "oom"`` so the ladder can be walked to its end.
+Out-of-memory is a result, not a crash: it is caught and written out as ``status: "oom"`` so the ladder can be walked to its end.
 
 Usage
 -----
     python experiments/scaling/benchmark.py --domain blocks-3 --instance n0068 --seed 0
-    python experiments/scaling/benchmark.py --domain delivery --instance n0150 \
-        --seed 0 \
-        --experiment scaling-l40s --warmup 20 --measure 100
+    python experiments/scaling/benchmark.py --domain delivery --instance n0150 --seed 0 --experiment scaling-l40s --warmup 20 --measure 100
 """
 
 from __future__ import annotations
@@ -50,8 +38,7 @@ import yaml
 SCALING_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCALING_DIR.parents[1]
 
-# Where a domain's files live is the main pipeline's business, not this
-# study's; imported rather than re-derived, as the sbatch helpers are.
+# Where a domain's files live is the main pipeline's business, not this study's; imported rather than re-derived, as the sbatch helpers are.
 sys.path.append(str(SCALING_DIR.parent))
 from pipeline import domain_config, domain_pddl  # noqa: E402
 
@@ -85,9 +72,7 @@ def _build_callback():
     class ThroughputBenchmark(Callback):
         """Times the training steps and records peak memory over the window.
 
-        Batch counting is done here rather than off ``trainer.global_step``:
-        DIAS uses manual optimization, so the global step is whatever the module
-        chooses to make it. One callback tick == one training step.
+        Batch counting is done here rather than off ``trainer.global_step``: DIAS uses manual optimization, so the global step is whatever the module chooses to make it. One callback tick == one training step.
         """
 
         def __init__(self, warmup: int, measure: int):
@@ -107,15 +92,12 @@ def _build_callback():
                 torch.cuda.synchronize()
 
         def on_train_start(self, trainer, pl_module):
-            # Everything Trainer.fit does before the first training step:
-            # datamodule setup, dataloader construction, model transfer.
+            # Everything Trainer.fit does before the first training step: datamodule setup, dataloader construction, model transfer.
             self.pre_train_seconds = time.perf_counter() - self.fit_start
 
         def on_train_batch_start(self, trainer, pl_module, batch, batch_idx):
             if self.batches == self.warmup:
-                # Steady state reached: forget the warm-up peaks and start the
-                # clock. reset_peak_memory_stats() sets the peak to the current
-                # usage, so the warmed-up allocator pool stays in the number.
+                # Steady state reached: forget the warm-up peaks and start the clock. reset_peak_memory_stats() sets the peak to the current usage, so the warmed-up allocator pool stays in the number.
                 self._sync()
                 if self._cuda:
                     torch.cuda.reset_peak_memory_stats()
@@ -218,8 +200,7 @@ def run_benchmark(
     problem_pddl = instance_path(domain, instance)
     if not problem_pddl.exists():
         raise SystemExit(
-            f"Missing instance {problem_pddl} — run "
-            "experiments/scaling/generate_instances.py first."
+            f"Missing instance {problem_pddl}, run experiments/scaling/generate_instances.py first."
         )
 
     record: dict = {
@@ -241,12 +222,10 @@ def run_benchmark(
 
     callback = _build_callback()(warmup=warmup, measure=measure)
     t_start = time.perf_counter()
-    # Filled by the setup wrapper below; declared out here so the `finally`
-    # clause can read it even when the CLI itself fails.
+    # Filled by the setup wrapper below; declared out here so the `finally` clause can read it even when the CLI itself fails.
     sampling: dict = {}
     try:
-        # LightningCLI parses `args`, but warns (and would be ambiguous) while
-        # this script's own argv is still visible, so hide it for the call.
+        # LightningCLI parses `args`, but warns (and would be ambiguous) while this script's own argv is still visible, so hide it for the call.
         argv, sys.argv = sys.argv, sys.argv[:1]
         try:
             cli = CLI(
@@ -260,16 +239,13 @@ def run_benchmark(
                 ),
                 run=False,
                 save_config_callback=None,
-                # No W&B logger, no checkpoint callbacks: unlike dias.main.main()
-                # this run is not supposed to produce anything but timings.
+                # No W&B logger, no checkpoint callbacks: unlike dias.main.main() this run is not supposed to produce anything but timings.
                 trainer_defaults={"callbacks": [callback]},
             )
         finally:
             sys.argv = argv
         datamodule, model, trainer = cli.datamodule, cli.model, cli.trainer
-        # Time transition sampling by wrapping the hook itself: Lightning runs
-        # the *callback* setup hook after the datamodule's, so a callback cannot
-        # bracket it, and calling setup() here as well would sample twice.
+        # Time transition sampling by wrapping the hook itself: Lightning runs the *callback* setup hook after the datamodule's, so a callback cannot bracket it, and calling setup() here as well would sample twice.
         inner_setup = datamodule.setup
 
         def timed_setup(stage=None):
@@ -291,9 +267,7 @@ def run_benchmark(
         callback.fit_start = time.perf_counter()
         trainer.fit(model, datamodule=datamodule)
         record["status"] = "ok"
-        # Size of the pre-computed adjacency pool held in host memory — the
-        # other quadratic term (num_samples x R x N x N), and in practice the
-        # thing that limits the ladder before the GPU does.
+        # Size of the pre-computed adjacency pool held in host memory: the other quadratic term (num_samples x R x N x N), and in practice the thing that limits the ladder before the GPU does.
         base = datamodule.base
         record["num_samples"] = len(base)
         record["sample_pool_mib"] = (
@@ -361,11 +335,7 @@ def main() -> int:
 
     its = record.get("iterations_per_second")
     print(
-        f"[{record['status']}] {args.domain}/{args.instance} seed={args.seed}: "
-        f"{'%.2f it/s' % its if its else 'no timing'}, "
-        f"peak {record.get('gpu_peak_allocated_mib', float('nan')):.0f} MiB allocated "
-        f"/ {record.get('gpu_peak_reserved_mib', float('nan')):.0f} MiB reserved "
-        f"-> {out}",
+        f"[{record['status']}] {args.domain}/{args.instance} seed={args.seed}: {'%.2f it/s' % its if its else 'no timing'}, peak {record.get('gpu_peak_allocated_mib', float('nan')):.0f} MiB allocated / {record.get('gpu_peak_reserved_mib', float('nan')):.0f} MiB reserved -> {out}",
         flush=True,
     )
     # OOM is a recorded outcome; only genuine failures are errors.

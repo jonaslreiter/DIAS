@@ -1,27 +1,16 @@
 # Config consumed by `experiments/launch.py` / `experiments/validate_runs.py`.
 #
-# Each domain trains on `pddl/<domain>/train.pddl` and validates on that
-# folder's `test-1.pddl` .. `test-3.pddl`; which files those are is the folder
-# layout, not a setting. The pipeline runs once per (domain, seed) pair, and
-# `seeds` also sets the default `--num-runs`.
+# Each domain trains on `pddl/<domain>/train.pddl` and validates on that folder's `test-1.pddl` .. `test-3.pddl`; which files those are is the folder layout, not a setting. The pipeline runs once per (domain, seed) pair, and `seeds` also sets the default `--num-runs`.
 
 # Validation knobs (forwarded to ModelValidation.setup / validate).
 num_samples: 250
 sample_population: 500
 
-# Which of the reachable states get sampled. Null draws a fresh sample every
-# run; set it to a number to fix the draw, which makes a result reproducible
-# and scores every seed of a domain on the same states. The seed used is
-# recorded in each result JSON.
+# Which of the reachable states get sampled. Null draws a fresh sample every run; set it to a number to fix the draw, which makes a result reproducible and scores every seed of a domain on the same states. The seed used is recorded in each result JSON.
 #
-# Left unset deliberately. No draw in this pipeline is pinned to a constant --
-# a sweep varies the training sample from seed to seed -- so fixing only the
-# validation states would claim a reproducibility the reported numbers do not
-# have. Each run scores on its own sample.
+# Left unset deliberately. No draw in this pipeline is pinned to a constant (a sweep varies the training sample from seed to seed), so fixing only the validation states would claim a reproducibility the reported numbers do not have. Each run scores on its own sample.
 #
-# Unfixed is not unrecorded: when this is null a seed is drawn and written into
-# the result JSON, and setting it back here scores the next run on exactly
-# those states.
+# Unfixed is not unrecorded: when this is null a seed is drawn and written into the result JSON, and setting it back here scores the next run on exactly those states.
 sample_seed: null
 
 # Seeds to run per domain. The paper uses 0..9 (10 seeds per domain).

@@ -1,18 +1,13 @@
 """End-to-end coverage for the MLP-effects baseline validator.
 
-It had none, despite being 325 statements and one of the paper's two columns.
-Its effects come from an MLP over the current state, so a schema cannot be
-planted by hand the way the DIAS validator's can; these assertions pin the
-contract, the internal consistency of the counts, and the worker-process path
-instead.
+It had none, despite being 325 statements and one of the paper's two columns. Its effects come from an MLP over the current state, so a schema cannot be planted by hand the way the DIAS validator's can; these assertions pin the contract, the internal consistency of the counts, and the worker-process path instead.
 """
 
 import os
 import unittest
 from pathlib import Path
 
-# Keep the batched forward pass on CPU: the assertions are about bookkeeping,
-# not throughput, and a shared GPU makes the test flaky on a busy node.
+# Keep the batched forward pass on CPU: the assertions are about bookkeeping, not throughput, and a shared GPU makes the test flaky on a busy node.
 os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
 
 import torch
@@ -49,9 +44,7 @@ class MlpBaselineTest(unittest.TestCase):
     def test_result_matches_the_shared_validation_contract(self):
         """The same payload the symbolic validators return, keys and all.
 
-        All three now finish through `successors.score_successors`, so this is
-        one scorer's output rather than three that happen to agree -- including
-        `action_stats`, which this validator used to be alone in not emitting.
+        All three now finish through `successors.score_successors`, so this is one scorer's output rather than three that happen to agree, including `action_stats`, which this validator used to be alone in not emitting.
         """
         result = self.validate()
         self.assertEqual(
@@ -73,10 +66,7 @@ class MlpBaselineTest(unittest.TestCase):
     def test_the_reported_counts_are_the_per_action_counts(self):
         """One measure, not two views that have to be kept in agreement.
 
-        `tp`/`fp`/`fn` are the sums of `action_stats`: a successor reached
-        under the wrong operator is an error, and a successor two operators
-        both reach is two predictions. There is no second, union-level count
-        beside them to be confused with them.
+        `tp`/`fp`/`fn` are the sums of `action_stats`: a successor reached under the wrong operator is an error, and a successor two operators both reach is two predictions. There is no second, union-level count beside them to be confused with them.
         """
         result = self.validate()
         stats = result["action_stats"].values()
@@ -86,9 +76,7 @@ class MlpBaselineTest(unittest.TestCase):
         self.assertGreater(result["fn"], 0, "an untrained MLP misses everything")
 
     def test_worker_processes_do_not_change_the_result(self):
-        """The phase-1 fan-out reloads the domain in each worker and rebuilds
-        every state from an atom payload; a mistake there would show up as
-        different counts rather than as an error."""
+        """The phase-1 fan-out reloads the domain in each worker and rebuilds every state from an atom payload; a mistake there would show up as different counts rather than as an error."""
         self.assertEqual(self.validate(num_workers=1), self.validate(num_workers=2))
 
     def test_a_static_effects_checkpoint_is_refused(self):

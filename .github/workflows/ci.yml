@@ -30,16 +30,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      # The CPU wheels: torch's default index pulls the CUDA build, which is
-      # gigabytes of driver payload a test runner has no card for.
+      # The CPU wheels: torch's default index pulls the CUDA build, which is gigabytes of driver payload a test runner has no card for.
       - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
       - run: pip install -e . --group dev
       - run: pytest -q
 
-  # Can an empty environment install this project? The test job cannot answer
-  # that: it installs in editable mode, with the dev group, from a tree that
-  # already has `src/` importable. This one installs the way a new user does
-  # and then runs the package from somewhere else entirely.
+  # Can an empty environment install this project? The test job cannot answer that: it installs in editable mode, with the dev group, from a tree that already has `src/` importable. This one installs the way a new user does and then runs the package from somewhere else entirely.
   install:
     runs-on: ubuntu-latest
     strategy:
@@ -55,16 +51,13 @@ jobs:
         run: |
           python -m venv "$RUNNER_TEMP/fresh"
           "$RUNNER_TEMP/fresh/bin/pip" install --upgrade pip
-          # torch from the CPU index, as above. Everything else -- pymimir's
-          # wheel for this interpreter above all -- is resolved by the install
-          # below, which is the point of this job.
+          # torch from the CPU index, as above. Everything else (pymimir's wheel for this interpreter above all) is resolved by the install below, which is the point of this job.
           "$RUNNER_TEMP/fresh/bin/pip" install torch --index-url https://download.pytorch.org/whl/cpu
           "$RUNNER_TEMP/fresh/bin/pip" install .
       - name: The console script exists
         run: "$RUNNER_TEMP/fresh/bin/dias --help"
       - name: The package imports from outside the source tree
-        # From another directory, so a module missing from the installed copy
-        # cannot be covered up by `src/` sitting in the working directory.
+        # From another directory, so a module missing from the installed copy cannot be covered up by `src/` sitting in the working directory.
         working-directory: ${{ runner.temp }}
         run: |
           "$RUNNER_TEMP/fresh/bin/python" -c "

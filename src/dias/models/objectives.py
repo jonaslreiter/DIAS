@@ -45,16 +45,10 @@ class Losses:
 class DiasObjective:
     """Reproduce the observed successor state, with two nudges toward simplicity.
 
-    `L_adj` is the objective proper, a cross-entropy over every cell of the
-    predicted successor. `L_eff` asks the schema to ignore every effect it can
-    and `L_pre` every precondition it can, which is what stops it explaining a
-    transition with a schema that also fires everywhere else. The two are
-    returned separately from `L_adj`, never summed with it: how the two
-    gradients are reconciled is `pcgrad`'s decision, not this one's.
+    `L_adj` is the objective proper, a cross-entropy over every cell of the predicted successor. `L_eff` asks the schema to ignore every effect it can and `L_pre` every precondition it can, which is what stops it explaining a transition with a schema that also fires everywhere else. The two are returned separately from `L_adj`, never summed with it: how the two gradients are reconciled is `pcgrad`'s decision, not this one's.
     """
 
-    # Probabilities are clamped off 0 and 1 before the cross-entropy, whose
-    # gradient is unbounded at both ends.
+    # Probabilities are clamped off 0 and 1 before the cross-entropy, whose gradient is unbounded at both ends.
     EPSILON = 1e-7
 
     def __init__(
@@ -76,8 +70,7 @@ class DiasObjective:
         slot_weights: torch.Tensor,
     ) -> Losses:
         predicted = prediction.adjacency
-        # Under AMP the cross-entropies would run in half precision, where a
-        # sum over every cell of every relation loses too much.
+        # Under AMP the cross-entropies would run in half precision, where a sum over every cell of every relation loses too much.
         with torch.amp.autocast(device_type=predicted.device.type, enabled=False):
             normalizer = self._normalizer(predicted)
             adjacency = (
@@ -103,14 +96,12 @@ class DiasObjective:
     ) -> torch.Tensor:
         """`L_eff + L_pre`, either of which can be ablated away."""
         ignore_effects = prediction.effects.ignore
-        # Full precision, so a sum over every schema cell still accumulates
-        # exactly when the terms themselves are half under AMP.
+        # Full precision, so a sum over every schema cell still accumulates exactly when the terms themselves are half under AMP.
         terms = torch.zeros((), device=ignore_effects.device, dtype=torch.float32)
         if self.use_effect_loss:
             terms = terms + _cross_entropy_against_one(ignore_effects)
         if self.use_precondition_loss:
-            # Weighting by the slot weights makes an unrestrictive precondition
-            # as costly as an active slot, so the two cannot be traded off.
+            # Weighting by the slot weights makes an unrestrictive precondition as costly as an active slot, so the two cannot be traded off.
             weight_pairs = (
                 slot_weights[:, None, :, None] * slot_weights[:, None, None, :]
             )
@@ -123,11 +114,7 @@ class DiasObjective:
     def _normalizer(self, predicted: torch.Tensor) -> int:
         """What the summed terms are divided by.
 
-        Every cell the prediction could have got wrong, plus the schema cells
-        the auxiliary terms range over -- once for the effects, once for the
-        preconditions. Summing and dividing rather than averaging keeps the
-        three terms on one scale; averaged separately, the adjacency term
-        would shrink as the instance grew while the schema terms stayed put.
+        Every cell the prediction could have got wrong, plus the schema cells the auxiliary terms range over: once for the effects, once for the preconditions. Summing and dividing rather than averaging keeps the three terms on one scale; averaged separately, the adjacency term would shrink as the instance grew while the schema terms stayed put.
         """
         return predicted.numel() + self.schema_cells * predicted.size(0) * 2
 

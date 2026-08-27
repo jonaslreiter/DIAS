@@ -104,8 +104,7 @@ class ModelValidation:
 
         original_problem_path_to_use = problem_path
         if fluent_equal_predicates:
-            # The original domain needs the same reflexive atoms the stripped
-            # problem got, or the two would not enumerate the same actions.
+            # The original domain needs the same reflexive atoms the stripped problem got, or the two would not enumerate the same actions.
             original_problem_path_to_use = self.workspace.write(
                 "original-problem.pddl",
                 inject_reflexive_atoms(
@@ -128,17 +127,12 @@ class ModelValidation:
     ) -> str:
         """Declare every predicate the merged domain uses but does not define.
 
-        Three sources go missing: predicates an action body references that the
-        header never declared, the `eq` replacement for `=` (strip_problem_types
-        puts `(eq o o)` in :init even when no action mentions equality), and the
-        type names, which become unary atoms like `(locatable bob)` for every
-        parent in the chain.
+        Three sources go missing: predicates an action body references that the header never declared, the `eq` replacement for `=` (strip_problem_types puts `(eq o o)` in :init even when no action mentions equality), and the type names, which become unary atoms like `(locatable bob)` for every parent in the chain.
         """
         defined_words = {
             m.group(1).lower() for m in re.finditer(r"\(\s*([a-zA-Z0-9_\-]+)", header)
         }
-        # `eq` is deliberately absent: it is a user-defined predicate here, not
-        # a keyword, and must be declared.
+        # `eq` is deliberately absent: it is a user-defined predicate here, not a keyword, and must be declared.
         keywords = {"and", "or", "not", "imply", "when", "forall", "exists", "=", "-"}
 
         missing_preds: dict[str, int] = {}
@@ -206,11 +200,7 @@ class ModelValidation:
 
     @staticmethod
     def _fluent_equal_predicates(domain_text: str) -> list[str]:
-        """Return names of binary fluent predicates that look like reflexive equality
-        (e.g. `equal`, `eq`) declared in the domain's :predicates block. The kr_2024
-        problem.pddl files initialize these as `(equal X X)` for every object; new
-        problem files don't, so we need to bootstrap them on the merged problem.
-        """
+        """Return names of binary fluent predicates that look like reflexive equality (e.g. `equal`, `eq`) declared in the domain's :predicates block. The kr_2024 problem.pddl files initialize these as `(equal X X)` for every object; new problem files don't, so we need to bootstrap them on the merged problem."""
         preds_match = re.search(r"\(:predicates(.*?)\n\s*\)", domain_text, re.DOTALL)
         if not preds_match:
             return []

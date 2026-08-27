@@ -1,13 +1,8 @@
 """Executable record of the unversioned checkpoint layout.
 
-The paper's trained checkpoints carry no format stamp and have exactly the keys
-listed below. Nothing here reads a real checkpoint: the dict is built by hand,
-so the layout stays documented even after the code that produced it is gone.
+The paper's trained checkpoints carry no format stamp and have exactly the keys listed below. Nothing here reads a real checkpoint: the dict is built by hand, so the layout stays documented even after the code that produced it is gone.
 
-That layout is the only one older than version 1, so it is the only one the
-migration has a rule for. While version 1 is still unmerged, a further rename
-or regrouping extends that rule and this record; once it is released, such a
-change makes a second older format and needs version 2 instead.
+That layout is the only one older than version 1, so it is the only one the migration has a rule for. While version 1 is still unmerged, a further rename or regrouping extends that rule and this record; once it is released, such a change makes a second older format and needs version 2 instead.
 """
 
 import unittest
@@ -52,10 +47,7 @@ UNVERSIONED_HPARAMS = {
     },
 }
 
-# The unversioned layout kept the schema flat on the prediction module and declared the encoder's
-# layers one attribute at a time. `checkpoints.pre_split_name` maps today's
-# names back; it is stated there independently of the migration, so a rename
-# that forgets a rule fails a test rather than an archived run.
+# The unversioned layout kept the schema flat on the prediction module and declared the encoder's layers one attribute at a time. `checkpoints.pre_split_name` maps today's names back; it is stated there independently of the migration, so a rename that forgets a rule fails a test rather than an archived run.
 UNVERSIONED_SCHEMA_KEYS = (
     "graph_edit.slot_encodings",
     "graph_edit.slot_weight_logits",
@@ -63,8 +55,7 @@ UNVERSIONED_SCHEMA_KEYS = (
     "graph_edit.effects",
 )
 
-# Derived from constructor arguments yet persisted then. Both are rebuilt on
-# load now, so the migration drops them and nothing derived is checkpointed.
+# Derived from constructor arguments yet persisted then. Both are rebuilt on load now, so the migration drops them and nothing derived is checkpointed.
 UNVERSIONED_DERIVED_KEYS = ("_action_rel_lookup", "graph_edit.action_arities_t")
 UNVERSIONED_ENCODER_KEYS = tuple(
     f"dynamics_model.conv{i}.{suffix}"
@@ -76,17 +67,11 @@ UNVERSIONED_ENCODER_KEYS = tuple(
     for suffix in ("weight", "bias")
 )
 
-# The last convolution's bias, which that layout stored and the current encoder
-# does not declare: the loss could never see it (nothing is normalised after that layer,
-# so it shifted every object embedding alike, and Sinkhorn removes a per-slot
-# constant exactly). Archived runs carry a learned value for it, and dropping
-# that on load is what this key is here to pin.
+# The last convolution's bias, which that layout stored and the current encoder does not declare: the loss could never see it (nothing is normalised after that layer, so it shifted every object embedding alike, and Sinkhorn removes a per-slot constant exactly). Archived runs carry a learned value for it, and dropping that on load is what this key is here to pin.
 RETIRED_ENCODER_KEY = "dynamics_model.conv6.bias"
 
 
-# Hyper-parameters that layout had which the current constructor no longer
-# takes. Each one needs a matching rule in dias.models.checkpoints, which is
-# what keeps archived runs loadable.
+# Hyper-parameters that layout had which the current constructor no longer takes. Each one needs a matching rule in dias.models.checkpoints, which is what keeps archived runs loadable.
 UNVERSIONED_ONLY_HPARAMS = {
     "loss_weight_schedule",
     "gmean_offset",
@@ -113,8 +98,7 @@ CURRENT_HPARAMS = {
 def constructor_args() -> dict:
     """UNVERSIONED_HPARAMS as the current constructor accepts them.
 
-    Only the hyper-parameters differ between the two layouts; the tensor shapes
-    do not, so this still builds a state dict with the unversioned key set.
+    Only the hyper-parameters differ between the two layouts; the tensor shapes do not, so this still builds a state dict with the unversioned key set.
     """
     return {
         k: v
@@ -126,8 +110,7 @@ def constructor_args() -> dict:
 def build_unversioned_checkpoint(marker: float = 0.125) -> dict:
     """An unversioned checkpoint whose schema parameters are all `marker`.
 
-    Only the names differ between the two -- the tensors are the same shapes --
-    so the current model supplies them and they are renamed back.
+    Only the names differ between the two: the tensors are the same shapes, so the current model supplies them and they are renamed back.
     """
     reference = DIAS(**constructor_args())
     state_dict = {
@@ -138,9 +121,7 @@ def build_unversioned_checkpoint(marker: float = 0.125) -> dict:
         UNVERSIONED_HPARAMS["action_arities"]
     )
     state_dict["_action_rel_lookup"] = torch.tensor([[0, 1], [2, -1]])
-    # Not produced by the current model, so it is put back by hand -- with a
-    # value no zero-initialised bias would have, so a migration that kept it
-    # would be visible rather than plausible.
+    # Not produced by the current model, so it is put back by hand, with a value no zero-initialised bias would have, so a migration that kept it would be visible rather than plausible.
     state_dict[RETIRED_ENCODER_KEY] = torch.full(
         (UNVERSIONED_HPARAMS["object_dim"],), 0.75
     )
@@ -186,8 +167,7 @@ class CheckpointLayoutTest(unittest.TestCase):
 
         loaded = model.state_dict()
         for key in (k for k in loaded if pre_split_name(k) in UNVERSIONED_SCHEMA_KEYS):
-            # That layout stored the unary off-diagonal mask in the parameter, so
-            # those cells are -inf; the mask is applied in the forward pass now.
+            # That layout stored the unary off-diagonal mask in the parameter, so those cells are -inf; the mask is applied in the forward pass now.
             finite = torch.isfinite(loaded[key])
             self.assertTrue(finite.any(), f"{key} is entirely masked")
             torch.testing.assert_close(

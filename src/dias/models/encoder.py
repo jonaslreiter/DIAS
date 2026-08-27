@@ -15,10 +15,7 @@ DEFAULT_HIDDEN_DIMS = (32, 64, 64, 64, 64)
 class RelationalEncoder(nn.Module):
     """Relational graph convolutions with LayerNorm + SiLU between layers.
 
-    One convolution per hidden dimension, plus a final, bias-free one back down
-    to `latent_dim`. Each convolution has its own weights per edge type, which is
-    what lets the encoder distinguish a relation from its reverse and both from
-    an action self-loop.
+    One convolution per hidden dimension, plus a final, bias-free one back down to `latent_dim`. Each convolution has its own weights per edge type, which is what lets the encoder distinguish a relation from its reverse and both from an action self-loop.
     """
 
     def __init__(
@@ -40,12 +37,7 @@ class RelationalEncoder(nn.Module):
                 out_dim,
                 num_edge_types,
                 aggr="add",
-                # The last convolution has no bias. Nothing is normalised after
-                # it, so its bias would add the same vector to every object;
-                # the slot scores are a plain inner product, so that arrives at
-                # the assignment as a per-slot constant, which Sinkhorn's row
-                # scaling removes exactly. The loss could not see it, and Adam
-                # would turn its round-off gradient into a random walk.
+                # The last convolution has no bias. Nothing is normalised after it, so its bias would add the same vector to every object; the slot scores are a plain inner product, so that arrives at the assignment as a per-slot constant, which Sinkhorn's row scaling removes exactly. The loss could not see it, and Adam would turn its round-off gradient into a random walk.
                 bias=index != last,
             )
             for index, (in_dim, out_dim) in enumerate(zip(widths, widths[1:]))
@@ -55,10 +47,7 @@ class RelationalEncoder(nn.Module):
     def initial_features(self, num_nodes: int, device=None) -> torch.Tensor:
         """Where every object starts, before any message passing.
 
-        Half the dimensions are seeded with noise, because objects carry no
-        features of their own: two objects in symmetric positions are otherwise
-        indistinguishable to the encoder, and no assignment can separate them.
-        Turning this off is the `random_node_embeddings` ablation.
+        Half the dimensions are seeded with noise, because objects carry no features of their own: two objects in symmetric positions are otherwise indistinguishable to the encoder, and no assignment can separate them. Turning this off is the `random_node_embeddings` ablation.
         """
         features = torch.zeros(
             num_nodes, self.latent_dim, device=device, dtype=torch.float32

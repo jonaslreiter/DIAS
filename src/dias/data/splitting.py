@@ -1,8 +1,6 @@
 """Dividing the sampled transitions into a train and a validation split.
 
-The split is stratified by action: each action that has at least two samples
-gets one reserved in each split before the rest is dealt out at the requested
-ratio, so no action can be missing from a split just by being rare.
+The split is stratified by action: each action that has at least two samples gets one reserved in each split before the rest is dealt out at the requested ratio, so no action can be missing from a split just by being rare.
 """
 
 from __future__ import annotations
@@ -69,8 +67,7 @@ def stratified_split(
     valid.extend(pool[position] for position in order[extra:])
 
     logger.info(
-        "Split %d samples into train=%d, valid=%d at ratio %d:%d, "
-        "reserving one per action per split where there are at least two.",
+        "Split %d samples into train=%d, valid=%d at ratio %d:%d, reserving one per action per split where there are at least two.",
         total,
         len(train),
         len(valid),
@@ -87,8 +84,7 @@ def check_every_action_survives(
 ) -> None:
     """Refuse a split that lost an action the pool had.
 
-    Stratified batching draws one batch per action, so an action missing from
-    the validation split would be scored on nothing at all.
+    Stratified batching draws one batch per action, so an action missing from the validation split would be scored on nothing at all.
     """
     sampled = set(action_indices.tolist())
     for name, indices in splits.items():
@@ -97,8 +93,5 @@ def check_every_action_survives(
         missing = sampled - set(action_indices[indices].tolist())
         if missing:
             raise ValueError(
-                f"Stratified '{name}' split is missing action(s) "
-                f"{[action_names[action] for action in sorted(missing)]} that "
-                f"appear in the full pool. Increase min_per_label_* / num_* or "
-                f"relax the train:valid ratio."
+                f"Stratified '{name}' split is missing action(s) {[action_names[action] for action in sorted(missing)]} that appear in the full pool. Increase min_per_label_* / num_* or relax the train:valid ratio."
             )

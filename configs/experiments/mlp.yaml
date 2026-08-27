@@ -1,5 +1,4 @@
-# MLP baseline: effects are predicted from the current state instead of being a
-# lifted tensor. The mlp validator requires a checkpoint trained with this on.
+# MLP baseline: effects are predicted from the current state instead of being a lifted tensor. The mlp validator requires a checkpoint trained with this on.
 model:
   init_args:
     state_dependent_effects: true

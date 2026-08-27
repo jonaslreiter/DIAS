@@ -23,15 +23,9 @@ def process_model_logits(
 ):
     """Binarize the learned schema tensors at *threshold*.
 
-    ``threshold`` is applied uniformly to every probability the schema is read
-    off from: slot activation and the four add/delete/positive/negative
-    tensors. Lowering it yields more active slots (higher learned arity) and
-    both more effects and more preconditions; raising it yields fewer of each.
-    0.5 is the default the paper's numbers use.
+    ``threshold`` is applied uniformly to every probability the schema is read off from: slot activation and the four add/delete/positive/negative tensors. Lowering it yields more active slots (higher learned arity) and both more effects and more preconditions; raising it yields fewer of each. 0.5 is the default the paper's numbers use.
 
-    `effect_logits` is None for a model whose effects are predicted from the
-    state: there is no lifted effect tensor to read off, and the add and delete
-    arrays come back as None with it.
+    `effect_logits` is None for a model whose effects are predicted from the state: there is no lifted effect tensor to read off, and the add and delete arrays come back as None with it.
     """
     effects = None if effect_logits is None else Channels.from_logits(effect_logits)
     add_effects_probs = None if effects is None else effects.positive
@@ -43,8 +37,7 @@ def process_model_logits(
 
     slot_probs = F.sigmoid(slot_weight_logits)
 
-    # When force_action_args is enabled, compute a mask of known argument
-    # slots per action and force those slots to be active in slot_probs.
+    # When force_action_args is enabled, compute a mask of known argument slots per action and force those slots to be active in slot_probs.
     # - strips_plus: only the positions listed in strips+.yaml are known
     # - otherwise:   all argument positions (up to action arity) are known
     if action_arguments and force_action_args:
@@ -66,8 +59,7 @@ def process_model_logits(
     # (num_actions, num_slots)
     active_slots = slot_probs.detach().cpu().numpy() > threshold
 
-    # An inactive slot is not a parameter of the learned action, so nothing may
-    # be asserted over it. Shapes: (actions, relations, slots, slots).
+    # An inactive slot is not a parameter of the learned action, so nothing may be asserted over it. Shapes: (actions, relations, slots, slots).
     schema = [pos_precond_probs, neg_precond_probs]
     if effects is not None:
         schema += [add_effects_probs, del_effects_probs]

@@ -83,9 +83,7 @@ class ChartQueryTest(unittest.TestCase):
     def test_the_panel_reads_the_table_from_history_at_a_step(self):
         """The two together are what put a working step slider under the panel.
 
-        wandb.plot_table binds to summaryTable, which holds only the last table
-        logged under a key. historyTable keeps every step, but without `index`
-        the panel has no step to draw and comes up empty.
+        wandb.plot_table binds to summaryTable, which holds only the last table logged under a key. historyTable keeps every step, but without `index` the panel has no step to draw and comes up empty.
         """
         from dias.reporting.charts import heatmap
 
@@ -117,8 +115,7 @@ class ChartQueryTest(unittest.TestCase):
             ],
         )
         self.assertIs(panel["showStepSelector"], True)
-        # Deliberately absent: naming an opening position the table has not
-        # finished uploading to made a live run's panels blink in and out.
+        # Deliberately absent: naming an opening position the table has not finished uploading to made a live run's panels blink in and out.
         self.assertNotIn("defaultViewedStepIndex", panel)
 
 
@@ -237,8 +234,7 @@ class LoggingTest(unittest.TestCase):
 class _RandomForwardModule:
     """Stands in for a model whose forward draws from the global generator.
 
-    `RelationalEncoder.initial_features` seeds every object with noise, so a
-    forward pass really does spend the stream this test is about.
+    `RelationalEncoder.initial_features` seeds every object with noise, so a forward pass really does spend the stream this test is about.
     """
 
     device = torch.device("cpu")
@@ -267,15 +263,9 @@ class ImportLayeringTest(unittest.TestCase):
     def test_importing_the_model_does_not_require_wandb(self):
         """Reporting is the only part that talks to W&B, and it imports it late.
 
-        Only wandb is blocked here: matplotlib arrives through torchmetrics,
-        which lightning imports, so its absence cannot be arranged from inside
-        this package. `test_matplotlib_left_the_package` covers dias itself.
+        Only wandb is blocked here: matplotlib arrives through torchmetrics, which lightning imports, so its absence cannot be arranged from inside this package. `test_matplotlib_left_the_package` covers dias itself.
         """
-        code = (
-            "import sys;"
-            "sys.modules['wandb'] = None;"
-            "import dias.models.dias, dias.reporting.callback, dias.reporting.charts"
-        )
+        code = "import sys;sys.modules['wandb'] = None;import dias.models.dias, dias.reporting.callback, dias.reporting.charts"
         result = subprocess.run(
             [sys.executable, "-c", code], capture_output=True, text=True
         )

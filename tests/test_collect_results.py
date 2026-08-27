@@ -1,8 +1,6 @@
 """Tests for the estimator that turns per-problem results into one P/R pair.
 
-Defect: the DIAS validators emitted `action_stats` and the MLP baseline did
-not, so `_seed_precision_recall` micro-averaged one column of the paper table
-and macro-averaged the other. Every validator now emits pooled tp/fp/fn.
+Defect: the DIAS validators emitted `action_stats` and the MLP baseline did not, so `_seed_precision_recall` micro-averaged one column of the paper table and macro-averaged the other. Every validator now emits pooled tp/fp/fn.
 """
 
 import json
@@ -35,8 +33,7 @@ class SeedPrecisionRecallTest(unittest.TestCase):
         precision, recall = _seed_precision_recall(self.PER_PROBLEM)
         self.assertAlmostEqual(precision, 90 / 101)
         self.assertAlmostEqual(recall, 90 / 101)
-        # The macro mean would have been 0.45 -- the two differ, so the test
-        # would catch a silent fall-back to it.
+        # The macro mean would have been 0.45; the two differ, so the test would catch a silent fall-back to it.
         self.assertNotAlmostEqual(precision, 0.45)
 
     def test_action_stats_and_pooled_counts_agree(self):
@@ -74,8 +71,7 @@ class SeedPrecisionRecallTest(unittest.TestCase):
     def test_counts_survive_the_json_round_trip(self):
         """validate_runs writes the result as JSON, which has no integer type.
 
-        An earlier version keyed on `isinstance(v, int)` and silently fell back
-        to the macro mean for every result read off disk.
+        An earlier version keyed on `isinstance(v, int)` and silently fell back to the macro mean for every result read off disk.
         """
         on_disk = json.loads(json.dumps(self.PER_PROBLEM))
         self.assertEqual(

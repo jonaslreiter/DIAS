@@ -69,8 +69,7 @@ class ModelValidation:
     def _read_learned_schemas(self, run, has_equality: bool, threshold: float):
         """Binarize the model's logits and transpile them into action schemas.
 
-        Returns the transpiler rather than the schemas, because it also carries
-        the predicate names and arities the merged domain has to declare.
+        Returns the transpiler rather than the schemas, because it also carries the predicate names and arities the merged domain has to declare.
         """
         hparams = run.datamodule_hparams
         schema = self.model.schema_logits()
@@ -123,8 +122,7 @@ class ModelValidation:
             len(transpiler.action_schemas),
             threshold,
             ", ".join(
-                f"{schema.name} ({len(schema.preconditions)} preconditions, "
-                f"{len(schema.effects)} effects)"
+                f"{schema.name} ({len(schema.preconditions)} preconditions, {len(schema.effects)} effects)"
                 for schema in transpiler.action_schemas
             ),
         )

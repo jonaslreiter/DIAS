@@ -33,10 +33,7 @@ from .successors import (
 
 
 # ──────────────────────────────────────────────────────────────────────────
-#  Phase-1 worker (top-level so it can be pickled by spawn-mode pool).
-#  pymimir state objects can't cross processes, so each worker reloads
-#  Domain/Problem from PDDL files and reconstructs each state from a
-#  serializable payload of (predicate_name, term_names) tuples.
+# Phase-1 worker (top-level so it can be pickled by spawn-mode pool). pymimir state objects can't cross processes, so each worker reloads Domain/Problem from PDDL files and reconstructs each state from a serializable payload of (predicate_name, term_names) tuples.
 # ──────────────────────────────────────────────────────────────────────────
 def _phase1_worker(
     payloads: list[list[tuple[str, tuple[str, ...]]]],
@@ -127,8 +124,7 @@ def _phase1_worker(
 
         input_adjs_arr[i] = state_to_adj(orig_state)
 
-        # Keyed by action, as the symbolic validators are: the scorer wants
-        # both views, and the name is right here.
+        # Keyed by action, as the symbolic validators are: the scorer wants both views, and the name is right here.
         sigs: dict[str, set[bytes]] = defaultdict(set)
         for ga in orig_state.generate_applicable_actions():
             signature = adj_signature(state_to_adj(ga.apply(orig_state)))
@@ -187,9 +183,7 @@ class ModelValidation:
         schema = self.model.schema_logits()
         if schema.effects is not None:
             raise ValueError(
-                "validate_mlp_baseline expects a model with "
-                "state_dependent_effects=True. Use validate.py for the "
-                "static-effects baseline."
+                "validate_mlp_baseline expects a model with state_dependent_effects=True. Use validate.py for the static-effects baseline."
             )
 
         free_pos_map = (
@@ -200,9 +194,7 @@ class ModelValidation:
         action_arguments = datamodule_hparams.get("action_arguments", False)
         strips_plus_actions = datamodule_hparams.get("strips_plus_actions", False)
 
-        # This baseline predicts its effects from the state at validation time,
-        # so `schema.effects` is None and only the preconditions and the slot
-        # activations are read off here.
+        # This baseline predicts its effects from the state at validation time, so `schema.effects` is None and only the preconditions and the slot activations are read off here.
         _, _, pos_prec, neg_prec, active_slots = process_model_logits(
             effect_logits=schema.effects,
             precondition_logits=schema.preconditions,
@@ -247,22 +239,13 @@ class ModelValidation:
         self.num_objects = int(self.schema.num_objects)
         self.active_slots = active_slots  # (num_actions, num_slots), bool
 
-        # Per-action ordered list of active slot indices.  These become the
-        # parameter positions in the learned PDDL action: param k is named
-        # ?x{active_slot_indices[a][k]}, so the precondition GroundAtoms
-        # produced by the transpiler (which reference slot indices) line
-        # up with the action's parameters even when active slots are not
-        # contiguous (per_action_slots=False).  When pymimir grounds the
-        # action, we recover the per-slot binding by mapping parameter
-        # position back to slot index using this list.
+        # Per-action ordered list of active slot indices.  These become the parameter positions in the learned PDDL action: param k is named ?x{active_slot_indices[a][k]}, so the precondition GroundAtoms produced by the transpiler (which reference slot indices) line up with the action's parameters even when active slots are not contiguous (per_action_slots=False).  When pymimir grounds the action, we recover the per-slot binding by mapping parameter position back to slot index using this list.
         self.active_slot_indices = [
             [int(i) for i in range(self.num_slots) if bool(active_slots[a][i])]
             for a in range(len(self.action_names))
         ]
 
-        # Use the transpiler only to derive precondition GroundAtoms; we
-        # write the action blocks ourselves so we can force empty effects
-        # and a fixed parameter list per action.
+        # Use the transpiler only to derive precondition GroundAtoms; we write the action blocks ourselves so we can force empty effects and a fixed parameter list per action.
         zero_eff = np.zeros_like(pos_prec)
         pddl_transpiler = PDDLTranspiler(
             add_effects=zero_eff,
@@ -279,15 +262,7 @@ class ModelValidation:
         for schema in pddl_transpiler.action_schemas:
             schema.name = f"{LEARNED_ACTION_PREFIX}{schema.name}"
 
-        # All learned actions have :effect (), which would make pymimir
-        # classify every predicate as static -- breaking transfer_state
-        # because fluent atoms from the source state would be silently
-        # dropped (and the transferred state would inherit the learned
-        # problem's :init atoms instead).  add_unreachable_action keeps
-        # every predicate fluent by giving a single never-applicable
-        # action effects on all of them.  The guard predicate it
-        # introduces is never present in :init so the action is
-        # unreachable and can't pollute applicable-action enumeration.
+        # All learned actions have :effect (), which would make pymimir classify every predicate as static, breaking transfer_state because fluent atoms from the source state would be silently dropped (and the transferred state would inherit the learned problem's :init atoms instead).  add_unreachable_action keeps every predicate fluent by giving a single never-applicable action effects on all of them.  The guard predicate it introduces is never present in :init so the action is unreachable and can't pollute applicable-action enumeration.
         pddl_transpiler.add_unreachable_action()
 
         # Build the learned-only domain.
@@ -305,8 +280,7 @@ class ModelValidation:
                 pddl_transpiler.action_schemas[:num_learned_actions]
             )
         ]
-        # The dummy unreachable action keeps the transpiler's own serializer,
-        # whose non-empty effects on every predicate are the point of it.
+        # The dummy unreachable action keeps the transpiler's own serializer, whose non-empty effects on every predicate are the point of it.
         action_blocks.append(
             str(pddl_transpiler.action_schemas[num_learned_actions]).rstrip()
         )
@@ -341,9 +315,7 @@ class ModelValidation:
         self.model.retarget(self.num_objects)
         self.model.eval()
 
-        # Object name → adjacency-tensor index.  Built from the original
-        # problem so input/output adjacencies share the same indexing as
-        # the training tensors.
+        # Object name → adjacency-tensor index.  Built from the original problem so input/output adjacencies share the same indexing as the training tensors.
         self.object_name_to_idx = {
             o.get_name(): o.get_index() for o in self.original_problem.get_objects()
         }
@@ -378,19 +350,9 @@ class ModelValidation:
         """
         Validates states by batching all MLP forward passes on GPU.
 
-        Phase 1 (pymimir, CPU): for every state pair we enumerate the
-        ground-truth applicable actions / successors and the learned-domain
-        applicable groundings.  This is the slow part for domains with
-        large grounding spaces; pass ``num_workers > 1`` to spread the
-        state pairs across worker processes (pymimir state instances can
-        not be shared across processes, so each worker reloads the domain
-        / problem from PDDL files and reconstructs states from atom
-        payloads).
+        Phase 1 (pymimir, CPU): for every state pair we enumerate the ground-truth applicable actions / successors and the learned-domain applicable groundings.  This is the slow part for domains with large grounding spaces; pass ``num_workers > 1`` to spread the state pairs across worker processes (pymimir state instances can not be shared across processes, so each worker reloads the domain / problem from PDDL files and reconstructs states from atom payloads).
 
-        Phase 2 (GPU): all groundings across all state pairs are flattened
-        into one batch and run through the effects MLP in ``batch_size``
-        chunks, so the MLP runs once per chunk instead of once per
-        (state, action).
+        Phase 2 (GPU): all groundings across all state pairs are flattened into one batch and run through the effects MLP in ``batch_size`` chunks, so the MLP runs once per chunk instead of once per (state, action).
         """
         batch_size = self.batch_size
         num_workers = self.num_workers
@@ -403,8 +365,7 @@ class ModelValidation:
         S = len(self.state_pairs)
 
         # ── Phase 1: pymimir / CPU work (optionally multi-process) ────────
-        # Build a serializable atom payload per state pair (all fluent atoms
-        # are reconstructed in the worker; static atoms come from :init).
+        # Build a serializable atom payload per state pair (all fluent atoms are reconstructed in the worker; static atoms come from :init).
         payloads = [
             [
                 (
@@ -418,10 +379,7 @@ class ModelValidation:
             for orig_state, _ in self.state_pairs
         ]
 
-        # max_arity is determined by the action schemas (one parameter per
-        # active slot), so we can compute it upfront and tell the workers
-        # to return already-padded binding rows -- no per-grounding Python
-        # loop in the main process.
+        # max_arity is determined by the action schemas (one parameter per active slot), so we can compute it upfront and tell the workers to return already-padded binding rows: no per-grounding Python loop in the main process.
         max_arity = max((len(s) for s in self.active_slot_indices), default=0)
 
         worker_config = {
@@ -504,8 +462,7 @@ class ModelValidation:
             else np.zeros((0, max_arity), dtype=np.int64)
         )
 
-        # Move model to GPU only after Phase 1 finishes — keeps spawned
-        # workers from inheriting an initialized CUDA context.
+        # Move model to GPU only after Phase 1 finishes, which keeps spawned workers from inheriting an initialized CUDA context.
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(device)
         self.model.eval()
@@ -516,8 +473,7 @@ class ModelValidation:
         ]
         total = int(flat_state_idx_np.shape[0])
 
-        # Cached once — used to assign signatures back per state and action in
-        # the predict loop without round-tripping through tensors.
+        # Cached once, then used to assign signatures back per state and action in the predict loop without round-tripping through tensors.
         flat_state_idx_list = flat_state_idx_np.tolist()
         flat_action_names = [
             self.action_names[index] for index in flat_action_idx_np.tolist()
@@ -573,9 +529,7 @@ class ModelValidation:
                     selection = torch.zeros(B, K, N, dtype=torch.float32, device=device)
                     selection[b_idx[valid], slots_chunk[valid], bind_chunk[valid]] = 1.0
 
-                    # The binding is already known -- pymimir grounded the
-                    # learned action to get it -- so the model is asked only
-                    # what the action changes, not whether it applies.
+                    # The binding is already known (pymimir grounded the learned action to get it), so the model is asked only what the action changes, not whether it applies.
                     adj_out = self.model.apply_schema(adj_batch, selection, a_chunk)
                     adj_bin = (adj_out > 0.5).to(torch.uint8)  # (B,R,N,N)
 
@@ -592,29 +546,13 @@ class ModelValidation:
                         )
 
         # ── Phase 3: metrics ──────────────────────────────────────────────
-        # The same scorer the symbolic validators use. All it needs is that
-        # equal successors compare equal, which a binarized adjacency does as
-        # well as a pymimir state index.
+        # The same scorer the symbolic validators use. All it needs is that equal successors compare equal, which a binarized adjacency does as well as a pymimir state index.
         return score_successors(zip(per_state_orig_sigs, per_state_pred_sigs))
 
     @staticmethod
     def _format_learned_action(schema, slot_indices: list[int]) -> str:
-        """Serialize a learned action with empty effects and one parameter
-        per active slot, named ``?x{slot_index}``.  This keeps the
-        parameter names aligned with the slot indices used by the
-        transpiler's precondition atoms (so e.g. an atom on slot 2 reads
-        ``?x2``), regardless of whether the active slots are contiguous.
-        Slots without any precondition stay declared as parameters --
-        pymimir will ground them over all objects, which matches the
-        model's view that those slots have no learned constraint.
-        """
+        """Serialize a learned action with empty effects and one parameter per active slot, named ``?x{slot_index}``.  This keeps the parameter names aligned with the slot indices used by the transpiler's precondition atoms (so e.g. an atom on slot 2 reads ``?x2``), regardless of whether the active slots are contiguous. Slots without any precondition stay declared as parameters: pymimir will ground them over all objects, which matches the model's view that those slots have no learned constraint."""
         params = " ".join(f"?x{i}" for i in slot_indices)
         precs = [str(p) for p in schema.preconditions]
         prec_str = "(and " + " ".join(precs) + ")" if precs else "()"
-        return (
-            f"(:action {schema.name}\n"
-            f"  :parameters ({params})\n"
-            f"  :precondition {prec_str}\n"
-            f"  :effect ()\n"
-            f")"
-        )
+        return f"(:action {schema.name}\n  :parameters ({params})\n  :precondition {prec_str}\n  :effect ()\n)"

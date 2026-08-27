@@ -1,9 +1,6 @@
 """Tests for the training-step schedules.
 
-These replaced a stateful LossWeightSchedule whose __call__ mutated a private
-field that __getitem__ then read, so the collection was only valid after
-update_loss_weights had been called for the right step. A schedule is a pure
-function of the step, and these pin that.
+These replaced a stateful LossWeightSchedule whose __call__ mutated a private field that __getitem__ then read, so the collection was only valid after update_loss_weights had been called for the right step. A schedule is a pure function of the step, and these pin that.
 """
 
 import unittest

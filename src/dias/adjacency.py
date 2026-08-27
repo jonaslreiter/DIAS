@@ -1,8 +1,6 @@
 """The dense multi-relational adjacency tensor, and what may live in it.
 
-A state is one ``[R, O, O]`` tensor. Which cells of a relation's slice are
-meaningful depends on its arity, and that rule is shared by the noise kernels,
-the datamodule and the model.
+A state is one ``[R, O, O]`` tensor. Which cells of a relation's slice are meaningful depends on its arity, and that rule is shared by the noise kernels, the datamodule and the model.
 """
 
 from __future__ import annotations
@@ -14,8 +12,7 @@ from torch_geometric.data import Data
 def valid_cells(arity: int, num_objects: int) -> torch.Tensor | None:
     """Flat indices of the cells a relation of `arity` can occupy.
 
-    Binary relations use the whole matrix and unary ones only the diagonal;
-    anything else has no tensor representation and returns None.
+    Binary relations use the whole matrix and unary ones only the diagonal; anything else has no tensor representation and returns None.
     """
     if arity == 2:
         return torch.arange(num_objects * num_objects)
@@ -43,8 +40,7 @@ def dense_from_edges(
 ) -> torch.Tensor:
     """``[B, R, O, O]`` from one PyG batch's flat edge list.
 
-    Every graph in the batch describes the same instance, so a node's graph
-    and its position within that graph both follow from its global index.
+    Every graph in the batch describes the same instance, so a node's graph and its position within that graph both follow from its global index.
     """
     adjacency = torch.zeros(
         batch_index.size(0) // num_objects,

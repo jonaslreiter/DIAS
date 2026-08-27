@@ -1,37 +1,22 @@
 """Validate one learned action model on one PDDL problem.
 
-The counterpart of ``experiments/validate_runs.py``, which walks a whole
-``(experiment, domain, seed)`` grid: this validates a single model against a
-single problem and prints the result, which is what a debugging session or a
-one-off comparison wants.
+The counterpart of ``experiments/validate_runs.py``, which walks a whole ``(experiment, domain, seed)`` grid: this validates a single model against a single problem and prints the result, which is what a debugging session or a one-off comparison wants.
 
 ``--validator`` picks what is being scored:
 
-  dias  a trained DIAS checkpoint, whose lifted schema is read off the model
-        and binarized at ``--threshold``
-  mlp   a trained MLP-baseline checkpoint, which predicts effects from the
-        state and so has no lifted schema to read
-  l1    a learned PDDL domain produced outside this repository, compared with
-        the ground-truth domain directly
+  dias  a trained DIAS checkpoint, whose lifted schema is read off the model and binarized at ``--threshold``
+  mlp   a trained MLP-baseline checkpoint, which predicts effects from the state and so has no lifted schema to read
+  l1    a learned PDDL domain produced outside this repository, compared with the ground-truth domain directly
 
-The first two locate their checkpoint under ``--log-dir`` by run id; ``l1``
-takes ``--original-domain`` and ``--learned-domain`` instead. Sampling defaults
-come from ``experiments/configs/validation.yaml``, so a single-problem check
-uses the same
-numbers the sweep does.
+The first two locate their checkpoint under ``--log-dir`` by run id; ``l1`` takes ``--original-domain`` and ``--learned-domain`` instead. Sampling defaults come from ``experiments/configs/validation.yaml``, so a single-problem check uses the same numbers the sweep does.
 
 Examples
 --------
-    python experiments/validate_checkpoint.py --validator dias \\
-        --model-id <run-id> --problem pddl/satellite/test-1.pddl
+    python experiments/validate_checkpoint.py --validator dias --model-id <run-id> --problem pddl/satellite/test-1.pddl
 
-    python experiments/validate_checkpoint.py --validator mlp \\
-        --model-id <run-id> --problem pddl/satellite/test-1.pddl
+    python experiments/validate_checkpoint.py --validator mlp --model-id <run-id> --problem pddl/satellite/test-1.pddl
 
-    python experiments/validate_checkpoint.py --validator l1 \\
-        --original-domain pddl/satellite/domain.pddl \\
-        --learned-domain  learned/satellite.pddl \\
-        --problem         pddl/satellite/test-1.pddl
+    python experiments/validate_checkpoint.py --validator l1 --original-domain pddl/satellite/domain.pddl --learned-domain learned/satellite.pddl --problem pddl/satellite/test-1.pddl
 """
 
 from __future__ import annotations
@@ -68,8 +53,7 @@ def _construction_kwargs(args: argparse.Namespace) -> dict:
     if not validator.from_checkpoint:
         if not (args.original_domain and args.learned_domain):
             raise SystemExit(
-                f"--validator {args.validator} scores a learned PDDL domain: "
-                "pass --original-domain and --learned-domain"
+                f"--validator {args.validator} scores a learned PDDL domain: pass --original-domain and --learned-domain"
             )
         return {
             **common,
@@ -83,8 +67,7 @@ def _construction_kwargs(args: argparse.Namespace) -> dict:
         kwargs["threshold"] = args.threshold
     elif args.threshold != 0.5:
         raise SystemExit(
-            f"--threshold applies to a validator that reads a lifted schema; "
-            f"{validator.summary}"
+            f"--threshold applies to a validator that reads a lifted schema; {validator.summary}"
         )
     if args.validator == "mlp":
         kwargs |= {"num_workers": args.num_workers, "batch_size": args.batch_size}
@@ -111,10 +94,7 @@ def main() -> int:
     p.add_argument("--original-domain", type=Path, default=None, help="l1 only.")
     p.add_argument("--learned-domain", type=Path, default=None, help="l1 only.")
     p.add_argument("--log-dir", type=Path, default=LOGS_DIR)
-    # Defaulted from experiments/configs/validation.yaml rather than repeated
-    # as literals,
-    # which is how the runners this replaced came to sample 250 of 500 states
-    # while the config said something else.
+    # Defaulted from experiments/configs/validation.yaml rather than repeated as literals, which is how the runners this replaced came to sample 250 of 500 states while the config said something else.
     p.add_argument("--num-samples", type=int, default=int(defaults["num_samples"]))
     p.add_argument(
         "--sample-population", type=int, default=int(defaults["sample_population"])
@@ -123,15 +103,13 @@ def main() -> int:
         "--sample-seed",
         type=int,
         default=defaults.get("sample_seed"),
-        help="Fix the state draw. Unset draws freshly; either way the seed "
-        "used is reported and reproduces the same states.",
+        help="Fix the state draw. Unset draws freshly; either way the seed used is reported and reproduces the same states.",
     )
     p.add_argument(
         "--threshold",
         type=float,
         default=0.5,
-        help="Binarization threshold for the learned schema (dias only). "
-        "Default 0.5, what the paper reports.",
+        help="Binarization threshold for the learned schema (dias only). Default 0.5, what the paper reports.",
     )
     p.add_argument("--num-workers", type=int, default=1, help="mlp only.")
     p.add_argument("--batch-size", type=int, default=4096, help="mlp only.")
@@ -147,8 +125,7 @@ def main() -> int:
         seed=args.sample_seed,
     )
     result = validation.validate()
-    # The seed the states were drawn with, configured or drawn: passing it back
-    # as --sample-seed scores the next run on exactly these states.
+    # The seed the states were drawn with, configured or drawn: passing it back as --sample-seed scores the next run on exactly these states.
     result = {"sample_seed": validation.sample_seed, **result}
 
     text = json.dumps(result, indent=2, default=str)

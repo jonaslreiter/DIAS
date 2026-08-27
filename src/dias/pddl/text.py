@@ -1,7 +1,6 @@
 """Parsing and rewriting of PDDL source text.
 
-Strings in, strings out: nothing here touches the filesystem or pymimir, so it
-is all unit-testable without either.
+Strings in, strings out: nothing here touches the filesystem or pymimir, so it is all unit-testable without either.
 """
 
 from __future__ import annotations
@@ -81,8 +80,7 @@ def parse_typed_parameters(
 def parse_type_groups(domain_text: str) -> list[tuple[list[str], str]]:
     """The domain's ``(:types ...)`` as ``(children, parent)`` groups, in order.
 
-    Grouping is kept rather than flattened to a child -> parent map because
-    callers that emit text depend on children and their parent staying adjacent.
+    Grouping is kept rather than flattened to a child -> parent map because callers that emit text depend on children and their parent staying adjacent.
     """
     match = TYPES_PATTERN.search(domain_text)
     if match is None:

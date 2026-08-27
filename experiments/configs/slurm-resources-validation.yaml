@@ -1,19 +1,13 @@
-# Per-domain Slurm resources for the VALIDATION array, consumed by
-# experiments/launch.py. Same schema as experiments/configs/slurm-resources.yaml, resolved
-# independently (validation does NOT inherit anything from the training file).
+# Per-domain Slurm resources for the VALIDATION array, consumed by experiments/launch.py. Same schema as experiments/configs/slurm-resources.yaml, resolved independently (validation does NOT inherit anything from the training file).
 #
 # Each domain inherits `defaults` for any field it does not set. Fields:
 #   time  -> --time   (HH:MM:SS)
 #   mem   -> --mem
 #   cpus  -> --cpus-per-task
-#   gres  -> --gres=<value>   (omitted here — validation requests no GPU)
+#   gres  -> --gres=<value>   (omitted here: validation requests no GPU)
 #   sbatch_extra -> list of raw directives passed verbatim.
 #
-# The DIAS/noise validators run on CPU only; the MLP baseline uses a GPU if one
-# is present but falls back to CPU. So validation requests no GPU (no `gres`)
-# and targets the CPU partitions via `sbatch_extra`, overriding the GPU
-# partitions declared in experiments/slurm/validate.sh. Fill in real per-domain
-# values as needed; {} means "use defaults".
+# The DIAS/noise validators run on CPU only; the MLP baseline uses a GPU if one is present but falls back to CPU. So validation requests no GPU (no `gres`) and targets the CPU partitions via `sbatch_extra`, overriding the GPU partitions declared in experiments/slurm/validate.sh. Fill in real per-domain values as needed; {} means "use defaults".
 
 defaults:
   time: "01:00:00"

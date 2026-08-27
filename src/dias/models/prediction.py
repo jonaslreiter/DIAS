@@ -21,10 +21,7 @@ def project(lifted: torch.Tensor, selection: torch.Tensor) -> torch.Tensor:
 class PredictionModule(nn.Module):
     """Slot-based graph-edit predictor.
 
-    The action's slots are bound to the state's objects, its lifted effects and
-    preconditions are projected onto that binding, and the resulting change is
-    applied to the state: ``A' = A + pre * delta``, where ``pre`` is how well
-    the preconditions hold (when ``learn_preconditions=True``).
+    The action's slots are bound to the state's objects, its lifted effects and preconditions are projected onto that binding, and the resulting change is applied to the state: ``A' = A + pre * delta``, where ``pre`` is how well the preconditions hold (when ``learn_preconditions=True``).
     """
 
     def __init__(
@@ -82,8 +79,7 @@ class PredictionModule(nn.Module):
         preconditions = Channels.from_logits(self.preconditions(y_action))
         required = project(preconditions.positive, selection)
         forbidden = project(preconditions.negative, selection)
-        # An atom satisfies the preconditions unless it is required and absent,
-        # or forbidden and present.
+        # An atom satisfies the preconditions unless it is required and absent, or forbidden and present.
         satisfaction = (
             (1 - required * (1 - adjacency)) * (1 - forbidden * adjacency)
         ).flatten(start_dim=1)
@@ -120,10 +116,7 @@ class PredictionModule(nn.Module):
     ) -> torch.Tensor:
         """The successor state, for a caller that already knows the binding.
 
-        The preconditions are not consulted. A caller holding a binding got it
-        by grounding the learned schema through PDDL, which is where
-        applicability was decided; asking again here would decide it twice, by
-        two different means.
+        The preconditions are not consulted. A caller holding a binding got it by grounding the learned schema through PDDL, which is where applicability was decided; asking again here would decide it twice, by two different means.
         """
         effects = Channels.from_logits(self.effects(y_action, adjacency, selection))
         return adjacency + self.delta(adjacency, effects, selection)

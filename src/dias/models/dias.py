@@ -50,14 +50,10 @@ class DIAS(L.LightningModule):
         super().__init__()
         self.save_hyperparameters()
         self.gmean_temperature = as_schedule(gmean_temperature)
-        # Hyperparameters must stay primitive: torch.load defaults to
-        # weights_only=True since 2.6 and refuses to unpickle a dataclass,
-        # which would make the whole checkpoint unloadable.
+        # Hyperparameters must stay primitive: torch.load defaults to weights_only=True since 2.6 and refuses to unpickle a dataclass, which would make the whole checkpoint unloadable.
         self.hparams["gmean_temperature"] = to_mapping(self.gmean_temperature)
 
-        # Everything else is handed to the module that owns it; what is kept
-        # here is what something reads back later -- the losses, the optimizer,
-        # the reporting callback, and the validators.
+        # Everything else is handed to the module that owns it; what is kept here is what something reads back later: the losses, the optimizer, the reporting callback, and the validators.
         self.num_objects = num_objects
         self.num_actions = num_actions
         self.num_relations = len(arity_relations)
@@ -103,8 +99,7 @@ class DIAS(L.LightningModule):
             use_effect_loss=use_effect_loss,
             use_precondition_loss=use_precondition_loss,
         )
-        # Whether the auxiliary objective contributes any gradient is fixed at
-        # construction: alpha = 0, or both of its terms ablated away.
+        # Whether the auxiliary objective contributes any gradient is fixed at construction: alpha = 0, or both of its terms ablated away.
         self.gradients = gradient_combiner(
             use_pcgrad=use_pcgrad,
             auxiliary_weight=aux_loss_weight,
@@ -115,9 +110,7 @@ class DIAS(L.LightningModule):
 
         self.automatic_optimization = False
 
-        # What the ablation flags actually did. They are otherwise visible only
-        # in the saved config, which is not where anyone looks when a run is
-        # behaving unlike its neighbours.
+        # What the ablation flags actually did. They are otherwise visible only in the saved config, which is not where anyone looks when a run is behaving unlike its neighbours.
         auxiliary = [
             name
             for name, active in (
@@ -127,8 +120,7 @@ class DIAS(L.LightningModule):
             if active
         ]
         logger.info(
-            "DIAS: %d slots over %d objects, %d relations, %d actions, "
-            "%s parameters.",
+            "DIAS: %d slots over %d objects, %d relations, %d actions, %s parameters.",
             self.num_slots,
             num_objects,
             self.num_relations,
@@ -154,10 +146,7 @@ class DIAS(L.LightningModule):
     def load_from_checkpoint(cls, checkpoint_path, *args, **kwargs):
         """Load a checkpoint, bringing an older layout up to date on the way in.
 
-        The version stamp decides, not a failed load: Lightning drops
-        hyper-parameters it does not recognise instead of raising, so a renamed
-        one would silently fall back to its default and quietly change what the
-        archived run means.
+        The version stamp decides, not a failed load: Lightning drops hyper-parameters it does not recognise instead of raising, so a renamed one would silently fall back to its default and quietly change what the archived run means.
         """
         checkpoint = torch.load(checkpoint_path, map_location="cpu")
         version = checkpoint.get(VERSION_KEY, UNVERSIONED)
@@ -192,10 +181,7 @@ class DIAS(L.LightningModule):
     def schema_logits(self) -> SchemaLogits:
         """The learned schema as the model would apply it, on the CPU.
 
-        The supported way to read a schema off a trained model. The arity mask
-        is applied here, so the raw parameters are not a faithful record of what
-        the model can express -- reading them directly finds effects on cells
-        the model never uses.
+        The supported way to read a schema off a trained model. The arity mask is applied here, so the raw parameters are not a faithful record of what the model can express: reading them directly finds effects on cells the model never uses.
         """
         with torch.no_grad():
             preconditions = self.graph_edit.preconditions.action_logits()
@@ -215,24 +201,18 @@ class DIAS(L.LightningModule):
     ) -> torch.Tensor:
         """The successor state this model predicts for a known slot binding.
 
-        For a model whose effects are predicted from the state, this is the
-        only way to see them: `schema_logits` reports None for it, because
-        there is no lifted effect tensor to report.
+        For a model whose effects are predicted from the state, this is the only way to see them: `schema_logits` reports None for it, because there is no lifted effect tensor to report.
         """
         return self.graph_edit.apply(adjacency, selection, y_action)
 
     def retarget(self, num_objects: int) -> None:
         """Point the model at an instance with a different number of objects.
 
-        A learned schema is lifted, so it transfers; the recorded instance size
-        does not, and the losses and the target adjacency are built from it.
-        An instance with fewer objects than the model has slots cannot bind
-        them all, so it is refused rather than silently mis-scored.
+        A learned schema is lifted, so it transfers; the recorded instance size does not, and the losses and the target adjacency are built from it. An instance with fewer objects than the model has slots cannot bind them all, so it is refused rather than silently mis-scored.
         """
         if num_objects < self.num_slots:
             raise ValueError(
-                f"This instance has {num_objects} objects, fewer than the "
-                f"model's {self.num_slots} slots; it cannot bind them all."
+                f"This instance has {num_objects} objects, fewer than the model's {self.num_slots} slots; it cannot bind them all."
             )
         self.num_objects = num_objects
 

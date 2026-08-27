@@ -37,14 +37,9 @@ logger = logging.getLogger(__name__)
 class PddlGraphDataModule(L.LightningDataModule):
     """One problem instance, as the transitions a training run reads.
 
-    A random walk draws transitions until `SampleQuota` is met, they are split
-    by action, and the train half is optionally corrupted by a `NoiseModel`.
-    `batch_sampling_strategy` is ``"random"`` (a shuffled pass over the split)
-    or ``"stratified"`` (an unbounded action-balanced stream, in which case
-    training length comes from ``trainer.max_steps``).
+    A random walk draws transitions until `SampleQuota` is met, they are split by action, and the train half is optionally corrupted by a `NoiseModel`. `batch_sampling_strategy` is ``"random"`` (a shuffled pass over the split) or ``"stratified"`` (an unbounded action-balanced stream, in which case training length comes from ``trainer.max_steps``).
 
-    The sampling arguments stay flat here rather than nesting into the quota,
-    because they are what configs, sweeps and archived hyper-parameters name.
+    The sampling arguments stay flat here rather than nesting into the quota, because they are what configs, sweeps and archived hyper-parameters name.
     """
 
     def __init__(
@@ -91,11 +86,9 @@ class PddlGraphDataModule(L.LightningDataModule):
 
         if batch_sampling_strategy not in ("random", "stratified"):
             raise ValueError(
-                f"batch_sampling_strategy must be 'random' or 'stratified', "
-                f"got {batch_sampling_strategy!r}."
+                f"batch_sampling_strategy must be 'random' or 'stratified', got {batch_sampling_strategy!r}."
             )
-        # The floors mutate the minima, so the quota is derived rather than
-        # read back off `hparams`, which keep the per-domain values as written.
+        # The floors mutate the minima, so the quota is derived rather than read back off `hparams`, which keep the per-domain values as written.
         self.quota = SampleQuota.with_floors(
             min_per_label_train=min_per_label_train,
             min_per_label_valid=min_per_label_valid,
@@ -238,8 +231,7 @@ class PddlGraphDataModule(L.LightningDataModule):
             [a["name"] for a in self.metadata["actions"]],
         )
         logger.info(
-            "Sampling transitions: at least %d per action%s, walking at most "
-            "%d steps. This is the slow part on a large instance.",
+            "Sampling transitions: at least %d per action%s, walking at most %d steps. This is the slow part on a large instance.",
             self.quota.min_total,
             f" and {self.quota.num_total} in total" if self.quota.num_total else "",
             self.max_steps,

@@ -44,10 +44,7 @@ class DIASForwardTest(unittest.TestCase):
         )
 
         self.assertEqual(prediction.adjacency.shape, (1, 2, 2, 2))
-        # These values are what this seed builds; they moved once, deliberately,
-        # when construction started drawing in the order the data flows.
-        # float32 sums, so the tolerance has to sit above the accumulation error;
-        # pinning more digits than this fails on any BLAS or torch version change.
+        # These values are what this seed builds; they moved once, deliberately, when construction started drawing in the order the data flows. float32 sums, so the tolerance has to sit above the accumulation error; pinning more digits than this fails on any BLAS or torch version change.
         torch.testing.assert_close(
             prediction.adjacency.sum(), torch.tensor(2.2110720), rtol=0, atol=1e-6
         )

@@ -1,8 +1,6 @@
 """Unit tests for compiling typed PDDL down to untyped PDDL.
 
-These used to be private static methods duplicated across the validator
-classes, taking file paths, which
-made them reachable only by constructing a validator. They now take source text.
+These used to be private static methods duplicated across the validator classes, taking file paths, which made them reachable only by constructing a validator. They now take source text.
 """
 
 import unittest
@@ -58,8 +56,7 @@ class StripProblemTypesTest(unittest.TestCase):
 
     def test_without_a_domain_types_are_dropped_but_nothing_is_injected(self):
         text = strip_problem_types(
-            "(define (problem p) (:domain demo)\n"
-            "(:objects a b - thing)\n(:init)\n(:goal (ready a)))\n"
+            "(define (problem p) (:domain demo)\n(:objects a b - thing)\n(:init)\n(:goal (ready a)))\n"
         )
         self.assertIn("(:objects a b)", text)
         self.assertNotIn("- thing", text)
@@ -97,12 +94,7 @@ class ExtractDomainHeaderTest(unittest.TestCase):
 
 
 class UntypeActionTest(unittest.TestCase):
-    ACTION = (
-        "(:action push\n"
-        "  :parameters (?p - player ?c - crate)\n"
-        "  :precondition (and (at ?p) (= ?p ?c))\n"
-        "  :effect (at ?c))"
-    )
+    ACTION = "(:action push\n  :parameters (?p - player ?c - crate)\n  :precondition (and (at ?p) (= ?p ?c))\n  :effect (at ?c))"
 
     def test_types_become_preconditions_and_equality_is_rewritten(self):
         text = untype_action(self.ACTION, equality_predicate_name="eq")
@@ -117,8 +109,7 @@ class UntypeActionTest(unittest.TestCase):
 
     def test_prefix_and_ignored_types(self):
         text = untype_action(
-            "(:action go :parameters (?x - untyped ?y - cell)"
-            " :precondition (and) :effect (at ?y))",
+            "(:action go :parameters (?x - untyped ?y - cell) :precondition (and) :effect (at ?y))",
             name_prefix="learned_",
             ignored_types=frozenset({"untyped"}),
         )

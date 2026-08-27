@@ -1,7 +1,6 @@
 """The loss terms, on predictions built by hand rather than by a model.
 
-The golden fixture pins these end to end, but only for the default flags. The
-ablations, and what each term is counting, are checked here.
+The golden fixture pins these end to end, but only for the default flags. The ablations, and what each term is counting, are checked here.
 """
 
 import unittest

@@ -1,9 +1,6 @@
 """The three datasets one problem instance is read through.
 
-`PddlTransitionDataset` holds the sampled transitions as dense tensors;
-`PddlGraphDataset` and `StratifiedActionIterableDataset` turn one of them into
-the pair of PyG graphs a training step consumes, the second by drawing an
-endless action-balanced stream rather than walking an index list.
+`PddlTransitionDataset` holds the sampled transitions as dense tensors; `PddlGraphDataset` and `StratifiedActionIterableDataset` turn one of them into the pair of PyG graphs a training step consumes, the second by drawing an endless action-balanced stream rather than walking an index list.
 """
 
 from __future__ import annotations

@@ -36,10 +36,7 @@ class CLI(LightningCLI):
     def before_instantiate_classes(self):
         """Say what this run is, before anything slow starts.
 
-        A run is composed from two or three config files and then overridden on
-        the command line, so which domain it ended up on is not something a
-        reader can see from the command they typed. Reported from the parsed
-        config rather than from the datamodule, so it comes first.
+        A run is composed from two or three config files and then overridden on the command line, so which domain it ended up on is not something a reader can see from the command they typed. Reported from the parsed config rather than from the datamodule, so it comes first.
         """
         super().before_instantiate_classes()
         config = self.config.get(self.subcommand, self.config)
@@ -80,16 +77,12 @@ class SaveAndLogConfigCallback(SaveConfigCallback):
 
 
 def main():
-    # The library reports through `logging`, which discards INFO until someone
-    # configures a handler; the entry point is the one place that may.
+    # The library reports through `logging`, which discards INFO until someone configures a handler; the entry point is the one place that may.
     logging.basicConfig(level=logging.INFO, format="%(name)s: %(message)s")
     torch.set_float32_matmul_precision("medium")
 
     CLI(
-        # No logger here: which W&B account a run belongs to is a property of
-        # whoever is running it, so it is declared in configs/main.yaml (where
-        # it can be edited or overridden) rather than compiled into the library.
-        # Without a config, Lightning's own account-free default applies.
+        # No logger here: which W&B account a run belongs to is a property of whoever is running it, so it is declared in configs/main.yaml (where it can be edited or overridden) rather than compiled into the library. Without a config, Lightning's own account-free default applies.
         trainer_defaults={
             "callbacks": [
                 ModelCheckpoint(filename="final-{epoch}-{step}"),
@@ -100,9 +93,7 @@ def main():
             ],
         },
         save_config_callback=SaveAndLogConfigCallback,
-        # Let a re-launched (experiment, domain, seed) overwrite its own saved
-        # config instead of aborting — deterministic run ids mean re-runs reuse
-        # the same run directory.
+        # Let a re-launched (experiment, domain, seed) overwrite its own saved config instead of aborting: deterministic run ids mean re-runs reuse the same run directory.
         save_config_kwargs={"overwrite": True},
         seed_everything_default=np.random.randint(2**32),
     )

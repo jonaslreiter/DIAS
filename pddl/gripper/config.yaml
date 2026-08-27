@@ -1,9 +1,7 @@
 # Per-domain config for 'gripper', composed after configs/main.yaml:
 #   dias fit --config configs/main.yaml --config pddl/gripper/config.yaml
 #
-# The paths below are what make that command train gripper rather than
-# whichever domain the base config happens to name. They are this folder's
-# standard filenames, which the test suite checks.
+# The paths below are what make that command train gripper rather than whichever domain the base config happens to name. They are this folder's standard filenames, which the test suite checks.
 data:
   init_args:
     domain_path: pddl/gripper/domain.pddl
