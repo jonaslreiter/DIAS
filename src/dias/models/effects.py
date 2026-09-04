@@ -1,4 +1,4 @@
-"""What an action changes about a state: one learned tensor per action (DIAS), or predicted from the state (the MLP baseline)."""
+"""What an action changes about a state: one learned tensor per action (DIAS), or predicted from the state by an MLP."""
 
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ class StaticEffects(EffectSource):
 
 
 class StateDependentEffects(EffectSource):
-    """Effects predicted from the current state: the MLP baseline. The state is projected onto the action's slots first, so the network sees a lifted state rather than the instance."""
+    """Effects predicted from the current state by an MLP. The state is projected onto the action's slots first, so the network sees a lifted state rather than the instance."""
 
     def __init__(
         self, num_actions: int, relation_arities: Sequence[int], num_slots: int

@@ -89,7 +89,7 @@ The main table is one command per experiment type, plus a collection step:
 
 ```bash
 python experiments/launch.py --experiment dias-full                      # DIAS
-python experiments/launch.py --experiment mlp --experiment-type mlp      # MLP baseline
+python experiments/launch.py --experiment mlp --experiment-type mlp      # MLP effects
 python experiments/launch.py --experiment noise --experiment-type noise  # noisy input
 
 python experiments/collect_results.py --experiment dias-full
@@ -121,7 +121,8 @@ src/dias/
 ├── data/             PDDL datamodule, transition sampling, adjacency noise
 ├── schema/           DomainSchema (metadata) and ActionSchema (learned output)
 ├── pddl/             pure PDDL text handling, untyping, the transpiler
-├── validation/       the three validators + shared successor scoring
+├── validation/       one validator per model (dias, mlp_effects, l1) and the
+│                       successor scoring all three share
 └── reporting/        the W&B custom charts the learned schema is logged as
 
 experiments/          everything you run to reproduce the paper, start here

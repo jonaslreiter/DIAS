@@ -1,6 +1,6 @@
 """Validate one ``(experiment, domain, seed)`` run and write its results.
 
-The compute-side validation step, invoked once per seed by ``slurm/validate.sh`` and by ``launch.py --backend local``. The experiment type picks the validator: dias / noise read a DIAS checkpoint, mlp the baseline. (L1 has no checkpoint and no sweep iterates over it; reach it through ``validate_checkpoint.py --validator l1``.)
+The compute-side validation step, invoked once per seed by ``slurm/validate.sh`` and by ``launch.py --backend local``. The experiment type picks the validator: dias / noise read a DIAS checkpoint, mlp an MLP-effects one. (L1 has no checkpoint and no sweep iterates over it; reach it through ``validate_checkpoint.py --validator l1``.)
 
 The run is located by its deterministic id, its problems are the domain folder's ``test-{1,2,3}.pddl`` and its sampling knobs come from ``experiments/configs/validation.yaml``. Results go to ``<logs>/validation/<experiment>/<domain>/seed<seed>.json``, and to the resumed W&B run when it is reachable.
 

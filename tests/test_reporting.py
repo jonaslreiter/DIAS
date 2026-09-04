@@ -179,7 +179,7 @@ class ChartSetTest(unittest.TestCase):
         )
 
     def test_state_dependent_effects_have_no_lifted_panel_to_draw(self):
-        """The MLP baseline: preconditions are a schema, its effects are not."""
+        """The MLP-effects model: preconditions are a schema, its effects are not."""
         charts = self.charts(SchemaChartCallback(), state_dependent_effects=True)
         self.assertEqual(
             set(charts), {"positive_preconditions", "negative_preconditions"}

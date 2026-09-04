@@ -67,7 +67,7 @@ class DIAS(L.LightningModule):
             random_node_embeddings: Start each object from noise, so symmetric objects differ.
             precondition_tau: Schedule for tau, the root degree of the relaxed precondition product. None holds it at 1, the geometric mean.
             pcgrad_norm_cap: Cap the projected auxiliary gradient at the primary one's norm.
-            state_dependent_effects: Predict effects from the state with an MLP (the baseline).
+            state_dependent_effects: Predict effects from the state with an MLP instead of learning one lifted tensor per action.
             use_slot_weights: Learn which slots an action uses, which is its recovered arity.
             use_precondition_loss: Include the restrictive-precondition auxiliary term.
             use_effect_loss: Include the minimal-effects auxiliary term.

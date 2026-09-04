@@ -1,6 +1,6 @@
 """Validate one learned action model on one PDDL problem and print the result, where ``experiments/validate_runs.py`` walks a whole grid.
 
-``--validator`` picks what is scored: ``dias`` a trained checkpoint, whose lifted schema is binarized at ``--threshold``; ``mlp`` a baseline checkpoint, which has no lifted schema; ``l1`` a learned PDDL domain from outside this repository, given as ``--original-domain`` / ``--learned-domain`` rather than a run id. Sampling defaults come from ``experiments/configs/validation.yaml``.
+``--validator`` picks what is scored: ``dias`` a trained checkpoint, whose lifted schema is binarized at ``--threshold``; ``mlp`` an MLP-effects checkpoint, which has no lifted schema; ``l1`` a learned PDDL domain from outside this repository, given as ``--original-domain`` / ``--learned-domain`` rather than a run id. Sampling defaults come from ``experiments/configs/validation.yaml``.
 
 Examples
 --------

@@ -48,7 +48,7 @@ Later layers win, which is why a sweep value beats a domain's tuned one, and eac
 
 ```bash
 python experiments/launch.py --experiment dias-full                      # DIAS
-python experiments/launch.py --experiment mlp --experiment-type mlp      # MLP baseline
+python experiments/launch.py --experiment mlp --experiment-type mlp      # MLP effects
 python experiments/launch.py --experiment noise --experiment-type noise  # noisy input
 ```
 

@@ -9,7 +9,7 @@ from pathlib import Path
 import torch
 
 from checkpoints import TEST_PROBLEM, build_model, domain_schema, save
-from dias.validation.dias_validate import DiasValidator
+from dias.validation.dias import DiasValidator
 from support import temp_dir
 
 torch.set_num_threads(1)

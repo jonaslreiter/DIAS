@@ -1,3 +1,5 @@
+"""Scoring a DIAS checkpoint: the lifted schemas read off it are merged into the original domain, and the two sets of actions are compared successor by successor."""
+
 from __future__ import annotations
 
 import logging

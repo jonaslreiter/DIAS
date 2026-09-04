@@ -161,7 +161,7 @@ def main() -> int:
         "--experiment-type",
         default="dias",
         choices=["dias", "noise"],
-        help="Validator to use. The MLP baseline has no schema to binarize.",
+        help="Validator to use. The MLP-effects model has no schema to binarize.",
     )
     add_domain_arguments(p)
     p.add_argument("--backend", default="slurm", choices=["slurm", "local"])

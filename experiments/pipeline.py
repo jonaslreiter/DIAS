@@ -112,7 +112,7 @@ def run_command(cmd: list[str], dry_run: bool, capture: bool = True) -> str | No
 class Validator:
     """One way of scoring a learned action model against the real domain.
 
-    ``binarizes_schema``: only a model with lifted schema tensors has anything to threshold. ``from_checkpoint``: L1 is handed a learned PDDL domain instead of a trained model. ``class_name`` is what the module calls its validator, so the three are named for what they do rather than sharing one name by convention.
+    ``binarizes_schema``: only a model with lifted schema tensors has anything to threshold. ``from_checkpoint``: L1 is handed a learned PDDL domain instead of a trained model. ``module`` / ``class_name``: each validator module is named for the model it scores (``dias``, ``mlp_effects``, ``l1``) and holds one ``<Model>Validator``, rather than three modules sharing one name by convention.
     """
 
     name: str
@@ -126,7 +126,7 @@ class Validator:
 VALIDATORS: dict[str, Validator] = {
     "dias": Validator(
         name="dias",
-        module="dias.validation.dias_validate",
+        module="dias.validation.dias",
         class_name="DiasValidator",
         summary="DIAS: lifted schemas read off a trained checkpoint",
         binarizes_schema=True,
@@ -134,9 +134,9 @@ VALIDATORS: dict[str, Validator] = {
     ),
     "mlp": Validator(
         name="mlp",
-        module="dias.validation.mlp_baseline",
-        class_name="MlpBaselineValidator",
-        summary="MLP baseline: effects predicted from the state, no lifted schema",
+        module="dias.validation.mlp_effects",
+        class_name="MlpEffectsValidator",
+        summary="MLP effects: effects predicted from the state, no lifted schema",
         binarizes_schema=False,
         from_checkpoint=True,
     ),

@@ -61,6 +61,6 @@ jobs:
         working-directory: ${{ runner.temp }}
         run: |
           "$RUNNER_TEMP/fresh/bin/python" -c "
-          import dias, dias.main, dias.models.dias, dias.validation.dias_validate
+          import dias, dias.main, dias.models.dias, dias.validation.dias
           print('dias', dias.__version__, 'imports from', dias.__file__)
           "

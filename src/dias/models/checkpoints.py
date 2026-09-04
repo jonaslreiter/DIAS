@@ -60,7 +60,7 @@ def _migrate_state_dict(state: dict) -> None:
     """Rename the unversioned parameters and drop what is no longer stored."""
     if any(key.startswith("graph_edit.effects_mlp.") for key in state):
         raise ValueError(
-            "This MLP-baseline checkpoint predates the activations between the effect MLP's linear layers, which makes its weights mean something different than they do now; there is nothing to migrate them to. Retrain the run."
+            "This MLP-effects checkpoint predates the activations between the effect MLP's linear layers, which makes its weights mean something different than they do now; there is nothing to migrate them to. Retrain the run."
         )
     for old, new in _SCHEMA_RENAMES.items():
         if old in state:

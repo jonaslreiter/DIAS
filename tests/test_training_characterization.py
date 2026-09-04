@@ -4,7 +4,7 @@ A full forward pass and a full three-step training trajectory against a stored f
 
 To regenerate after an intended change:
 
-    DIAS_REGENERATE_GOLDEN=1 pytest tests/test_characterization.py
+    DIAS_REGENERATE_GOLDEN=1 pytest tests/test_training_characterization.py
 
 and review the resulting fixture diff.
 """

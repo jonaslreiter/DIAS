@@ -1,3 +1,5 @@
+"""Scoring a checkpoint whose effects are predicted from the state by an MLP. There is no lifted effect tensor to write into PDDL, so only the preconditions become a learned domain, and the successors themselves come from the model."""
+
 from __future__ import annotations
 
 import multiprocessing as _mp
@@ -160,7 +162,7 @@ def _enumerate_groundings(
     )
 
 
-class MlpBaselineValidator:
+class MlpEffectsValidator:
     def __init__(
         self,
         model_id,
@@ -181,7 +183,7 @@ class MlpBaselineValidator:
         schema = self.model.schema_logits()
         if schema.effects is not None:
             raise ValueError(
-                "validate_mlp_baseline expects a model with state_dependent_effects=True. Use validate.py for the static-effects baseline."
+                "MlpEffectsValidator expects a model trained with state_dependent_effects=True. A model with lifted effects is scored by DiasValidator."
             )
 
         strips_plus_positions = (

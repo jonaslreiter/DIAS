@@ -1,4 +1,4 @@
-"""End-to-end coverage for the MLP-effects baseline validator.
+"""End-to-end coverage for the MLP-effects validator.
 
 Its effects come from an MLP over the state, so a schema cannot be planted by hand the way the DIAS validator's can; these pin the contract, the internal consistency of the counts and the worker-process path instead.
 """
@@ -13,7 +13,7 @@ os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
 import torch
 
 from checkpoints import TEST_PROBLEM, build_model, save
-from dias.validation.mlp_baseline import MlpBaselineValidator
+from dias.validation.mlp_effects import MlpEffectsValidator
 from support import temp_dir
 
 torch.set_num_threads(1)
@@ -23,12 +23,12 @@ NUM_SAMPLES = 6
 SAMPLE_POPULATION = 20
 
 
-class MlpBaselineTest(unittest.TestCase):
+class MlpEffectsTest(unittest.TestCase):
     def validate(self, **kwargs) -> dict:
         directory = temp_dir(self)
         model, hparams = build_model(state_dependent_effects=True)
         model_id = save(directory, model, hparams)
-        validation = MlpBaselineValidator(
+        validation = MlpEffectsValidator(
             model_id,
             str(directory),
             problem_path=str(TEST_PROBLEM),
@@ -84,7 +84,7 @@ class MlpBaselineTest(unittest.TestCase):
         model, hparams = build_model()
         model_id = save(directory, model, hparams)
         with self.assertRaisesRegex(ValueError, "state_dependent_effects"):
-            MlpBaselineValidator(
+            MlpEffectsValidator(
                 model_id, str(directory), problem_path=str(TEST_PROBLEM)
             )
 

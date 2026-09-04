@@ -1,3 +1,5 @@
+"""Scoring a learned PDDL domain produced outside this repository, against the original domain it was learned from."""
+
 from __future__ import annotations
 
 import logging
