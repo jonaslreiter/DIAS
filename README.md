@@ -141,6 +141,7 @@ tests/
 
 ```bash
 pip install -e . --group dev      # PEP 735 groups; needs pip >= 25.1
+pre-commit install                # optional: runs the two below on a commit
 pytest
 black --check . && isort --check-only .
 ```
