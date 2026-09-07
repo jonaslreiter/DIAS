@@ -1,16 +1,6 @@
-# Per-domain Slurm resources consumed by experiments/launch.py.
+# Per-domain Slurm resources for the TRAINING array, consumed by experiments/launch.py. A domain inherits the `defaults` block for every field it does not set; `{}` takes all of them. Which sbatch flag each field becomes is `pipeline.sbatch_resource_opts`, and `sbatch_extra` is a list passed verbatim.
 #
-# Each domain inherits `defaults` for any field it does not set. Fields:
-#   time  -> --time   (HH:MM:SS)
-#   mem   -> --mem
-#   cpus  -> --cpus-per-task
-#   gres  -> --gres=<value>   (e.g. "gpu:1", or a GPU shard like "shard:8")
-#   sbatch_extra -> list of raw directives passed verbatim, e.g.
-#                   ["--partition=gpu", "--account=dias", "--gres=shard:8"]
-#
-# Fill in real per-domain values as needed; an empty {} means "use defaults".
-#
-# These configure the TRAINING array. Validation-array resources are configured separately in experiments/configs/slurm-resources-validation.yaml.
+# Validation-array resources are configured separately in experiments/configs/slurm-resources-validation.yaml.
 
 defaults:
   time: "04:00:00"

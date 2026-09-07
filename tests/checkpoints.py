@@ -62,7 +62,7 @@ def build_model(**overrides):
         "relation_arities": list(schema.relation_arities),
         "num_actions": schema.num_actions,
         "object_dim": 8,
-        "aux_loss_weight": 1.0,
+        "aux_loss_alpha": 1.0,
         "num_slots": max(schema.action_arities),
         "action_arities": list(schema.action_arities),
         "action_arg_positions": [list(p) for p in schema.action_arg_positions],

@@ -29,8 +29,8 @@ Runs are named `<experiment>-<domain>-s<seed>`, so the two arrays need no id han
 Each run composes, in order:
 
 1. `configs/main.yaml`: the base training config, which names no domain
-2. `pddl/<domain>/config.yaml`: that domain's files, plus its tuned sampling and `aux_loss_weight`
-3. an experiment overlay, if any: `configs/{mlp,noise}.yaml`
+2. `pddl/<domain>/config.yaml`: that domain's files, plus its tuned sampling and `aux_loss_alpha`
+3. an experiment overlay, if any: `configs/experiment-{mlp,noise}.yaml`
 4. an ablation overlay, if any: `configs/ablation-*.yaml`
 5. the launcher's `--set key=value` overrides, and any sweep override, last
 
@@ -113,14 +113,14 @@ python experiments/collect_results.py --experiment dias-full abl-no-pcgrad abl-n
 
 | axis | parameter | tag | grid |
 |---|---|---|---|
-| `aux-loss-weight` | `model.init_args.aux_loss_weight` | `aux` | 0.01, 0.03, 0.1, 0.3, 1.0 |
+| `aux-loss-alpha` | `model.init_args.aux_loss_alpha` | `aux` | 0.01, 0.03, 0.1, 0.3, 1.0 |
 | `num-slots` | `model.init_args.num_slots` | `slots` | 5, 7, 9 |
 | `tau` | the τ schedule's `every` | `tau` | 0, 100, 500, 1000, 5000 |
 | `dataset-size` | transitions per action | `n` | 20 … 2000 |
 
 ```bash
-python experiments/launch.py --experiment aux-sweep --sweep aux-loss-weight --num-runs 3
-python experiments/collect_results.py --experiment aux-sweep --sweep aux-loss-weight --markdown experiments/results/aux-sweep.md
+python experiments/launch.py --experiment aux-sweep --sweep aux-loss-alpha --num-runs 3
+python experiments/collect_results.py --experiment aux-sweep --sweep aux-loss-alpha --markdown experiments/results/aux-sweep.md
 ```
 
 `tau = 0` means τ sits at its floor from step 0, which with the default floor of 0 is the *exact* precondition product rather than a relaxation.

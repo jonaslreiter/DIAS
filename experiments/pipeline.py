@@ -218,6 +218,7 @@ def resolve_resources(slurm_cfg: dict, domain: str) -> dict:
 
 
 def sbatch_resource_opts(res: dict) -> list[str]:
+    """The sbatch flags a resolved resource block asks for. This is what the fields of the two slurm-resources files mean."""
     opts: list[str] = []
     if "time" in res:
         opts.append(f"--time={res['time']}")

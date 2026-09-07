@@ -1,4 +1,3 @@
-# Ablation: no L_eff, the minimal-effects auxiliary term.
 model:
   init_args:
     use_effect_loss: false

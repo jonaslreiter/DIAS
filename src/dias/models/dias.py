@@ -9,7 +9,13 @@ from dias.adjacency import dense_from_edges
 from dias.hparams import to_mapping
 from dias.schedules import Schedule, as_schedule
 
-from .checkpoints import CHECKPOINT_VERSION, UNVERSIONED, VERSION_KEY, migrate
+from .checkpoints import (
+    CHECKPOINT_VERSION,
+    UNVERSIONED,
+    VERSION_KEY,
+    migrate,
+    normalise_hparam_names,
+)
 from .edges import EdgeTypeLayout
 from .encoder import DEFAULT_HIDDEN_DIMS, RelationalEncoder
 from .objectives import DiasObjective, Losses
@@ -32,7 +38,7 @@ class DIAS(L.LightningModule):
         object_dim: int = 32,
         num_slots: int | None = None,
         learning_rate: float = 0.005,
-        aux_loss_weight: float = 0.1,
+        aux_loss_alpha: float = 0.1,
         force_action_args: bool = False,
         per_action_slots: bool = False,
         learn_preconditions: bool = True,
@@ -57,7 +63,7 @@ class DIAS(L.LightningModule):
             object_dim: Width of the object embeddings.
             num_slots: Parameter slots per schema, clamped to num_objects. Required unless per_action_slots.
             learning_rate: Adam step size.
-            aux_loss_weight: Weight of the auxiliary objective against the adjacency loss.
+            aux_loss_alpha: Alpha, the weight of the auxiliary objective against the adjacency loss.
             force_action_args: Bind the slots of observed action arguments instead of assigning them.
             per_action_slots: Give every action its own arity in slots, rather than num_slots each.
             learn_preconditions: Gate the predicted change on the learned preconditions.
@@ -92,7 +98,7 @@ class DIAS(L.LightningModule):
         )
         self.force_action_args = force_action_args
         self.learning_rate = learning_rate
-        self.aux_loss_weight = aux_loss_weight
+        self.aux_loss_alpha = aux_loss_alpha
 
         self.edges = EdgeTypeLayout(
             num_relations=self.num_relations,
@@ -128,8 +134,8 @@ class DIAS(L.LightningModule):
         )
         self.gradients = gradient_combiner(
             use_pcgrad=use_pcgrad,
-            auxiliary_weight=aux_loss_weight,
-            auxiliary_active=aux_loss_weight != 0.0
+            alpha=aux_loss_alpha,
+            auxiliary_active=aux_loss_alpha != 0.0
             and (use_effect_loss or use_precondition_loss),
             norm_cap=pcgrad_norm_cap,
         )
@@ -160,7 +166,7 @@ class DIAS(L.LightningModule):
                 else "a lifted tensor"
             ),
             ", ".join(auxiliary) if auxiliary else "off",
-            aux_loss_weight,
+            aux_loss_alpha,
             type(self.gradients).__name__,
         )
 
@@ -175,6 +181,8 @@ class DIAS(L.LightningModule):
         if version != CHECKPOINT_VERSION:
             logger.info("Reading a checkpoint written in format %d.", version)
             checkpoint = migrate(checkpoint)
+        else:
+            checkpoint = normalise_hparam_names(checkpoint)
         buffer = io.BytesIO()
         torch.save(checkpoint, buffer)
         buffer.seek(0)
@@ -267,14 +275,14 @@ class DIAS(L.LightningModule):
         )
         optimizer.step()
 
-        self.log_results("train", losses.logged(self.aux_loss_weight))
+        self.log_results("train", losses.logged(self.aux_loss_alpha))
         # Automatic optimization is off: `gradients` set p.grad itself.
         return None
 
     def _eval_step(self, prefix: str, batch) -> torch.Tensor:
         losses = self.step(batch)
-        self.log_results(prefix, losses.logged(self.aux_loss_weight))
-        return losses.total(self.aux_loss_weight)
+        self.log_results(prefix, losses.logged(self.aux_loss_alpha))
+        return losses.total(self.aux_loss_alpha)
 
     def validation_step(self, batch, batch_idx):
         return self._eval_step("valid", batch)

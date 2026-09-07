@@ -45,7 +45,7 @@ MODEL_DEFAULTS = dict(
     num_actions=NUM_ACTIONS,
     object_dim=8,
     # Pinned, not left to the class default, which would move the trajectory with it.
-    aux_loss_weight=1.0,
+    aux_loss_alpha=1.0,
     learning_rate=0.01,
     num_slots=NUM_SLOTS,
     action_arities=[2, 2],

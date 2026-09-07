@@ -8,4 +8,4 @@ data:
     max_per_action_valid: 500
 model:
   init_args:
-    aux_loss_weight: 1.0
+    aux_loss_alpha: 1.0

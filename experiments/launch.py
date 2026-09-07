@@ -14,7 +14,7 @@ Examples
 
     # An ablation, and a sweep into sub-experiments aux-sweep-aux0.01 .. -aux1.
     python experiments/launch.py --ablation no-pcgrad --experiment abl-no-pcgrad
-    python experiments/launch.py --experiment aux-sweep --sweep aux-loss-weight --num-runs 3
+    python experiments/launch.py --experiment aux-sweep --sweep aux-loss-alpha --num-runs 3
 
     # Re-run only the seeds that failed, into the same experiment.
     python experiments/launch.py --experiment paper-main --domains gripper --seeds 3 7-8
@@ -63,8 +63,8 @@ from pipeline import (
 )
 
 EXPERIMENT_OVERLAYS = {
-    "mlp": CONFIGS_DIR / "mlp.yaml",
-    "noise": CONFIGS_DIR / "noise.yaml",
+    "mlp": CONFIGS_DIR / "experiment-mlp.yaml",
+    "noise": CONFIGS_DIR / "experiment-noise.yaml",
 }
 # Schema-derivation threshold (Eq. 14) per experiment type; the paper raises it under noise.
 DEFAULT_VALIDATION_THRESHOLD = 0.5
@@ -117,8 +117,8 @@ def _dataset_size_overrides(value: float) -> dict[str, int]:
 
 SWEEP_AXES: dict[str, SweepAxis] = {
     # Grid covers every value currently tuned in pddl/<domain>/config.yaml.
-    "aux-loss-weight": SweepAxis(
-        param="model.init_args.aux_loss_weight",
+    "aux-loss-alpha": SweepAxis(
+        param="model.init_args.aux_loss_alpha",
         tag="aux",
         values=(0.01, 0.03, 0.1, 0.3, 1.0),
         cast=float,
@@ -269,9 +269,9 @@ def _sweep_points(args: argparse.Namespace) -> tuple:
     for param in _axis_params(axis):
         if any(o.startswith(f"{param}=") for o in args.overrides):
             raise SystemExit(f"--set {param}=... conflicts with --sweep {axis_name}")
-    if axis_name == "aux-loss-weight" and args.ablation == "no-aux-loss":
+    if axis_name == "aux-loss-alpha" and args.ablation == "no-aux-loss":
         raise SystemExit(
-            "--ablation no-aux-loss disables the auxiliary losses, so sweeping their weight has no effect"
+            "--ablation no-aux-loss disables the auxiliary losses, so sweeping their alpha has no effect"
         )
     # The override is appended last so it beats the per-domain config.
     points = [

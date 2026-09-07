@@ -20,6 +20,8 @@ from support import temp_dir
 UNVERSIONED_HPARAM_NAMES = {
     "relation_arities": "arity_relations",
     "pcgrad_norm_cap": "pcgrad_dyn_clip",
+    # Renamed after version 1 was published, so a version-1 checkpoint spells it this way too; see PublishedVersionOneTest.
+    "aux_loss_alpha": "aux_loss_weight",
 }
 _CURRENT_HPARAM_NAMES = {old: new for new, old in UNVERSIONED_HPARAM_NAMES.items()}
 
@@ -275,6 +277,43 @@ class CheckpointLayoutTest(unittest.TestCase):
         torch.save(checkpoint, path)
         model = DIAS.load_from_checkpoint(path, map_location="cpu")
         self.assertEqual(model.precondition_tau, Constant(1.0))
+
+
+class PublishedVersionOneTest(unittest.TestCase):
+    """Version 1 covers two spellings of one argument, so the stamp cannot tell them apart.
+
+    ``aux_loss_weight`` became ``aux_loss_alpha`` after version 1 was published and no version 2 exists yet, so a checkpoint stamped 1 may spell it either way and the read path renames it whatever the stamp says. Lightning would otherwise drop the unrecognised name and fall back to the default, silently changing what an archived run means.
+    """
+
+    def write_version_one(self, name: str, value: float) -> Path:
+        args = constructor_args() | {"aux_loss_alpha": value}
+        model = DIAS(**args)
+        hparams = dict(model.hparams)
+        hparams[name] = hparams.pop("aux_loss_alpha")
+        path = temp_dir(self) / "v1.ckpt"
+        torch.save(
+            {
+                "state_dict": model.state_dict(),
+                "hyper_parameters": hparams,
+                "pytorch-lightning_version": "2.6.1",
+                "epoch": 3,
+                "global_step": 300,
+                VERSION_KEY: CHECKPOINT_VERSION,
+            },
+            path,
+        )
+        return path
+
+    def test_the_published_spelling_keeps_its_value(self):
+        path = self.write_version_one("aux_loss_weight", 0.3)
+        model = DIAS.load_from_checkpoint(path, map_location="cpu")
+        self.assertEqual(model.aux_loss_alpha, 0.3)
+        self.assertNotIn("aux_loss_weight", model.hparams)
+
+    def test_the_current_spelling_is_untouched(self):
+        path = self.write_version_one("aux_loss_alpha", 0.3)
+        model = DIAS.load_from_checkpoint(path, map_location="cpu")
+        self.assertEqual(model.aux_loss_alpha, 0.3)
 
 
 if __name__ == "__main__":

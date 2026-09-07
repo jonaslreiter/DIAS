@@ -27,13 +27,13 @@ class Losses:
     precondition_satisfaction: torch.Tensor
     precondition_product: torch.Tensor
 
-    def total(self, auxiliary_weight: float) -> torch.Tensor:
-        return self.adjacency + auxiliary_weight * self.auxiliary
+    def total(self, alpha: float) -> torch.Tensor:
+        return self.adjacency + alpha * self.auxiliary
 
-    def logged(self, auxiliary_weight: float) -> dict[str, torch.Tensor]:
+    def logged(self, alpha: float) -> dict[str, torch.Tensor]:
         """What one step reports, under the names a run's history uses."""
         return {
-            "loss": self.total(auxiliary_weight).detach(),
+            "loss": self.total(alpha).detach(),
             "loss_adjacency": self.adjacency.detach(),
             "loss_aux": self.auxiliary.detach(),
             "hamming_distance": self.hamming_distance,

@@ -26,13 +26,13 @@ class SingleObjective:
 
 
 class WeightedSum:
-    """One backward pass over ``primary + weight * auxiliary``."""
+    """One backward pass over ``primary + alpha * auxiliary``."""
 
-    def __init__(self, weight: float):
-        self.weight = weight
+    def __init__(self, alpha: float):
+        self.alpha = alpha
 
     def backward(self, primary, auxiliary, parameters) -> None:
-        (primary + self.weight * auxiliary).backward()
+        (primary + self.alpha * auxiliary).backward()
 
 
 class PCGrad:
@@ -44,18 +44,18 @@ class PCGrad:
     # Below this the primary gradient carries no direction to project onto.
     NEGLIGIBLE = 1e-12
 
-    def __init__(self, weight: float, norm_cap: bool = True):
-        self.weight = weight
+    def __init__(self, alpha: float, norm_cap: bool = True):
+        self.alpha = alpha
         self.norm_cap = norm_cap
 
     def backward(self, primary, auxiliary, parameters) -> None:
         parameters = list(parameters)
-        # The weight is applied inside autograd rather than to the gradient afterwards.
+        # Alpha is applied inside autograd rather than to the gradient afterwards.
         primary_grads = torch.autograd.grad(
             primary, parameters, retain_graph=True, allow_unused=True
         )
         auxiliary_grads = torch.autograd.grad(
-            self.weight * auxiliary, parameters, retain_graph=True, allow_unused=True
+            self.alpha * auxiliary, parameters, retain_graph=True, allow_unused=True
         )
         for parameter, primary_grad, auxiliary_grad in zip(
             parameters, primary_grads, auxiliary_grads
@@ -101,7 +101,7 @@ class PCGrad:
 
 def gradient_combiner(
     use_pcgrad: bool,
-    auxiliary_weight: float,
+    alpha: float,
     auxiliary_active: bool,
     norm_cap: bool = True,
 ) -> GradientCombiner:
@@ -109,5 +109,5 @@ def gradient_combiner(
     if not auxiliary_active:
         return SingleObjective()
     if not use_pcgrad:
-        return WeightedSum(auxiliary_weight)
-    return PCGrad(auxiliary_weight, norm_cap=norm_cap)
+        return WeightedSum(alpha)
+    return PCGrad(alpha, norm_cap=norm_cap)

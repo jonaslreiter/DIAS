@@ -1,6 +1,6 @@
 # DIAS base training config: the paper's setup for a single domain, minus the domain.
 #
-# `dias.models.DIAS` and `dias.data.datamodule.PddlGraphDataModule` already default to the paper's full model with no noise, so what is left here is the run itself (how long, on what hardware, logged where) and the few values a class cannot choose. On top of it, `pddl/<domain>/config.yaml` carries the domain and its tuning, and its siblings here (`mlp.yaml`, `noise.yaml`, `ablation-*.yaml`) the MLP-effects model, the noise setup and the ablations; command-line `--key=value` overrides win over all of them. `dias fit --model.help dias.models.DIAS` lists every argument with its default, and each run saves the config it fully resolved to.
+# `dias.models.DIAS` and `dias.data.datamodule.PddlGraphDataModule` already default to the paper's full model with no noise, so what is left here is the run itself (how long, on what hardware, logged where) and the few values a class cannot choose. On top of it, `pddl/<domain>/config.yaml` carries the domain and its tuning, and its siblings here (`experiment-mlp.yaml`, `experiment-noise.yaml`, `ablation-*.yaml`) the MLP-effects model, the noise setup and the ablations; command-line `--key=value` overrides win over all of them. `dias fit --model.help dias.models.DIAS` and `--data.help dias.data.datamodule.PddlGraphDataModule` describe every argument set here, and each run saves the config it fully resolved to.
 #
 # This config names no domain: `domain_path` and `problem_path` have no default anywhere, so a run says which one it trains on:
 #
@@ -9,9 +9,7 @@
 model:
   class_path: dias.models.DIAS
   init_args:
-    # Parameter slots per action schema, which bounds the arity DIAS can recover. Too few silently caps what a domain can learn, and every extra slot is a dimension in every schema tensor.
     num_slots: 5
-    # Tau: the root degree of the relaxed precondition product. Anneals from the geometric mean (1.0) toward the exact product (0.0). Unset would hold it at 1.0, which never sharpens into a precondition check.
     precondition_tau:
       class_path: dias.schedules.Exponential
       init_args:
@@ -23,16 +21,13 @@ model:
 data:
   class_path: dias.data.datamodule.PddlGraphDataModule
   init_args:
-    # Transitions to draw per action, per split. SampleQuota refuses a run where neither these nor num_train / num_valid say how much to sample; the domains that need other amounts override them.
     min_per_action_train: 100
     min_per_action_valid: 50
     max_per_action_train: 1000
     max_per_action_valid: 500
 
 trainer:
-  # Weights & Biases. `entity: null` means "whichever account is logged in" (or $WANDB_ENTITY), so a clone of this repository logs to its own account and needs no edit here. To train without W&B at all, either
-  #   --trainer.logger=false    (no logging)
-  #   WANDB_MODE=offline dias   (log to logs/wandb, upload later)
+  # `entity: null` means whichever account is logged in (or $WANDB_ENTITY), so a clone of this repository logs to its own and needs no edit here. To train without W&B, either `--trainer.logger=false` or `WANDB_MODE=offline`.
   logger:
     class_path: lightning.pytorch.loggers.WandbLogger
     init_args:
@@ -40,7 +35,6 @@ trainer:
       project: dias
       entity: null
 
-  # The learned schema, logged as W&B custom charts rather than as images. Raise log_every_n_validations to log fewer of them; the final schema is logged when training ends either way.
   callbacks:
     - class_path: dias.reporting.callback.SchemaChartCallback
       init_args:

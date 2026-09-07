@@ -16,7 +16,7 @@ A seed's problems are reduced to one precision / recall by micro-averaging their
 Usage:
     python experiments/collect_results.py --experiment paper-main [--source wandb] [--domains gripper hanoi]
     python experiments/collect_results.py --experiment dias-full abl-no-pcgrad --markdown experiments/results/ablations-summary.md
-    python experiments/collect_results.py --experiment aux-sweep --sweep aux-loss-weight --markdown experiments/results/aux-sweep.md
+    python experiments/collect_results.py --experiment aux-sweep --sweep aux-loss-alpha --markdown experiments/results/aux-sweep.md
     python experiments/collect_results.py --experiment dias-full --threshold-sweep --markdown experiments/results/threshold-sweep.md
 """
 

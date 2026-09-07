@@ -1,15 +1,10 @@
-# Config consumed by `experiments/launch.py` / `experiments/validate_runs.py`.
-#
-# Each domain trains on `pddl/<domain>/train.pddl` and validates on that folder's `test-1.pddl` .. `test-3.pddl`; which files those are is the folder layout, not a setting. The pipeline runs once per (domain, seed) pair, and `seeds` also sets the default `--num-runs`.
+# Consumed by experiments/launch.py, validate_runs.py and validate_checkpoint.py. Each domain trains on `pddl/<domain>/train.pddl` and validates on that folder's `test-1.pddl` .. `test-3.pddl`; which files those are is the folder layout, not a setting.
 
-# Validation knobs (forwarded to the validator's setup / validate).
 num_samples: 250
 sample_population: 500
 
-# Which of the reachable states get sampled. Null draws a fresh sample every run, as each run also trains on its own sample; setting a number fixes the draw, so every seed of a domain scores on the same states.
-#
-# Unfixed is not unrecorded: when this is null a seed is drawn and written into the result JSON, and setting it back here scores the next run on exactly those states.
+# Null draws a fresh sample every run, as each run also trains on its own. Unfixed is not unrecorded: the seed that was drawn is written into the result JSON, and setting it back here scores the next run on exactly those states.
 sample_seed: null
 
-# Seeds to run per domain. The paper uses 0..9 (10 seeds per domain).
+# Per domain; also the default --num-runs. The paper uses 0..9.
 seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]

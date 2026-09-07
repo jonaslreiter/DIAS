@@ -147,19 +147,19 @@ class PrecedenceTest(unittest.TestCase):
     """Later layers win. This is what the launcher relies on and nothing states."""
 
     def test_a_domain_config_beats_the_base_config(self):
-        # aux_loss_weight is not in main.yaml at all: the base chain resolves it to the class default, and every domain tunes it.
+        # aux_loss_alpha is not in main.yaml at all: the base chain resolves it to the class default, and every domain tunes it.
         base = parse_base()
         tuned = parse(MAIN, A_DOMAIN)
-        self.assertEqual(base.model.init_args.aux_loss_weight, 0.1)
-        self.assertEqual(tuned.model.init_args.aux_loss_weight, 1.0)
+        self.assertEqual(base.model.init_args.aux_loss_alpha, 0.1)
+        self.assertEqual(tuned.model.init_args.aux_loss_alpha, 1.0)
 
     def test_an_overlay_beats_the_domain_config(self):
-        config = parse(MAIN, A_DOMAIN, ROOT / "configs/mlp.yaml")
+        config = parse(MAIN, A_DOMAIN, ROOT / "configs/experiment-mlp.yaml")
         self.assertTrue(config.model.init_args.state_dependent_effects)
 
     def test_the_noise_overlay_raises_the_per_action_floors(self):
         # A floor raises the smallest minimum without shrinking the domains that sample more.
-        config = parse(MAIN, A_DOMAIN, ROOT / "configs/noise.yaml")
+        config = parse(MAIN, A_DOMAIN, ROOT / "configs/experiment-noise.yaml")
         self.assertEqual(config.data.init_args.min_per_action_train_floor, 200)
         self.assertEqual(config.data.init_args.min_per_action_valid_floor, 100)
         self.assertEqual(config.data.init_args.min_per_action_train, 200)
@@ -170,7 +170,7 @@ class PrecedenceTest(unittest.TestCase):
         config = parse(
             MAIN,
             A_DOMAIN,
-            ROOT / "configs/noise.yaml",
+            ROOT / "configs/experiment-noise.yaml",
             overrides=["--model.init_args.precondition_tau.every=100"],
         )
         schedule = config.model.init_args.precondition_tau

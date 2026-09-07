@@ -1,4 +1,3 @@
-# Ablation: a plain weighted sum L_adj + alpha * L_aux instead of PCGrad.
 model:
   init_args:
     use_pcgrad: false

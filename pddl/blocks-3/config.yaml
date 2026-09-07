@@ -4,4 +4,4 @@ data:
     problem_path: pddl/blocks-3/train.pddl
 model:
   init_args:
-    aux_loss_weight: 1.0
+    aux_loss_alpha: 1.0

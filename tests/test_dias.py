@@ -38,7 +38,7 @@ class DIASModelTest(unittest.TestCase):
             "relation_arities": [1, 2],
             "num_actions": 1,
             "object_dim": 4,
-            "aux_loss_weight": 1.0,
+            "aux_loss_alpha": 1.0,
             "num_slots": 2,
             "action_arities": [2],
             "action_arg_positions": [[0, 1]],
@@ -127,7 +127,7 @@ class DIASModelTest(unittest.TestCase):
         batch = (*make_batch(changed=True), torch.tensor([0]))
         losses = model.step(batch)
         self.assertEqual(
-            set(losses.logged(model.aux_loss_weight)),
+            set(losses.logged(model.aux_loss_alpha)),
             {
                 "loss",
                 "loss_adjacency",
@@ -137,7 +137,7 @@ class DIASModelTest(unittest.TestCase):
                 "precondition_product",
             },
         )
-        for value in losses.logged(model.aux_loss_weight).values():
+        for value in losses.logged(model.aux_loss_alpha).values():
             self.assertTrue(torch.isfinite(value.float()).all())
 
         model.log_results = Mock()
