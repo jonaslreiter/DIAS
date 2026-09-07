@@ -186,7 +186,7 @@ Per domain, aggregated over seeds:
 | `N_SC` | seeds that are both |
 | `n` | seeds aggregated |
 
-Precision and recall are **micro-averaged and attributed to actions**: a successor is a true positive only when the learned schema of the same action reaches it. Reaching the right successor under the wrong operator scores as a false positive there and a false negative under the operator that should have reached it: the stricter reading, and the one every number published from this repository was computed with. Each validator returns `tp`/`fp`/`fn` as the sums of its `action_stats`, and those are summed again across a seed's problems.
+Precision and recall are **micro-averaged and attributed to actions**: a successor is a true positive only when the learned schema of the same action reaches it. Reaching the right successor under the wrong operator scores as a false positive there and a false negative under the operator that should have reached it, which is the stricter of the two readings. Each validator returns `tp`/`fp`/`fn` as the sums of its `action_stats`, and those are summed again across a seed's problems.
 
 The weaker state-level question (did the learned domain generate the same successor *set*, whatever produced it, which is what makes the search tree identical) is `accuracy`: the fraction of sampled states whose two sets agreed exactly.
 
