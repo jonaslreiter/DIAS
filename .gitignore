@@ -6,8 +6,6 @@ __pycache__/
 build/
 dist/
 .pytest_cache/
-# `coverage run` writes .coverage beside the tests, `--parallel` writes
-# .coverage.<host>.<pid>, and `coverage html` writes htmlcov/.
 .coverage
 .coverage.*
 htmlcov/
@@ -15,6 +13,4 @@ htmlcov/
 .vscode/
 logs/
 local/
-# Collected result tables: generated from logs/ by
-# experiments/collect_results.py --markdown, so they are reproducible output.
 experiments/results/
