@@ -2,11 +2,11 @@
 
 Code for **[Differentiable Learning of Lifted Action Schemas for Classical Planning](https://arxiv.org/abs/2605.13282)**, by Jonas Reiter, Jakob Elias Gebler and Hector Geffner, arXiv:2605.13282.
 
-DIAS learns **lifted STRIPS action schemas** (preconditions, add effects and delete effects over action *parameters*) from nothing but observed state transitions of a single planning problem. It is trained end to end by gradient descent: a relational GNN embeds the objects of a state, a Sinkhorn-style assignment binds them to the schema's parameter slots, and the learned schema is applied to predict the successor state. The learned parameters are then read off as symbolic PDDL, and evaluated on *held-out problems of different sizes* by whether the recovered domain generates the same successor states as the real one.
+DIAS learns **lifted STRIPS action schemas** (preconditions, add effects and delete effects over action *parameters*) from observed state transitions of a single planning problem. A relational GNN embeds the objects of a state, a Sinkhorn-style assignment binds them to the schema's parameter slots, and the learned schema is applied to predict the successor state. The trained parameters are then read back as symbolic PDDL and evaluated on held-out problems of different sizes, by whether the recovered domain generates the same successor states as the real one.
 
 ## What it learns
 
-Ten thousand steps on gripper's training instance, then read the model's parameters back as PDDL. Both effect sets are exact and the operator's arity is recovered, having been given only `(state, action, successor)` triples:
+Ten thousand steps on gripper's training instance, given only `(state, action, successor)` triples, then the model's parameters read back as PDDL:
 
 ```lisp
 ;; ground truth                        ;; recovered (seed 0, threshold 0.5)
@@ -27,7 +27,7 @@ Ten thousand steps on gripper's training instance, then read the model's paramet
     (not (free ?gripper))))                (not (free ?x1))))
 ```
 
-The extra negative preconditions are type-exclusion facts (`(not (room ?x0))` and such) that no reachable state violates, so they cost nothing behaviourally: this seed scores precision = recall = 1.0 on all three held-out gripper problems. Evaluation is behavioural throughout: a schema is *sound* when it generates no successor the real domain does not, and *complete* when it misses none.
+Both effect sets are exact and the arity is recovered; the extra negative preconditions are type-exclusion facts that no reachable state violates. Evaluation is behavioural throughout: a schema is *sound* when it generates no successor the real domain does not, and *complete* when it misses none.
 
 ## Install
 
@@ -39,9 +39,7 @@ cd DIAS
 pip install -e .
 ```
 
-That gives you the library and the `dias` command. The 13 PDDL domains, the config chain and the experiment scripts are the repository itself, so everything below is run from inside the checkout.
-
-Python 3.10+. A CUDA GPU for full-size runs; the quickstart below is CPU-only. [pymimir](https://pypi.org/project/pymimir/) does the PDDL parsing and grounding and is held to `~=0.13.62`.
+Python 3.10+, and a CUDA GPU for full-size runs. The domains, the configs and the experiment scripts are the repository itself, so every command below is run from inside the checkout.
 
 ## Quickstart
 
@@ -57,25 +55,25 @@ A few minutes later `logs/dias/quickstart/checkpoints/` holds the trained model.
 python experiments/validate_checkpoint.py --validator dias --model-id quickstart --log-dir logs --problem pddl/gripper/test-1.pddl
 ```
 
-which prints per-action `tp`/`fp`/`fn` and the precision and recall they sum to. A successor counts only when the learned schema of *that* action reaches it, so recovering the right state under the wrong operator is an error rather than a hit. 300 steps will not recover gripper; the paper's runs take 10 000. Drop `--trainer.max_steps` and point `--trainer.accelerator` at `gpu` for a real one.
+This prints per-action `tp`/`fp`/`fn` and the precision and recall they sum to. 300 steps will not recover gripper; the paper's runs take 10 000 on a GPU.
 
 ### Choosing a domain
 
-Swap the second config. It carries both the domain's files and its tuned hyperparameters, and it is layered after the base config, so it wins:
+Swap the second config: it carries both the domain's files and its tuned hyperparameters, and being layered last it wins.
 
 ```bash
 dias fit --config configs/main.yaml --config pddl/hanoi/config.yaml
 ```
 
-`configs/main.yaml` names no domain of its own, and neither does the datamodule: `domain_path` and `problem_path` have no default anywhere, so a run that says nothing is refused rather than trained on whichever domain the base config happened to carry. Every config states only what it changes about the layer below it, down to the model and datamodule signatures, whose defaults are the paper's setup. To see them all, with a line on what each does, ask the CLI: `dias fit --model.help dias.models.DIAS` and `dias fit --data.help dias.data.datamodule.PddlGraphDataModule`. Any single value is overridable on the command line (`--data.init_args.problem_path=...` to train on a different instance of the same domain, for example), because command-line arguments are applied last of all.
+`configs/main.yaml` names no domain, so a chain that names none is refused rather than run on a guess. Every model and datamodule argument is listed, with a line on what it does, by `dias fit --model.help dias.models.DIAS` and `--data.help dias.data.datamodule.PddlGraphDataModule`, and any of them can be overridden on the command line.
 
 ### Weights & Biases
 
-W&B is the default logger, declared in `configs/main.yaml` with `entity: null`, which means whichever account you are logged into (or `$WANDB_ENTITY`). Nothing in the package names an account. To train without it, either `--trainer.logger=false`, or `WANDB_MODE=offline` to record locally and upload later. When it is on, the learned schema is logged every 20 validation epochs as interactive heatmaps: effects, preconditions, slot-to-object assignments and slot weights, with a step slider.
+W&B is the default logger, with `entity: null`, meaning whichever account you are logged into (or `$WANDB_ENTITY`). Use `--trainer.logger=false` to train without it, or `WANDB_MODE=offline` to record locally. When it is on, the learned schema is logged periodically as interactive heatmaps: effects, preconditions, slot-to-object assignments and slot weights.
 
 ### Your own PDDL
 
-Point `domain_path` / `problem_path` at any domain whose predicates are unary or binary and whose actions are STRIPS with injective parameter binding. To make it a domain like the 13 below, give it a `pddl/<name>/` folder holding `domain.pddl`, `train.pddl`, `test-1.pddl` .. `test-3.pddl` and a `config.yaml` (those first two paths, plus whatever it needs tuned). Nothing lists the domains: the folder is the domain, so `--domains <name>` works in the sweep launcher as soon as the folder exists. The test suite checks that every folder holds all six files and that its config selects its own domain.
+Point `domain_path` / `problem_path` at any domain whose predicates are unary or binary and whose actions are STRIPS with injective parameter binding. To make it a domain like the 13 below, give it a `pddl/<name>/` folder holding the same files. The folder *is* the domain, so `--domains <name>` works in the sweep launcher as soon as it exists.
 
 ## The 13 domains
 
@@ -85,54 +83,28 @@ Each `pddl/<domain>/` holds `domain.pddl`, a training instance `train.pddl`, thr
 
 ## Reproducing the paper
 
-The main table is one command per experiment type, plus a collection step:
+The recipes for the main table, the ablations, the sweeps, the threshold study, aggregation and cluster setup are in **[experiments/README.md](experiments/README.md)**. In short:
 
 ```bash
-python experiments/launch.py --experiment dias-full                      # DIAS
-python experiments/launch.py --experiment mlp --experiment-type mlp      # MLP effects
-python experiments/launch.py --experiment noise --experiment-type noise  # noisy input
-
+python experiments/launch.py --experiment dias-full
 python experiments/collect_results.py --experiment dias-full
 ```
 
-Each launch submits, per domain, a training array over the seeds plus a validation array that depends on it. **This assumes Slurm**, and the job scripts under `experiments/slurm/` are a worked example for one cluster; see "Running on your own cluster" below. `--backend local` runs the same steps sequentially on this machine instead.
-
-The ablations, the hyperparameter and dataset-size sweeps, the threshold sensitivity study and the aggregation options are all in **[experiments/README.md](experiments/README.md)**, the folder that is the entry point for all of it. The separate instance-size scaling study has its own [README](experiments/scaling/README.md).
-
-### What is and is not reproducible
-
-Validation scores a learned schema on states sampled from each held-out problem, and that draw is **not** fixed to a constant: `sample_seed` in `experiments/configs/validation.yaml` is unset, so every run scores on its own sample, the way every run also trains on its own. Each result JSON records the seed its states were drawn with, so any number can be re-derived afterwards by putting that seed back into `experiments/configs/validation.yaml`.
-
-Training itself is reproducible from `(domain, seed)` only if you ask for it. Float addition is not associative, so a parallel reduction's result depends on how the work was split, and on a GPU the encoder's scatter-add is nondeterministic by default: two runs of one seed give slightly different weights. Pass `--trainer.deterministic=true` (Lightning's own flag; it selects deterministic kernels and sets `CUBLAS_WORKSPACE_CONFIG`) and a run becomes bit-identical on re-run, at no measurable throughput cost here: 82–94 ms/step on gripper either way, which is inside the run-to-run spread. It is off by default because it raises on any operation without a deterministic implementation, which is a poor way for a 130-run sweep to fail; `--trainer.deterministic=warn` is the middle setting.
-
-### Running on your own cluster
-
-`experiments/slurm/train.sh`, `experiments/slurm/validate.sh` and `experiments/scaling/slurm/benchmark.sh` each begin with a block marked `── site configuration ──`. It holds every line specific to one cluster: the partition and QoS fallbacks, and `DIAS_ENV_SETUP`, the shell snippet that puts a Python with `dias` importable on `PATH`. Edit that block, or export `DIAS_ENV_SETUP` before submitting. Nothing below the end marker is site-specific.
-
-Per-domain resources come from `experiments/configs/slurm-resources.yaml` (training) and `experiments/configs/slurm-resources-validation.yaml` (validation, CPU-only). The training defaults request GPU shards (`gres: shard:N`), which is **not** a standard Slurm GRES; change it to `gpu:1` if your site does not define it.
+The separate instance-size scaling study has its own [README](experiments/scaling/README.md).
 
 ## Repository layout
 
 ```
 src/dias/
 ├── main.py           LightningCLI entry point (also `dias`)
-├── models/           the model: selection, preconditions, effects, encoder,
-│                       objectives, PCGrad, checkpoint migration
+├── models/           selection, preconditions, effects, encoder, objectives
 ├── data/             PDDL datamodule, transition sampling, adjacency noise
-├── schema/           DomainSchema (metadata) and ActionSchema (learned output)
-├── pddl/             pure PDDL text handling, untyping, the transpiler
-├── validation/       one validator per model (dias, mlp_effects, l1) and the
-│                       successor scoring all three share
-└── reporting/        the W&B custom charts the learned schema is logged as
+├── schema/           DomainSchema (metadata), ActionSchema (learned output)
+├── pddl/             PDDL text handling, untyping, the transpiler
+├── validation/       one validator per model, and the successor scoring
+└── reporting/        the W&B charts the learned schema is logged as
 
 experiments/          everything you run to reproduce the paper, start here
-├── README.md         the full experiment recipes
-├── launch.py         the sweep launcher; validate_runs.py, collect_results.py,
-│                       validate_checkpoint.py, pipeline.py beside it
-├── configs/          validation.yaml, Slurm resources
-├── slurm/            the array job scripts
-└── scaling/          the one-off runtime / GPU-memory vs instance-size study
-
 configs/              main.yaml and the `dias fit` overlays in experiments/
 pddl/                 the 13 domains, one folder each
 tests/
@@ -147,7 +119,7 @@ pytest
 black --check . && isort --check-only .
 ```
 
-Contributor notes about the pipeline's conventions (naming, checkpoint layout, what must move together when something is renamed) are in [AGENTS.md](AGENTS.md).
+Contributor notes about the pipeline's conventions are in [AGENTS.md](AGENTS.md).
 
 ## Citation
 
