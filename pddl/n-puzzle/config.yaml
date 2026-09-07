@@ -1,0 +1,7 @@
+data:
+  init_args:
+    domain_path: pddl/n-puzzle/domain.pddl
+    problem_path: pddl/n-puzzle/train.pddl
+model:
+  init_args:
+    aux_loss_alpha: 1.0

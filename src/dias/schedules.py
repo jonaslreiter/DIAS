@@ -1,0 +1,80 @@
+"""Values that change over training. Each schedule is a pure function of the global step and holds no state, so it can be queried at any step, in any order."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Mapping
+
+from dias.hparams import from_mapping
+
+
+@dataclass(frozen=True)
+class Constant:
+    value: float = 1.0
+
+    def __call__(self, step: int) -> float:
+        return self.value
+
+
+@dataclass(frozen=True)
+class Exponential:
+    """Decay from `start` toward `floor`, by `factor` every `every` steps.
+
+    ``floor + (start - floor) * factor ** (step / every)``
+
+    Rate and asymptote are independent: raising `floor` does not change how fast the value falls. ``every = 0`` is the limit as every -> 0+, written out because the general form would divide by zero.
+    """
+
+    start: float = 1.0
+    floor: float = 0.0
+    factor: float = 0.1
+    every: int = 500
+
+    def __post_init__(self):
+        # The curve approaches `floor` without crossing it.
+        if self.start <= self.floor:
+            raise ValueError(
+                f"Expected start above floor, got start={self.start}, floor={self.floor}"
+            )
+        if self.factor <= 0:
+            raise ValueError(f"Expected a positive factor, got {self.factor}")
+
+    def __call__(self, step: int) -> float:
+        if self.every == 0:
+            return self.floor
+        return self.floor + (self.start - self.floor) * self.factor ** (
+            step / self.every
+        )
+
+
+@dataclass(frozen=True)
+class PiecewiseLinear:
+    """Linear interpolation between `keypoints`, held flat outside their range."""
+
+    keypoints: dict[int, float] = field(default_factory=lambda: {0: 1.0})
+
+    def __call__(self, step: int) -> float:
+        steps = sorted(self.keypoints)
+        if step <= steps[0]:
+            return self.keypoints[steps[0]]
+        if step >= steps[-1]:
+            return self.keypoints[steps[-1]]
+        after = next(s for s in steps if s > step)
+        before = steps[steps.index(after) - 1]
+        fraction = (step - before) / (after - before)
+        return self.keypoints[before] + fraction * (
+            self.keypoints[after] - self.keypoints[before]
+        )
+
+
+Schedule = Constant | Exponential | PiecewiseLinear
+
+
+def as_schedule(value: "Schedule | Mapping[str, object] | None") -> Schedule:
+    """Accept a schedule, the mapping a checkpoint stores it as, or None (a constant 1.0).
+
+    Callers must default to None, not to an instance: jsonargparse merges a configured schedule's fields onto the default's instead of replacing it.
+    """
+    if value is None:
+        return Constant(1.0)
+    return from_mapping(value, (Constant, Exponential, PiecewiseLinear))

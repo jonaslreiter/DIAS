@@ -1,0 +1,14 @@
+load-truck:
+  - [0, 1]
+unload-truck:
+  - [0]
+board-truck:
+  - [0, 1]
+disembark-truck:
+  - [1]
+  - [0]
+drive-truck:
+  - [0, 2]
+  - [2, 3]
+walk:
+  - [0, 2]

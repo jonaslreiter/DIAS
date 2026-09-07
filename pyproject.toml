@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=77.0.3"]
+build-backend = "setuptools.build_meta"
+
+# This project is installed from a clone (`pip install -e .`), not from PyPI: the name is taken there by an unrelated package. What is left below is what pip itself uses: the name and version it records, the interpreter and dependency requirements it enforces, and the console script it creates. Index-only metadata (classifiers, keywords, project URLs) is deliberately absent.
+[project]
+name = "dias"
+description = "Differentiable induction of lifted STRIPS action schemas from state transitions"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Jonas Reiter" },
+    { name = "Jakob Elias Gebler" },
+]
+# Lower bounds are the oldest release the code is written against; the upper bound on pymimir is a compatible-release clause because it is pre-1.0 and its parser API is what every PDDL path here depends on.
+dependencies = [
+    "torch>=2.1",
+    "pymimir~=0.13.62",
+    "lightning>=2.2",
+    "jsonargparse[signatures]>=4.27.7",
+    "torch-geometric>=2.5",
+    "numpy>=1.24",
+    "pyyaml>=6.0",
+    "wandb>=0.19",
+    "tqdm>=4.65",
+]
+dynamic = ["version"]
+
+[project.scripts]
+dias = "dias.main:main"
+
+# A PEP 735 group rather than an extra, so dev tooling stays out of the installed metadata. Needs pip >= 25.1.
+[dependency-groups]
+dev = ["pytest>=8", "coverage>=7", "black>=24", "isort>=5.13", "pre-commit>=3"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.dynamic]
+version = { attr = "dias.__version__" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = [
+    # Raised once per config chain the test suite parses: Lightning objects to `args=` while sys.argv also holds pytest's own arguments. Passing args is exactly how a CLI is driven from a test.
+    "ignore:.*args parameter is intended.*",
+]
+
+[tool.black]
+# Without this, black targets the newest Python it knows and warns that the running interpreter cannot verify its own output.
+target-version = ["py310"]
+# The delivery generator's throwaway venv, which is not our code.
+extend-exclude = "/\\.venv-delivery/"
+
+[tool.isort]
+profile = "black"
+# experiments/scaling as well as experiments/: its scripts import each other as siblings (they insert their own directory on sys.path), and without it isort files those imports under third-party.
+src_paths = ["src", "tests", "experiments", "experiments/scaling"]
+extend_skip_glob = ["*/.venv-delivery/*"]
+# isort does not honour .gitignore (black does), so without this `isort .` descends into the run directories under logs/.
+extend_skip = ["logs", "local"]

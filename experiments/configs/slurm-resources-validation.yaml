@@ -1,0 +1,23 @@
+# Per-domain Slurm resources for the VALIDATION array, consumed by experiments/launch.py. Same schema as experiments/configs/slurm-resources.yaml, resolved independently: validation inherits nothing from the training file.
+#
+# The DIAS and L1 validators run on CPU only and the MLP-effects one falls back to CPU, so this requests no GPU and targets the CPU partitions through `sbatch_extra`, which overrides the GPU partition declared in experiments/slurm/validate.sh.
+
+defaults:
+  time: "01:00:00"
+  mem: "32G"
+  cpus: "16"
+
+blocks-3: {}
+delivery: {}
+driverlog: {}
+gripper: {}
+hanoi: {}
+logistics: {}
+miconic: {}
+n-puzzle: {}
+satellite: {}
+sokoban: {}
+sokoban-pull: {}
+spanner: {}
+visitall:
+  time: "03:00:00"

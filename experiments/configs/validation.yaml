@@ -1,0 +1,10 @@
+# Consumed by experiments/launch.py, validate_runs.py and validate_checkpoint.py. Each domain trains on `pddl/<domain>/train.pddl` and validates on that folder's `test-1.pddl` .. `test-3.pddl`; which files those are is the folder layout, not a setting.
+
+num_samples: 250
+sample_population: 500
+
+# Null draws a fresh sample every run, as each run also trains on its own. Unfixed is not unrecorded: the seed that was drawn is written into the result JSON, and setting it back here scores the next run on exactly those states.
+sample_seed: null
+
+# Per domain; also the default --num-runs. The paper uses 0..9.
+seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]

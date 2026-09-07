@@ -1,0 +1,4 @@
+# The `mlp` validator requires a checkpoint trained with this on.
+model:
+  init_args:
+    state_dependent_effects: true

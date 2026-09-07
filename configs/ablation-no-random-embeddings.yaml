@@ -1,0 +1,3 @@
+model:
+  init_args:
+    random_node_embeddings: false

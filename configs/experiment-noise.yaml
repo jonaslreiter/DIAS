@@ -1,0 +1,25 @@
+# The paper's noise experiments (App. A.4.2): input noise, plus the training adjustments it needs. Composed last, so the *_floor knobs raise a domain's per-action minimum without lowering the domains that already sample more.
+#
+# The matching schema-derivation threshold of 0.75 (Eq. 14) is validation-side: experiments/launch.py applies it for --experiment-type noise.
+model:
+  init_args:
+    # Under noise the exact precondition product is too brittle to train against, so tau decays as in main.yaml but bottoms out above 0.
+    precondition_tau:
+      class_path: dias.schedules.Exponential
+      init_args:
+        start: 1.0
+        floor: 0.1
+        factor: 0.1
+        every: 500
+
+data:
+  init_args:
+    noise:
+      class_path: dias.data.noise.ExpectedCount
+      init_args:
+        removed_atoms: 1.0
+        added_atoms: 1.0
+        fluents_only: true
+    min_per_action_train_floor: 200
+    min_per_action_valid_floor: 100
+    batch_size: 50

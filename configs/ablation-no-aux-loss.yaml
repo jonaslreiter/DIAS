@@ -1,0 +1,5 @@
+# Both auxiliary terms off is alpha = 0; only L_adj trains.
+model:
+  init_args:
+    use_precondition_loss: false
+    use_effect_loss: false

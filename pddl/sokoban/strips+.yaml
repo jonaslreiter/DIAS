@@ -1,0 +1,5 @@
+move-player:
+  - [1]
+push-box:
+  - [2]
+  - [1]

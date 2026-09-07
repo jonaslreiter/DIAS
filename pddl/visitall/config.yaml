@@ -1,0 +1,7 @@
+data:
+  init_args:
+    domain_path: pddl/visitall/domain.pddl
+    problem_path: pddl/visitall/train.pddl
+model:
+  init_args:
+    aux_loss_alpha: 1.0

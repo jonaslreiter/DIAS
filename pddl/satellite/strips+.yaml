@@ -1,0 +1,13 @@
+turn_to:
+  - [0, 1]
+switch_on:
+  - [0]
+switch_off:
+  - [0]
+  - [1]
+calibrate:
+  - [0]
+  - [1]
+take_image:
+  - [0, 3]
+  - [2, 3]
