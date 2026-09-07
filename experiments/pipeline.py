@@ -27,8 +27,6 @@ PIPELINE_CONFIGS = EXPERIMENTS_ROOT / "configs"
 RESULTS_DIR = EXPERIMENTS_ROOT / "results"
 
 CONFIGS_DIR = PROJECT_ROOT / "configs"
-# The `dias fit` overlays: mlp, noise, ablation-*, selected by --experiment-type / --ablation.
-OVERLAYS_DIR = CONFIGS_DIR / "experiments"
 PDDL_DIR = PROJECT_ROOT / "pddl"
 
 TRAIN_CONFIG = CONFIGS_DIR / "main.yaml"

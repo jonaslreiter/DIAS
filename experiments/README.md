@@ -30,8 +30,8 @@ Each run composes, in order:
 
 1. `configs/main.yaml`: the base training config, which names no domain
 2. `pddl/<domain>/config.yaml`: that domain's files, plus its tuned sampling and `aux_loss_weight`
-3. an experiment overlay, if any: `configs/experiments/{mlp,noise}.yaml`
-4. an ablation overlay, if any: `configs/experiments/ablation-*.yaml`
+3. an experiment overlay, if any: `configs/{mlp,noise}.yaml`
+4. an ablation overlay, if any: `configs/ablation-*.yaml`
 5. the launcher's `--set key=value` overrides, and any sweep override, last
 
 Later layers win, which is why a sweep value beats a domain's tuned one. Validation settings (how many problems, how many states sampled from each, the seed list) live in `experiments/configs/validation.yaml`.
@@ -86,7 +86,7 @@ noise:
 
 ## Ablations
 
-`--ablation` composes one `configs/experiments/ablation-*.yaml` on top of the experiment type. It is an orthogonal axis and always uses the DIAS validator.
+`--ablation` composes one `configs/ablation-*.yaml` on top of the experiment type. It is an orthogonal axis and always uses the DIAS validator.
 
 | `--ablation` | drops |
 |---|---|

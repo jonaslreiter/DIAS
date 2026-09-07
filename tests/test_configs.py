@@ -154,12 +154,12 @@ class PrecedenceTest(unittest.TestCase):
         self.assertEqual(tuned.model.init_args.aux_loss_weight, 1.0)
 
     def test_an_overlay_beats_the_domain_config(self):
-        config = parse(MAIN, A_DOMAIN, ROOT / "configs/experiments/mlp.yaml")
+        config = parse(MAIN, A_DOMAIN, ROOT / "configs/mlp.yaml")
         self.assertTrue(config.model.init_args.state_dependent_effects)
 
     def test_the_noise_overlay_raises_the_per_action_floors(self):
         # A floor raises the smallest minimum without shrinking the domains that sample more.
-        config = parse(MAIN, A_DOMAIN, ROOT / "configs/experiments/noise.yaml")
+        config = parse(MAIN, A_DOMAIN, ROOT / "configs/noise.yaml")
         self.assertEqual(config.data.init_args.min_per_action_train_floor, 200)
         self.assertEqual(config.data.init_args.min_per_action_valid_floor, 100)
         self.assertEqual(config.data.init_args.min_per_action_train, 200)
@@ -170,7 +170,7 @@ class PrecedenceTest(unittest.TestCase):
         config = parse(
             MAIN,
             A_DOMAIN,
-            ROOT / "configs/experiments/noise.yaml",
+            ROOT / "configs/noise.yaml",
             overrides=["--model.init_args.precondition_tau.every=100"],
         )
         schedule = config.model.init_args.precondition_tau

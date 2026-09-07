@@ -81,7 +81,7 @@ Prints a domain × object-count matrix per metric (iterations/second, peak GPU a
 | file | role | main-pipeline analogue |
 |---|---|---|
 | `configs/sizes.yaml` | the ladder, seeds, step counts, Slurm resources | `experiments/configs/slurm-resources.yaml` |
-| `configs/scaling.yaml` | Lightning overlay, composed last | `configs/experiments/*.yaml` |
+| `configs/scaling.yaml` | Lightning overlay, composed last | the overlays in `configs/` |
 | `generate_instances.py` | drives the upstream generators, rewrites their output | - |
 | `benchmark.py` | one (domain, size, seed) point → one JSON | `experiments/validate_checkpoint.py` |
 | `run_scaling.py` | walks one domain's ladder for one seed | `experiments/validate_runs.py` |

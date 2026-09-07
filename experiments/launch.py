@@ -38,9 +38,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))  # for `import pipeline
 
 from pipeline import configure_logging  # noqa: E402
 from pipeline import (
+    CONFIGS_DIR,
     EXPERIMENT_TYPES,
     EXPERIMENT_VALIDATOR,
-    OVERLAYS_DIR,
     PROJECT_ROOT,
     SLURM_DIR,
     SLURM_RESOURCES,
@@ -63,20 +63,20 @@ from pipeline import (
 )
 
 EXPERIMENT_OVERLAYS = {
-    "mlp": OVERLAYS_DIR / "mlp.yaml",
-    "noise": OVERLAYS_DIR / "noise.yaml",
+    "mlp": CONFIGS_DIR / "mlp.yaml",
+    "noise": CONFIGS_DIR / "noise.yaml",
 }
 # Schema-derivation threshold (Eq. 14) per experiment type; the paper raises it under noise.
 DEFAULT_VALIDATION_THRESHOLD = 0.5
 VALIDATION_THRESHOLD = {"noise": 0.75}
 # Orthogonal to --experiment-type, composed after it; all use the DIAS validator.
 ABLATION_OVERLAYS = {
-    "no-slot-weights": OVERLAYS_DIR / "ablation-no-slot-weights.yaml",
-    "no-precondition-loss": OVERLAYS_DIR / "ablation-no-precondition-loss.yaml",
-    "no-effect-loss": OVERLAYS_DIR / "ablation-no-effect-loss.yaml",
-    "no-aux-loss": OVERLAYS_DIR / "ablation-no-aux-loss.yaml",
-    "no-pcgrad": OVERLAYS_DIR / "ablation-no-pcgrad.yaml",
-    "no-random-embeddings": OVERLAYS_DIR / "ablation-no-random-embeddings.yaml",
+    "no-slot-weights": CONFIGS_DIR / "ablation-no-slot-weights.yaml",
+    "no-precondition-loss": CONFIGS_DIR / "ablation-no-precondition-loss.yaml",
+    "no-effect-loss": CONFIGS_DIR / "ablation-no-effect-loss.yaml",
+    "no-aux-loss": CONFIGS_DIR / "ablation-no-aux-loss.yaml",
+    "no-pcgrad": CONFIGS_DIR / "ablation-no-pcgrad.yaml",
+    "no-random-embeddings": CONFIGS_DIR / "ablation-no-random-embeddings.yaml",
 }
 # The tau schedule is a typed dataclass, so its fields are ordinary dotted keys.
 SCHEDULE_KEY = "model.init_args.precondition_tau"

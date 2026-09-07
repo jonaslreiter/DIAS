@@ -105,7 +105,7 @@ src/dias/
 └── reporting/        the W&B charts the learned schema is logged as
 
 experiments/          everything you run to reproduce the paper, start here
-configs/              main.yaml and the `dias fit` overlays in experiments/
+configs/              main.yaml and the `dias fit` overlays beside it
 pddl/                 the 13 domains, one folder each
 tests/
 ```
