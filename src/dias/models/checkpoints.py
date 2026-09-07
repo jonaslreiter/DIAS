@@ -1,6 +1,6 @@
 """Bringing an old checkpoint layout up to the current format.
 
-Driven by the version stamp, not by a failed load: Lightning drops hyper-parameters it does not recognise instead of raising. The rules read and write plain dictionaries, never the live classes. One rule is not stamp-driven, `_RENAMED_SINCE_VERSION_1`, which is what it says there.
+Driven by the version stamp, not by a failed load: Lightning drops hyper-parameters it does not recognise instead of raising. The rules read and write plain dictionaries, never the live classes.
 """
 
 from __future__ import annotations
@@ -38,26 +38,8 @@ _DROPPED_HPARAMS = ("parameter_plotting", "batch_size")
 _RENAMED_HPARAMS = {
     "arity_relations": "relation_arities",
     "pcgrad_dyn_clip": "pcgrad_norm_cap",
-}
-
-# The renames no stamp separates: they happened after version 1 was published, and there is no version 2 yet to carry them. A published version-1 checkpoint spells these the old way and one written today the new way, both stamped 1, so the read path applies them whatever the stamp says. When the next change to what the model stores forces version 2, they move into that version's rule and leave here.
-_RENAMED_SINCE_VERSION_1 = {
     "aux_loss_weight": "aux_loss_alpha",
 }
-
-
-def _rename_hparams(hparams: dict, renames: dict[str, str]) -> None:
-    for old, new in renames.items():
-        if old in hparams:
-            hparams[new] = hparams.pop(old)
-
-
-def normalise_hparam_names(checkpoint: dict) -> dict:
-    """Apply `_RENAMED_SINCE_VERSION_1`, in place. Runs on every load, a current checkpoint included, and applying it twice changes nothing."""
-    hparams = checkpoint.get("hyper_parameters")
-    if hparams is not None:
-        _rename_hparams(hparams, _RENAMED_SINCE_VERSION_1)
-    return checkpoint
 
 
 def _spec(class_path: str, **init_args) -> dict:
@@ -138,7 +120,9 @@ def _from_unversioned(checkpoint: dict) -> None:
     if hparams is not None:
         # Before the renames, so the schedule it writes is spelled the way it is stored today.
         _migrate_tau_schedule(hparams)
-        _rename_hparams(hparams, _RENAMED_HPARAMS)
+        for old, new in _RENAMED_HPARAMS.items():
+            if old in hparams:
+                hparams[new] = hparams.pop(old)
         for key in _DROPPED_HPARAMS:
             hparams.pop(key, None)
 
@@ -152,6 +136,5 @@ def migrate(checkpoint: dict) -> dict:
         )
     if version < CHECKPOINT_VERSION:
         _from_unversioned(checkpoint)
-    normalise_hparam_names(checkpoint)
     checkpoint[VERSION_KEY] = CHECKPOINT_VERSION
     return checkpoint

@@ -9,13 +9,7 @@ from dias.adjacency import dense_from_edges
 from dias.hparams import to_mapping
 from dias.schedules import Schedule, as_schedule
 
-from .checkpoints import (
-    CHECKPOINT_VERSION,
-    UNVERSIONED,
-    VERSION_KEY,
-    migrate,
-    normalise_hparam_names,
-)
+from .checkpoints import CHECKPOINT_VERSION, UNVERSIONED, VERSION_KEY, migrate
 from .edges import EdgeTypeLayout
 from .encoder import DEFAULT_HIDDEN_DIMS, RelationalEncoder
 from .objectives import DiasObjective, Losses
@@ -181,8 +175,6 @@ class DIAS(L.LightningModule):
         if version != CHECKPOINT_VERSION:
             logger.info("Reading a checkpoint written in format %d.", version)
             checkpoint = migrate(checkpoint)
-        else:
-            checkpoint = normalise_hparam_names(checkpoint)
         buffer = io.BytesIO()
         torch.save(checkpoint, buffer)
         buffer.seek(0)
