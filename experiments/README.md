@@ -10,6 +10,7 @@ experiments/
 ├── validate_runs.py                one (domain, seed); the arrays call it
 ├── validate_checkpoint.py          one model by hand; the only route to L1
 ├── collect_results.py              per-run JSON or W&B -> the paper's tables
+├── precondition_categories.py      what the learned preconditions are made of
 ├── launch_threshold_validation.py  re-validate at other thresholds
 ├── pipeline.py                     shared paths, sbatch flags, validators
 ├── configs/                        validation.yaml, Slurm resources
@@ -168,6 +169,29 @@ python experiments/collect_results.py --experiment dias-full --source wandb
 | `n` | seeds aggregated |
 
 Precision and recall are micro-averaged and attributed to actions: a successor counts as a true positive only when the learned schema of the *same* action reaches it, so reaching the right successor under the wrong operator is an error on both sides. `accuracy` reports the weaker state-level question, whether the two successor sets agreed exactly.
+
+## What the learned preconditions are made of
+
+`collect_results.py` scores the learned schemas; this reads what is inside them. Per domain it sorts every precondition atom, learned and ground truth, into classes:
+
+```bash
+python experiments/precondition_categories.py --experiment dias-full
+python experiments/precondition_categories.py --experiment dias-full --markdown experiments/results/precondition-categories-dias-full.md
+```
+
+| class | meaning |
+|---|---|
+| `eq` | equalities between action parameters: the built-in `=` under `:equality`, or the reflexive predicate a domain declares in its place (`eq`) |
+| `stat1` | unary literals over static predicates, either polarity |
+| `stat2` | binary literals over static predicates, either polarity |
+| `pos` | positive fluent literals |
+| `neg` | negative fluent literals |
+
+A static predicate is one that occurs in no action's effect, which is also what pymimir reports and so the flag DIAS is given. The paper quotes a four-way split with no class for `stat2`, folding those literals into `pos` and `neg` by polarity; both groupings are printed, since the four-way one is what the text says and the five-way one is what the class names mean.
+
+Learned columns are per-seed means and ground-truth columns count each action's schema once, which is the unit the two are comparable on. Atoms are counted the way `results/schema-complexity-dias-full.md` counts them, so the two files line up: distinct lifted atoms after de-duplication, `(not (p ...))` as one atom, and type-derived unary predicates left out of the ground-truth counts, since a `?t - truck` in `:parameters` is not a precondition. DIAS does get a channel for those (pymimir materialises them, and `include_statics` defaults to true), which is what the `stat1` column measures.
+
+Schemas are read through `dias.validation.dias.read_learned_schemas`, the same function `DiasValidator` uses, so the atoms counted here are the ones a validator would score. `--threshold` defaults to 0.5, what `launch.py` uses for `--experiment-type dias`; a noise experiment wants `--threshold 0.75`.
 
 ## Validating one model
 

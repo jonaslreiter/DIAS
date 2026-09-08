@@ -31,6 +31,75 @@ from .successors import (
 logger = logging.getLogger(__name__)
 
 
+def read_learned_schemas(run, has_equality: bool, threshold: float) -> PDDLTranspiler:
+    """Binarize a trained run's logits into action schemas.
+
+    Returns the transpiler, which also carries the predicate names and arities a generated domain must declare. This is the one path from a checkpoint to lifted schemas: `DiasValidator` merges what it returns into the original domain, and an analysis script reads the same schemas without building a validator.
+    """
+    hparams = run.datamodule_hparams
+    logits = run.model.schema_logits()
+    (
+        add_effects,
+        delete_effects,
+        positive_preconditions,
+        negative_preconditions,
+        _,
+    ) = derive_schema(
+        effect_logits=logits.effects,
+        precondition_logits=logits.preconditions,
+        slot_weight_logits=logits.slot_weight_logits,
+        force_action_args=run.model.force_action_args,
+        action_arguments=hparams.get("action_arguments", False),
+        strips_plus_actions=hparams.get("strips_plus_actions", False),
+        strips_plus_positions=(
+            strips_plus_arguments(run.domain_path)
+            if hparams.get("strips_plus_actions", False)
+            else {}
+        ),
+        action_names=list(run.schema.action_names),
+        action_arities=list(run.schema.action_arities),
+        num_slots=run.model.num_slots,
+        random_flip=False,
+        threshold=threshold,
+    )
+
+    names = list(run.schema.relation_names)
+    arities = list(run.schema.relation_arities)
+    if not has_equality:
+        # Without :equality the "=" channel has no predicate to write to.
+        keep = [i for i, name in enumerate(names) if name != "="]
+        (
+            add_effects,
+            delete_effects,
+            positive_preconditions,
+            negative_preconditions,
+        ) = (
+            array[:, keep, :, :]
+            for array in (
+                add_effects,
+                delete_effects,
+                positive_preconditions,
+                negative_preconditions,
+            )
+        )
+        names = [names[i] for i in keep]
+        arities = [arities[i] for i in keep]
+
+    transpiler = PDDLTranspiler(
+        add_effects=add_effects,
+        delete_effects=delete_effects,
+        positive_preconditions=positive_preconditions,
+        negative_preconditions=negative_preconditions,
+        predicate_names=[
+            EQUALITY_PREDICATE if has_equality and n == "=" else n for n in names
+        ],
+        predicate_arities=arities,
+        action_names=list(run.schema.action_names),
+    )
+    transpiler.generate_action_schemas()
+    return transpiler
+
+
 class DiasValidator:
     def __init__(self, model_id, logs_path, problem_path=None, threshold=0.5):
         self.model_id = model_id
@@ -69,68 +138,8 @@ class DiasValidator:
         self.state_set = None
 
     def _read_learned_schemas(self, run, has_equality: bool, threshold: float):
-        """Binarize the model's logits into action schemas. Returns the transpiler, which also carries the predicate names and arities the merged domain must declare."""
-        hparams = run.datamodule_hparams
-        schema = self.model.schema_logits()
-        (
-            add_effects,
-            delete_effects,
-            positive_preconditions,
-            negative_preconditions,
-            _,
-        ) = derive_schema(
-            effect_logits=schema.effects,
-            precondition_logits=schema.preconditions,
-            slot_weight_logits=schema.slot_weight_logits,
-            force_action_args=self.model.force_action_args,
-            action_arguments=hparams.get("action_arguments", False),
-            strips_plus_actions=hparams.get("strips_plus_actions", False),
-            strips_plus_positions=(
-                strips_plus_arguments(run.domain_path)
-                if hparams.get("strips_plus_actions", False)
-                else {}
-            ),
-            action_names=list(self.schema.action_names),
-            action_arities=list(self.schema.action_arities),
-            num_slots=self.model.num_slots,
-            random_flip=False,
-            threshold=threshold,
-        )
-
-        names = list(self.schema.relation_names)
-        arities = list(self.schema.relation_arities)
-        if not has_equality:
-            # Without :equality the "=" channel has no predicate to write to.
-            keep = [i for i, name in enumerate(names) if name != "="]
-            (
-                add_effects,
-                delete_effects,
-                positive_preconditions,
-                negative_preconditions,
-            ) = (
-                array[:, keep, :, :]
-                for array in (
-                    add_effects,
-                    delete_effects,
-                    positive_preconditions,
-                    negative_preconditions,
-                )
-            )
-            names = [names[i] for i in keep]
-            arities = [arities[i] for i in keep]
-
-        transpiler = PDDLTranspiler(
-            add_effects=add_effects,
-            delete_effects=delete_effects,
-            positive_preconditions=positive_preconditions,
-            negative_preconditions=negative_preconditions,
-            predicate_names=[
-                EQUALITY_PREDICATE if has_equality and n == "=" else n for n in names
-            ],
-            predicate_arities=arities,
-            action_names=list(self.schema.action_names),
-        )
-        transpiler.generate_action_schemas()
+        """The learned schemas under the prefix that tells them apart from the originals in the merged domain."""
+        transpiler = read_learned_schemas(run, has_equality, threshold)
         for schema in transpiler.action_schemas:
             schema.name = f"{LEARNED_ACTION_PREFIX}{schema.name}"
         logger.info(
