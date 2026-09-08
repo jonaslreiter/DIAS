@@ -2,7 +2,7 @@
 
 Array task id = seed, so ``--dependency=aftercorr`` pairs training task i with validation task i, and ``--seeds`` becomes a sparse spec such as ``--array=3,7-8``. Runs are identified by a deterministic ``<experiment>-<domain>-s<seed>`` (``validate_runs.run_id_for``), so the two arrays need no id handoff.
 
-Config chain: ``configs/main.yaml`` -> ``pddl/<domain>/config.yaml`` -> ``--experiment-type`` overlay -> ``--ablation`` overlay -> ``--set`` overrides. The experiment type also picks the validator and its schema-derivation threshold. ``--sweep AXIS`` submits the whole grid once per value of that axis, each into its own sub-experiment.
+Config chain: ``configs/main.yaml`` -> ``pddl/<domain>/config.yaml`` -> ``--experiment-type`` overlay -> ``--ablation`` overlay -> ``--set`` overrides. The experiment type also picks the validator and its schema-derivation threshold. ``--sweep AXIS`` submits the whole grid once per value of that axis, each into its own sub-experiment. ``--validate-only`` submits the validation array alone, over runs that already trained to ``max_steps``.
 
 Examples
 --------
@@ -19,6 +19,9 @@ Examples
     # Re-run only the seeds that failed, into the same experiment.
     python experiments/launch.py --experiment paper-main --domains gripper --seeds 3 7-8
 
+    # Re-run only the validation step, over runs that already finished training.
+    python experiments/launch.py --experiment paper-main --domains visitall --validate-only
+
     # Print without submitting, or run here instead of on Slurm.
     python experiments/launch.py --domains gripper --num-runs 3 --dry-run
     python experiments/launch.py --backend local --domains gripper --num-runs 2 --experiment smoke --no-wandb
@@ -27,6 +30,7 @@ Examples
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -200,6 +204,7 @@ class LaunchPlan:
     axis_name: str | None
     values: list[float]
     backend: str
+    validate_only: bool
     dry_run: bool
     log_wandb: bool
     log_dir: Path
@@ -284,6 +289,49 @@ def _sweep_points(args: argparse.Namespace) -> tuple:
     return points, axis, axis_name, values
 
 
+def _last_step(run_dir: Path) -> int | None:
+    """The step the ``final-`` checkpoint was last written at, or None if there is none."""
+    steps = [
+        int(match.group(1))
+        for path in (run_dir / "checkpoints").glob("final-epoch*.ckpt")
+        if (match := re.search(r"step=(\d+)", path.name))
+    ]
+    return max(steps) if steps else None
+
+
+def finished_training(run_dir: Path) -> bool:
+    """Whether this run reached the ``max_steps`` its own saved config resolved to.
+
+    Neither checkpoint name says on its own that a run finished: ``main.py`` registers ``final-`` unmonitored and ``best-`` on ``valid/loss_adjacency``, so both are rewritten throughout the run and a run killed at half its steps leaves both behind. What does say it is how far the ``final-`` one got, against the ``max_steps`` in ``<run_dir>/config.yaml``, which is per-run and so already accounts for the config chain, a sweep and any ``--set``.
+    """
+    config = run_dir / "config.yaml"
+    if not config.exists():
+        return False
+    max_steps = (load_yaml(config).get("trainer") or {}).get("max_steps")
+    step = _last_step(run_dir)
+    if not isinstance(max_steps, int) or max_steps <= 0 or step is None:
+        return False
+    return step >= max_steps
+
+
+def unfinished_runs(
+    points: list[SweepPoint], domains: list[str], seeds: list[int], logs_dir: Path
+) -> list[str]:
+    """Run ids among these runs that `--validate-only` has no finished training run for."""
+    # Imported here, not at module scope, so that submission still needs neither torch nor pymimir.
+    from validate_runs import run_id_for
+
+    return [
+        run_id
+        for point in points
+        for domain in domains
+        for seed in seeds
+        if not finished_training(
+            logs_dir / "dias" / (run_id := run_id_for(point.experiment, domain, seed))
+        )
+    ]
+
+
 def build_plan(args: argparse.Namespace) -> LaunchPlan:
     """Resolve command-line arguments into a launch, or refuse them."""
     domains = select_domains(args.domains)
@@ -310,6 +358,15 @@ def build_plan(args: argparse.Namespace) -> LaunchPlan:
 
     points, axis, axis_name, values = _sweep_points(args)
 
+    if args.validate_only and not args.allow_unfinished:
+        unfinished = unfinished_runs(points, domains, seeds, args.log_dir)
+        if unfinished:
+            listed = ", ".join(unfinished[:5])
+            more = f" (and {len(unfinished) - 5} more)" if len(unfinished) > 5 else ""
+            raise SystemExit(
+                f"--validate-only: {len(unfinished)} of {len(points) * len(domains) * len(seeds)} runs did not train to max_steps: {listed}{more}. Train them first, or pass --allow-unfinished to validate them as they are."
+            )
+
     on_slurm = args.backend == "slurm"
     return LaunchPlan(
         experiment=args.experiment,
@@ -325,6 +382,7 @@ def build_plan(args: argparse.Namespace) -> LaunchPlan:
         axis_name=axis_name,
         values=values,
         backend=args.backend,
+        validate_only=args.validate_only,
         dry_run=args.dry_run,
         log_wandb=not args.no_wandb,
         log_dir=args.log_dir,
@@ -345,6 +403,8 @@ def describe(plan: LaunchPlan) -> None:
     print(
         f"domains    : {len(plan.domains)} x {len(plan.seeds)} runs  (seeds={format_array(plan.seeds)}, backend={plan.backend})"
     )
+    if plan.validate_only:
+        print("steps      : validation only, over the existing checkpoints")
     if plan.axis is not None:
         runs = len(plan.points) * len(plan.domains) * len(plan.seeds)
         values = ", ".join(f"{v:g}" for v in plan.values)
@@ -357,7 +417,7 @@ def describe(plan: LaunchPlan) -> None:
 
 
 def submit_domain(plan: LaunchPlan, point: SweepPoint, domain: str) -> None:
-    """Submit one domain's training array plus its dependent validation array."""
+    """Submit one domain's training array plus its dependent validation array, or under `--validate-only` the second alone."""
     array = format_array(plan.seeds)
 
     # Single tokens via --export; the Lightning config chain goes positionally, so sbatch preserves argv exactly.
@@ -384,60 +444,70 @@ def submit_domain(plan: LaunchPlan, point: SweepPoint, domain: str) -> None:
     if plan.threshold != DEFAULT_VALIDATION_THRESHOLD:
         val_vars.append(f"THRESHOLD={plan.threshold:g}")
 
-    train_cmd = [
-        "sbatch",
-        "--parsable",
-        f"--job-name=dias-train-{domain}",
-        f"--array={array}",
-        sbatch_output_opt(plan.log_dir),
-        *sbatch_resource_opts(resolve_resources(plan.train_resources, domain)),
-        f"--export={','.join(train_vars)}",
-        str(TRAIN_SCRIPT),
-        *plan.train_args(point, domain),
-    ]
-    print(f"[{domain}] submit training array ({len(plan.seeds)} runs, seeds {array})")
-    train_jobid = run_command(train_cmd, plan.dry_run)
+    dep = None
+    if not plan.validate_only:
+        train_cmd = [
+            "sbatch",
+            "--parsable",
+            f"--job-name=dias-train-{domain}",
+            f"--array={array}",
+            sbatch_output_opt(plan.log_dir),
+            *sbatch_resource_opts(resolve_resources(plan.train_resources, domain)),
+            f"--export={','.join(train_vars)}",
+            str(TRAIN_SCRIPT),
+            *plan.train_args(point, domain),
+        ]
+        print(
+            f"[{domain}] submit training array ({len(plan.seeds)} runs, seeds {array})"
+        )
+        dep = run_command(train_cmd, plan.dry_run) or "<train_jobid>"
 
-    dep = train_jobid or "<train_jobid>"
     val_cmd = [
         "sbatch",
         "--parsable",
         f"--job-name=dias-val-{domain}",
         f"--array={array}",
-        f"--dependency=aftercorr:{dep}",
+        # Nothing to wait for when the checkpoints already exist.
+        *([f"--dependency=aftercorr:{dep}"] if dep is not None else []),
         sbatch_output_opt(plan.log_dir),
         *sbatch_resource_opts(resolve_resources(plan.validation_resources, domain)),
         f"--export={','.join(val_vars)}",
         str(VALIDATE_SCRIPT),
     ]
-    print(f"[{domain}] submit validation array (aftercorr:{dep})")
+    waits = f"aftercorr:{dep}" if dep is not None else "no dependency"
+    print(f"[{domain}] submit validation array ({waits})")
     run_command(val_cmd, plan.dry_run)
 
 
 def run_domain(plan: LaunchPlan, point: SweepPoint, domain: str) -> None:
-    """Train and validate one domain's seeds here, one after another."""
+    """Train and validate one domain's seeds here, one after another; under `--validate-only`, only validate."""
     # Imported here so Slurm submission never needs torch/pymimir.
     from validate_runs import run_id_for, validate_run
 
     val_cfg = load_yaml(plan.validation_config)
     for seed in plan.seeds:
         run_id = run_id_for(point.experiment, domain, seed)
-        train_cmd = [
-            "dias",
-            "fit",
-            *plan.train_args(point, domain),
-            # The datamodule's seed follows this one unless a config gave it one.
-            "--seed_everything",
-            str(seed),
-            *run_directory_args(run_id, plan.log_dir, plan.log_wandb),
-        ]
-        print(f"\n[{domain} seed={seed}] train  (run_id={run_id})", flush=True)
-        try:
-            # Not captured: this step takes hours, and its output is the only sign of progress.
-            run_command(train_cmd, plan.dry_run, capture=False)
-        except subprocess.CalledProcessError as error:
-            print(f"[skip] {domain} seed={seed}: training failed ({error})", flush=True)
-            continue
+        if not plan.validate_only:
+            train_cmd = [
+                "dias",
+                "fit",
+                *plan.train_args(point, domain),
+                # The datamodule's seed follows this one unless a config gave it one.
+                "--seed_everything",
+                str(seed),
+                *run_directory_args(run_id, plan.log_dir, plan.log_wandb),
+            ]
+            print(f"\n[{domain} seed={seed}] train  (run_id={run_id})", flush=True)
+            try:
+                # Not captured: this step takes hours, and its output is the only sign of progress.
+                run_command(train_cmd, plan.dry_run, capture=False)
+            except subprocess.CalledProcessError as error:
+                print(
+                    f"[skip] {domain} seed={seed}: training failed ({error})",
+                    flush=True,
+                )
+                continue
+        print(f"\n[{domain} seed={seed}] validate  (run_id={run_id})", flush=True)
         if plan.dry_run:
             continue
         validate_run(
@@ -515,6 +585,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         + ".",
     )
     p.add_argument("--backend", default="slurm", choices=["slurm", "local"])
+    p.add_argument(
+        "--validate-only",
+        action="store_true",
+        help="Skip training and only (re-)run the validation step, over the checkpoints of runs that already trained to max_steps.",
+    )
+    p.add_argument(
+        "--allow-unfinished",
+        action="store_true",
+        help="With --validate-only, submit even for runs that stopped short of max_steps.",
+    )
     p.add_argument(
         "--set",
         dest="overrides",

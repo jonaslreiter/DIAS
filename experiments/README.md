@@ -46,6 +46,8 @@ python experiments/launch.py --experiment noise --experiment-type noise  # noisy
 
 `--experiment-type` picks the training overlay, the validator, and the schema-derivation threshold: 0.5, except 0.75 for `noise` as in the paper (`--validation-threshold T` overrides). Defaults are all 13 domains × the 10 seeds in `experiments/configs/validation.yaml`.
 
+`--validate-only` submits the validation array alone, for when training survived but validation did not. Runs that stopped short of `max_steps` are refused before anything is submitted, unless `--allow-unfinished`.
+
 Useful narrowings:
 
 ```bash
@@ -54,6 +56,9 @@ python experiments/launch.py --experiment dias-full --domains satellite hanoi --
 
 # Re-run only the seeds that died, into the same experiment
 python experiments/launch.py --experiment dias-full --domains gripper --seeds 3 7-8
+
+# Re-run only the validation step of an already trained domain
+python experiments/launch.py --experiment dias-full --domains visitall --validate-only
 
 # See exactly what would be submitted
 python experiments/launch.py --domains gripper --num-runs 3 --dry-run
