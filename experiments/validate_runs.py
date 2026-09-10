@@ -5,6 +5,8 @@ The compute-side validation step, invoked once per seed by ``slurm/validate.sh``
 The run is located by its deterministic id, its problems are the domain folder's ``test-{1,2,3}.pddl`` and its sampling knobs come from ``experiments/configs/validation.yaml``. Results go to ``<logs>/validation/<experiment>/<domain>/seed<seed>.json``, and to the resumed W&B run when it is reachable.
 
 ``--threshold`` re-reads the same checkpoint at another binarization threshold and ``--results-experiment`` redirects only the output directory, which together re-validate a finished experiment without touching its JSONs; see ``experiments/launch_threshold_validation.py``.
+
+The MLP-effects validator grounds its sampled states across ``--num-workers`` processes, defaulting to the CPUs the job was allocated. The pool changes no result: chunks are reassembled in the original state order, and the states themselves were drawn before it starts.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ from pipeline import (
     WANDB_PROJECT,
     add_logging_arguments,
     add_path_arguments,
+    allocated_cpus,
     load_yaml,
     select_domains,
     validation_problems,
@@ -55,6 +58,7 @@ def validate_run(
     log_wandb: bool = True,
     threshold: float = 0.5,
     results_experiment: str | None = None,
+    num_workers: int | None = None,
 ) -> dict:
     """Validate a single run over its held-out problems; write and return the results.
 
@@ -81,6 +85,11 @@ def validate_run(
         None if configured_seed is None else int(configured_seed)
     )
     extra_kwargs = {"threshold": threshold} if validator.binarizes_schema else {}
+    # The grounding pool is the MLP-effects validator's alone, and it is what an over-permissive schema makes expensive: nothing else here would use the CPUs the validation array asks for.
+    if validator.grounds_in_parallel:
+        workers = allocated_cpus() if num_workers is None else num_workers
+        logger.info("Grounding states across %d worker processes.", workers)
+        extra_kwargs["num_workers"] = workers
 
     per_problem: dict[str, dict[str, Any]] = {}
     for problem in val_problems:
@@ -237,6 +246,12 @@ def main() -> int:
     )
     add_path_arguments(p)
     add_logging_arguments(p)
+    p.add_argument(
+        "--num-workers",
+        type=int,
+        default=None,
+        help="Processes the MLP-effects validator grounds states across. Default: the CPUs this job was allocated. Ignored by the other validators, which ground nothing in parallel.",
+    )
     p.add_argument("--no-wandb", action="store_true", help="Skip W&B logging.")
     args = p.parse_args()
     configure_logging(args)
@@ -254,6 +269,7 @@ def main() -> int:
         log_wandb=not args.no_wandb,
         threshold=args.threshold,
         results_experiment=args.results_experiment,
+        num_workers=args.num_workers,
     )
     failed = all("error" in v for v in per_problem.values()) if per_problem else True
     return 1 if failed else 0
