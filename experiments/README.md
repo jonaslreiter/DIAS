@@ -48,6 +48,8 @@ python experiments/launch.py --experiment noise --experiment-type noise  # noisy
 
 `--validate-only` submits the validation array alone, for when training survived but validation did not. Runs that stopped short of `max_steps` are refused before anything is submitted, unless `--allow-unfinished`.
 
+The MLP-effects validator is far the most expensive one, and its cost tracks how permissive the learned preconditions are rather than the domain: it grounds every applicable learned action per sampled state, then predicts their successors in a batched forward pass. It grounds across the CPUs the job was allocated (`--num-workers` overrides), and it wants a GPU, so give that array `gres` and more time than the DIAS default.
+
 Useful narrowings:
 
 ```bash

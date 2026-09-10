@@ -110,7 +110,7 @@ def run_command(cmd: list[str], dry_run: bool, capture: bool = True) -> str | No
 class Validator:
     """One way of scoring a learned action model against the real domain.
 
-    ``binarizes_schema``: only a model with lifted schema tensors has anything to threshold. ``from_checkpoint``: L1 is handed a learned PDDL domain instead of a trained model. ``module`` / ``class_name``: each validator module is named for the model it scores (``dias``, ``mlp_effects``, ``l1``) and holds one ``<Model>Validator``, rather than three modules sharing one name by convention.
+    ``binarizes_schema``: only a model with lifted schema tensors has anything to threshold. ``from_checkpoint``: L1 is handed a learned PDDL domain instead of a trained model. ``grounds_in_parallel``: whether the class takes ``num_workers``, which only the MLP-effects one does, its per-state grounding being the one that pays for a pool. ``module`` / ``class_name``: each validator module is named for the model it scores (``dias``, ``mlp_effects``, ``l1``) and holds one ``<Model>Validator``, rather than three modules sharing one name by convention.
     """
 
     name: str
@@ -119,6 +119,7 @@ class Validator:
     summary: str
     binarizes_schema: bool
     from_checkpoint: bool
+    grounds_in_parallel: bool = False
 
 
 VALIDATORS: dict[str, Validator] = {
@@ -137,6 +138,7 @@ VALIDATORS: dict[str, Validator] = {
         summary="MLP effects: effects predicted from the state, no lifted schema",
         binarizes_schema=False,
         from_checkpoint=True,
+        grounds_in_parallel=True,
     ),
     "l1": Validator(
         name="l1",
@@ -230,6 +232,14 @@ def sbatch_resource_opts(res: dict) -> list[str]:
         opts.append(f"--gres={res['gres']}")
     opts += list(res.get("sbatch_extra", []))
     return opts
+
+
+def allocated_cpus() -> int:
+    """How many CPUs this process may actually use: the affinity mask a Slurm job is pinned to, or the machine's count off the cluster."""
+    try:
+        return len(os.sched_getaffinity(0))
+    except AttributeError:  # not Linux
+        return os.cpu_count() or 1
 
 
 def sbatch_output_opt(log_dir: Path) -> str:
