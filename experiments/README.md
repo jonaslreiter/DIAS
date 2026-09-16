@@ -49,7 +49,7 @@ python experiments/launch.py --experiment noise --experiment-type noise  # noisy
 
 `--validate-only` submits the validation array alone, for when training survived but validation did not. Runs that stopped short of `max_steps` are refused before anything is submitted, unless `--allow-unfinished`.
 
-The MLP-effects validator is far the most expensive one, and its cost tracks how permissive the learned preconditions are rather than the domain: it grounds every applicable learned action per sampled state, then predicts their successors in a batched forward pass. It grounds across the CPUs the job was allocated (`--num-workers` overrides), and it wants a GPU, so give that array `gres` and more time than the DIAS default.
+The MLP-effects validator is far the most expensive one, and its cost follows how permissive the learned preconditions are. It grounds states across the CPUs the job was allocated and predicts on the GPU; memory bounds the worker count, since a grounding worker holds its ground actions until it is replaced after `--states-per-worker` states (over 20 GB on driverlog test-3 for a bad schema). `--resume` continues a seed from the problems and states an earlier run on the same checkpoint scored.
 
 Useful narrowings:
 
@@ -160,6 +160,8 @@ python experiments/collect_results.py --experiment dias-full --source wandb
 ```
 
 `--markdown <path>` also writes the tables out, by convention to `experiments/results/<name>.md` (gitignored, created on first write). Per domain, aggregated over seeds:
+
+A seed whose `status` is not `ok` is missing a problem's score, so it is skipped with a warning; re-run it.
 
 | column | meaning |
 |---|---|

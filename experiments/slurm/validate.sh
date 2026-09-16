@@ -31,6 +31,15 @@ fi
 if [[ "${NO_WANDB:-0}" == "1" ]]; then
   EXTRA+=(--no-wandb)
 fi
+if [[ -n "${NUM_WORKERS:-}" ]]; then
+  EXTRA+=(--num-workers "$NUM_WORKERS")
+fi
+if [[ -n "${STATES_PER_WORKER:-}" ]]; then
+  EXTRA+=(--states-per-worker "$STATES_PER_WORKER")
+fi
+if [[ "${RESUME:-0}" == "1" ]]; then
+  EXTRA+=(--resume)
+fi
 
 # DIAS_ROOT rather than a relative path: Slurm runs the batch script from a spool copy, so nothing here may assume the submission directory.
 python "${DIAS_ROOT}/experiments/validate_runs.py" \

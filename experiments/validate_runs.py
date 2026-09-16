@@ -6,7 +6,7 @@ The run is located by its deterministic id, its problems are the domain folder's
 
 ``--threshold`` re-reads the same checkpoint at another binarization threshold and ``--results-experiment`` redirects only the output directory, which together re-validate a finished experiment without touching its JSONs; see ``experiments/launch_threshold_validation.py``.
 
-The MLP-effects validator grounds its sampled states across ``--num-workers`` processes, defaulting to the CPUs the job was allocated. The pool changes no result: chunks are reassembled in the original state order, and the states themselves were drawn before it starts.
+The MLP-effects validator grounds its sampled states across ``--num-workers`` processes, defaulting to the CPUs the job was allocated, and ``--resume`` continues a seed from what an earlier run on the same checkpoint scored.
 """
 
 from __future__ import annotations
@@ -59,17 +59,22 @@ def validate_run(
     threshold: float = 0.5,
     results_experiment: str | None = None,
     num_workers: int | None = None,
+    states_per_worker: int | None = None,
+    resume: bool = False,
 ) -> dict:
     """Validate a single run over its held-out problems; write and return the results.
 
-    The checkpoint is always found via *experiment*; *results_experiment* only picks the directory the JSON goes to.
+    The checkpoint is always found via *experiment*; *results_experiment* only picks the directory the JSON goes to. With *resume*, problems an earlier run on the same checkpoint scored are kept, and the rest use its sample seed.
     """
     # Imported here, not at module scope: submitting jobs must not need torch or pymimir.
+    from dias.validation.checkpoint import resolve_best_checkpoint
     from dias.validation.successors import resolve_sample_seed
 
     run_id = run_id or run_id_for(experiment, domain, seed)
     results_experiment = results_experiment or experiment
     val_problems = validation_problems(domain)
+    out = _result_path(logs_dir, results_experiment, domain, seed)
+    checkpoint = resolve_best_checkpoint(logs_dir / "dias" / run_id / "checkpoints")
 
     validator = VALIDATORS[EXPERIMENT_VALIDATOR[experiment_type]]
     validation = validator_class(validator.name)
@@ -79,21 +84,39 @@ def validate_run(
         )
     num_samples = int(val_cfg["num_samples"])
     sample_population = int(val_cfg["sample_population"])
-    configured_seed = val_cfg.get("sample_seed")
-    # Resolved once, so every problem of a seed shares one draw.
-    sample_seed = resolve_sample_seed(
-        None if configured_seed is None else int(configured_seed)
-    )
+
+    per_problem: dict[str, dict[str, Any]] = {}
+    if resume and out.exists():
+        previous = json.loads(out.read_text())
+        refusal = _resume_refusal(previous, out, checkpoint, threshold)
+        if refusal is not None:
+            raise SystemExit(f"--resume {out}: {refusal}")
+        sample_seed = previous["sample_seed"]
+        per_problem = {
+            stem: result
+            for stem, result in previous["per_problem"].items()
+            if "error" not in result
+        }
+    else:
+        # Resolved once, so every problem of a seed shares one draw.
+        configured_seed = val_cfg.get("sample_seed")
+        sample_seed = resolve_sample_seed(
+            None if configured_seed is None else int(configured_seed)
+        )
+
     extra_kwargs = {"threshold": threshold} if validator.binarizes_schema else {}
-    # The grounding pool is the MLP-effects validator's alone, and it is what an over-permissive schema makes expensive: nothing else here would use the CPUs the validation array asks for.
     if validator.grounds_in_parallel:
         workers = allocated_cpus() if num_workers is None else num_workers
         logger.info("Grounding states across %d worker processes.", workers)
         extra_kwargs["num_workers"] = workers
+        if states_per_worker is not None:
+            extra_kwargs["states_per_worker"] = states_per_worker
 
-    per_problem: dict[str, dict[str, Any]] = {}
     for problem in val_problems:
         stem = problem.stem
+        if stem in per_problem:
+            logger.info("%s is already scored.", stem)
+            continue
         logger.info(
             "Validating %s seed %d on %s (%d states of at most %d reachable).",
             domain,
@@ -114,32 +137,42 @@ def validate_run(
                 sample_population=sample_population,
                 seed=sample_seed,
             )
-            result = v.validate()
+            if validator.grounds_in_parallel:
+                result = v.validate(out.with_name(f"seed{seed}.{stem}.states.jsonl"))
+            else:
+                result = v.validate()
         except Exception as e:  # noqa: BLE001 - one bad problem shouldn't sink the rest
             logger.exception("Validation of %s failed.", stem)
             per_problem[stem] = {"error": str(e)}
-            continue
-        per_problem[stem] = {k: _plain(val) for k, val in result.items()}
-        logger.info(
-            "%s: precision %.3f, recall %.3f (tp=%s fp=%s fn=%s).",
-            stem,
-            result.get("precision", float("nan")),
-            result.get("recall", float("nan")),
-            result.get("tp", "?"),
-            result.get("fp", "?"),
-            result.get("fn", "?"),
+        else:
+            per_problem[stem] = {k: _plain(val) for k, val in result.items()}
+            logger.info(
+                "%s: precision %.3f, recall %.3f (tp=%s fp=%s fn=%s).",
+                stem,
+                result.get("precision", float("nan")),
+                result.get("recall", float("nan")),
+                result.get("tp", "?"),
+                result.get("fp", "?"),
+                result.get("fn", "?"),
+            )
+        # After every problem, so a job killed partway keeps what it finished.
+        _write_json(
+            logs_dir,
+            results_experiment,
+            domain,
+            seed,
+            run_id,
+            {
+                p.stem: per_problem[p.stem]
+                for p in val_problems
+                if p.stem in per_problem
+            },
+            threshold,
+            sample_seed,
+            expected=[p.stem for p in val_problems],
+            checkpoint=checkpoint,
         )
 
-    _write_json(
-        logs_dir,
-        results_experiment,
-        domain,
-        seed,
-        run_id,
-        per_problem,
-        threshold,
-        sample_seed,
-    )
     if log_wandb:
         _log_to_wandb(results_experiment, domain, seed, run_id, logs_dir, per_problem)
     return per_problem
@@ -156,6 +189,28 @@ def _plain(value: Any) -> Any:
     return value
 
 
+def _result_path(logs_dir: Path, experiment: str, domain: str, seed: int) -> Path:
+    return logs_dir / "validation" / experiment / domain / f"seed{seed}.json"
+
+
+def _resume_refusal(
+    previous: dict, path: Path, checkpoint: Path, threshold: float
+) -> str | None:
+    """Why the results in `path` cannot be resumed, or None if they can."""
+    if previous["threshold"] != threshold:
+        return f"scored at threshold {previous['threshold']}, not {threshold}"
+    if "checkpoint" not in previous:
+        # Written before results recorded their checkpoint.
+        if checkpoint.stat().st_mtime >= path.stat().st_mtime:
+            return f"{checkpoint} is newer than the results"
+    elif (previous["checkpoint"], previous["checkpoint_mtime"]) != (
+        str(checkpoint),
+        checkpoint.stat().st_mtime,
+    ):
+        return f"scored on {previous['checkpoint']}, not {checkpoint}"
+    return None
+
+
 def _write_json(
     logs_dir: Path,
     experiment: str,
@@ -165,28 +220,39 @@ def _write_json(
     per_problem: dict,
     threshold: float = 0.5,
     sample_seed: int | None = None,
+    expected: list[str] | None = None,
+    checkpoint: Path | None = None,
 ) -> None:
-    out = logs_dir / "validation" / experiment / domain / f"seed{seed}.json"
+    out = _result_path(logs_dir, experiment, domain, seed)
     out.parent.mkdir(parents=True, exist_ok=True)
-    ok = any("error" not in v for v in per_problem.values())
-    out.write_text(
-        json.dumps(
-            {
-                "experiment": experiment,
-                "domain": domain,
-                "seed": seed,
-                "run_id": run_id,
-                "threshold": threshold,
-                # Passing this back as validation.yaml's sample_seed reproduces these exact states.
-                "sample_seed": sample_seed,
-                "status": "ok" if ok else "validation_failed",
-                "per_problem": per_problem,
-            },
-            indent=2,
-            default=str,
-        )
+    # A seed is one number per held-out problem: `collect_results` aggregates `ok` only.
+    expected = list(per_problem) if expected is None else expected
+    scored = sum(
+        stem in per_problem and "error" not in per_problem[stem] for stem in expected
     )
-    logger.info("Wrote %s.", out)
+    status = (
+        "ok"
+        if expected and scored == len(expected)
+        else "partial" if scored else "validation_failed"
+    )
+    payload = {
+        "experiment": experiment,
+        "domain": domain,
+        "seed": seed,
+        "run_id": run_id,
+        "threshold": threshold,
+        # Passing this back as validation.yaml's sample_seed reproduces these exact states.
+        "sample_seed": sample_seed,
+        "status": status,
+        "per_problem": per_problem,
+    }
+    if checkpoint is not None:
+        payload["checkpoint"] = str(checkpoint)
+        payload["checkpoint_mtime"] = checkpoint.stat().st_mtime
+    staged = out.with_name(out.name + ".writing")
+    staged.write_text(json.dumps(payload, indent=2, default=str))
+    staged.replace(out)
+    logger.info("Wrote %s (%s).", out, status)
 
 
 def _log_to_wandb(
@@ -252,6 +318,17 @@ def main() -> int:
         default=None,
         help="Processes the MLP-effects validator grounds states across. Default: the CPUs this job was allocated. Ignored by the other validators, which ground nothing in parallel.",
     )
+    p.add_argument(
+        "--states-per-worker",
+        type=int,
+        default=None,
+        help="States an MLP-effects grounding worker handles before it is replaced, releasing the ground actions pymimir keeps until a process exits.",
+    )
+    p.add_argument(
+        "--resume",
+        action="store_true",
+        help="Keep the problems an earlier run on the same checkpoint scored, and continue the rest with its sample seed from their last scored state.",
+    )
     p.add_argument("--no-wandb", action="store_true", help="Skip W&B logging.")
     args = p.parse_args()
     configure_logging(args)
@@ -270,6 +347,8 @@ def main() -> int:
         threshold=args.threshold,
         results_experiment=args.results_experiment,
         num_workers=args.num_workers,
+        states_per_worker=args.states_per_worker,
+        resume=args.resume,
     )
     failed = all("error" in v for v in per_problem.values()) if per_problem else True
     return 1 if failed else 0

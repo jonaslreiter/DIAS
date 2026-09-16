@@ -205,6 +205,9 @@ class LaunchPlan:
     values: list[float]
     backend: str
     validate_only: bool
+    num_workers: int | None
+    states_per_worker: int | None
+    resume: bool
     dry_run: bool
     log_wandb: bool
     log_dir: Path
@@ -383,6 +386,9 @@ def build_plan(args: argparse.Namespace) -> LaunchPlan:
         values=values,
         backend=args.backend,
         validate_only=args.validate_only,
+        num_workers=args.num_workers,
+        states_per_worker=args.states_per_worker,
+        resume=args.resume,
         dry_run=args.dry_run,
         log_wandb=not args.no_wandb,
         log_dir=args.log_dir,
@@ -443,6 +449,12 @@ def submit_domain(plan: LaunchPlan, point: SweepPoint, domain: str) -> None:
     # validate.sh forwards --threshold only when THRESHOLD is set.
     if plan.threshold != DEFAULT_VALIDATION_THRESHOLD:
         val_vars.append(f"THRESHOLD={plan.threshold:g}")
+    if plan.num_workers is not None:
+        val_vars.append(f"NUM_WORKERS={plan.num_workers}")
+    if plan.states_per_worker is not None:
+        val_vars.append(f"STATES_PER_WORKER={plan.states_per_worker}")
+    if plan.resume:
+        val_vars.append("RESUME=1")
 
     dep = None
     if not plan.validate_only:
@@ -520,6 +532,9 @@ def run_domain(plan: LaunchPlan, point: SweepPoint, domain: str) -> None:
             run_id=run_id,
             log_wandb=plan.log_wandb,
             threshold=plan.threshold,
+            num_workers=plan.num_workers,
+            states_per_worker=plan.states_per_worker,
+            resume=plan.resume,
         )
 
 
@@ -589,6 +604,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--validate-only",
         action="store_true",
         help="Skip training and only (re-)run the validation step, over the checkpoints of runs that already trained to max_steps.",
+    )
+    p.add_argument(
+        "--num-workers",
+        type=int,
+        default=None,
+        help="Processes the MLP-effects validator grounds states across. Default: the CPUs each validation task is allocated.",
+    )
+    p.add_argument(
+        "--states-per-worker",
+        type=int,
+        default=None,
+        help="States an MLP-effects grounding worker handles before it is replaced, releasing the ground actions pymimir keeps until a process exits.",
+    )
+    p.add_argument(
+        "--resume",
+        action="store_true",
+        help="Validation keeps the problems an earlier run on the same checkpoint scored, and continues the rest with its sample seed from their last scored state.",
     )
     p.add_argument(
         "--allow-unfinished",
