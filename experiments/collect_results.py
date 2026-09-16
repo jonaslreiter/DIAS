@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import re
 import sys
 from pathlib import Path
@@ -44,6 +45,9 @@ from pipeline import (
 )
 
 ONE = 1.0 - 1e-9
+
+
+logger = logging.getLogger("dias.collect")
 
 
 def _seed_precision_recall(per_problem: dict) -> tuple[float, float] | None:
@@ -106,6 +110,10 @@ def collect_local(
     for seed_json in sorted(root.glob("*/seed*.json")):
         payload = json.loads(seed_json.read_text())
         domain = payload.get("domain", seed_json.parent.name)
+        # A seed missing some problem's score would be averaged as if it had all three.
+        if payload.get("status", "ok") != "ok":
+            logger.warning("Skipping %s: %s.", seed_json, payload["status"])
+            continue
         pr = _seed_precision_recall(payload.get("per_problem", {}))
         if pr is not None:
             by_domain.setdefault(domain, []).append(pr)

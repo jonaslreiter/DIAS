@@ -81,7 +81,7 @@ def transfer_states(states: list, target_problem, source_domain, target_domain) 
 def score_successors(per_state: Iterable[SuccessorSets]) -> dict:
     """Score produced successors against expected ones, state by state.
 
-    The one scorer for every validator: a successor is a pymimir state index or a binarized adjacency, and all they must agree on is that equal successors compare equal.
+    The one scorer for every validator: a successor is a pymimir state index or a signature of the cells it flips, and all they must agree on is that equal successors compare equal.
 
     Counts are attributed to actions, so a successor reached under the wrong operator is a false positive there and a false negative under the right one. ``matches`` keeps the state-level view: the two successor sets agreed exactly. Micro-averaged over every state and action.
     """
@@ -105,6 +105,52 @@ def score_successors(per_state: Iterable[SuccessorSets]) -> dict:
             action_fp[name] += len(produced) - hits
             action_fn[name] += len(expected) - hits
 
+    return _summary(states, matches, action_tp, action_fp, action_fn)
+
+
+def combine_scores(scores: Iterable[dict]) -> dict:
+    """`score_successors` over the union of disjoint state sets, from each set's own result: every count is a sum over states."""
+    states = 0
+    matches = 0
+    action_tp: dict[str, int] = defaultdict(int)
+    action_fp: dict[str, int] = defaultdict(int)
+    action_fn: dict[str, int] = defaultdict(int)
+    for score in scores:
+        states += score["total"]
+        matches += score["matches"]
+        for name, stats in score["action_stats"].items():
+            action_tp[name] += stats["tp"]
+            action_fp[name] += stats["fp"]
+            action_fn[name] += stats["fn"]
+
+    return _summary(states, matches, action_tp, action_fp, action_fn)
+
+
+def compare_successors(states: list, learned_action_prefix: str) -> dict:
+    """Score a merged domain's learned actions against its original ones. Every state carries both sets, so this needs no planning: apply all of them and compare state indices."""
+    prefix_length = len(learned_action_prefix)
+
+    def sets_for(state) -> SuccessorSets:
+        expected: dict[str, set] = defaultdict(set)
+        produced: dict[str, set] = defaultdict(set)
+        for action in state.generate_applicable_actions():
+            successor = action.apply(state).get_index()
+            name = action.get_action().get_name()
+            if name.startswith(learned_action_prefix):
+                produced[name[prefix_length:]].add(successor)
+            else:
+                expected[name].add(successor)
+        return expected, produced
+
+    return score_successors(
+        sets_for(state)
+        for state in tqdm(states, total=len(states), desc="Validating states")
+    )
+
+
+def _summary(
+    states: int, matches: int, action_tp: dict, action_fp: dict, action_fn: dict
+) -> dict:
     tp_total = sum(action_tp.values())
     fp_total = sum(action_fp.values())
     fn_total = sum(action_fn.values())
@@ -128,28 +174,6 @@ def score_successors(per_state: Iterable[SuccessorSets]) -> dict:
             for name in set(action_tp) | set(action_fp) | set(action_fn)
         },
     }
-
-
-def compare_successors(states: list, learned_action_prefix: str) -> dict:
-    """Score a merged domain's learned actions against its original ones. Every state carries both sets, so this needs no planning: apply all of them and compare state indices."""
-    prefix_length = len(learned_action_prefix)
-
-    def sets_for(state) -> SuccessorSets:
-        expected: dict[str, set] = defaultdict(set)
-        produced: dict[str, set] = defaultdict(set)
-        for action in state.generate_applicable_actions():
-            successor = action.apply(state).get_index()
-            name = action.get_action().get_name()
-            if name.startswith(learned_action_prefix):
-                produced[name[prefix_length:]].add(successor)
-            else:
-                expected[name].add(successor)
-        return expected, produced
-
-    return score_successors(
-        sets_for(state)
-        for state in tqdm(states, total=len(states), desc="Validating states")
-    )
 
 
 def _ratio(true_positives: int, errors: int) -> float:
