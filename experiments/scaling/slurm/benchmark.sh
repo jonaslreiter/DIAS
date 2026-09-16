@@ -3,7 +3,6 @@
 # See experiments/slurm/train.sh for what this block is and how to adapt it.
 #SBATCH --job-name=dias-scaling
 #SBATCH --partition=rleap_gpu_24gb
-#SBATCH --qos=rleap_deadline
 #SBATCH --output=logs/slurm/%x-%A_%a.out
 #
 : ${DIAS_ENV_SETUP:="source ~/.zshrc && conda activate ddl"}

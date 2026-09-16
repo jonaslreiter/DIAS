@@ -92,6 +92,8 @@ End to end: load a domain and one problem, sample transitions by random walk or 
 - The scripts under `experiments/slurm/` open with a `── site configuration ──` block holding every line specific to one cluster, including `DIAS_ENV_SETUP`. Nothing below the end marker is site-specific, and the scripts defer all experiment semantics to the Python and YAML.
 - Nothing in the Slurm path assumes the submission directory: Slurm runs a spool copy, so launchers pass absolute script and `--output` paths and export `DIAS_ROOT`.
 - `train.sh` and the scaling benchmark export `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`, because co-tenants on a shared GPU see the *reserved* pool and that setting is what makes the per-domain shard reservations hold.
+- **`train.sh` caps PyTorch's allocator at the job's share of the card**, appending `per_process_memory_fraction` to `PYTORCH_CUDA_ALLOC_CONF`: `SLURM_SHARDS_ON_NODE` over the shards per GPU read off the node's `Gres` (24 on the 24 GB partition, 48 on the 48 GB one; `DIAS_SHARDS_PER_GPU` overrides). A run outgrowing its shards therefore dies with an out-of-memory error rather than taking a co-tenant's memory; raise its `gres` in `slurm-resources.yaml`. A whole-GPU job gets no cap.
+- No script requests a QoS; the jobs run under the account's default.
 
 ## Reporting and Logging
 

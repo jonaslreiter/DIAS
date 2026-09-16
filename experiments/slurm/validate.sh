@@ -3,7 +3,6 @@
 # See experiments/slurm/train.sh for what this block is and how to adapt it. The partition list here names CPU partitions too: validation runs the model on CPU and spends its time in pymimir successor generation.
 #SBATCH --job-name=dias-val
 #SBATCH --partition=rleap_gpu_24gb,rleap_gpu_48gb,rleap_cpu,rleap_cpu_modern
-#SBATCH --qos=rleap_deadline
 #SBATCH --output=logs/slurm/%x-%A_%a.out
 #
 : ${DIAS_ENV_SETUP:="source ~/.zshrc && conda activate ddl"}
