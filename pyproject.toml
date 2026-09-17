@@ -14,12 +14,12 @@ authors = [
     { name = "Jonas Reiter" },
     { name = "Jakob Elias Gebler" },
 ]
-# Lower bounds are the oldest release the code is written against; the upper bound on pymimir is a compatible-release clause because it is pre-1.0 and its parser API is what every PDDL path here depends on.
+# Lower bounds are the oldest release the code is written against; the upper bound on pymimir is a compatible-release clause because it is pre-1.0 and its parser API is what every PDDL path here depends on. The jsonargparse floor is where `dump(skip_unset=)` replaced `skip_none=`, and its cap is the one Lightning states in the extras we do not install: Lightning 2.6 calls `ArgumentParser.add_instantiator` and `ArgumentParser.instantiate_classes`, both of which go away in jsonargparse 5.0, so an uncapped install would resolve to a version whose CLI cannot run.
 dependencies = [
     "torch>=2.1",
     "pymimir~=0.13.62",
     "lightning>=2.2",
-    "jsonargparse[signatures]>=4.27.7",
+    "jsonargparse[signatures]>=4.49,<5",
     "torch-geometric>=2.5",
     "numpy>=1.24",
     "pyyaml>=6.0",
@@ -46,6 +46,10 @@ testpaths = ["tests"]
 filterwarnings = [
     # Raised once per config chain the test suite parses: Lightning objects to `args=` while sys.argv also holds pytest's own arguments. Passing args is exactly how a CLI is driven from a test.
     "ignore:.*args parameter is intended.*",
+    # Lightning 2.6 reaching for the three jsonargparse APIs that 4.49 deprecated: `skip_none=` from `LightningCLI._dump_config`, `ArgumentParser.add_instantiator` from `_add_instantiators`, and `ArgumentParser.instantiate_classes` from `instantiate_classes`. Nothing here calls them, and the `<5` cap on jsonargparse keeps their removal from arriving before Lightning has moved; drop both lines once it has, since they are the signal that it did. The `(?s)` is load-bearing: jsonargparse wraps a message in newlines, and a filter is matched from the start with `.` not spanning them.
+    "ignore:(?s).*deprecated in v4.49.0.*",
+    # The once-per-process preamble that comes with the first of them.
+    "ignore:(?s).*only one JsonargparseDeprecationWarning per type.*",
 ]
 
 [tool.black]
