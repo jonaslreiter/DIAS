@@ -7,4 +7,4 @@
 | `test-2.pddl` | 6×6  | 36    | 8        | 45            |
 | `test-3.pddl` | 8×8  | 64    | 16       | 81            |
 
-Generated with `pddl-generators/delivery/delivery-generator.py`.
+Generated with `delivery/delivery-generator.py` from [PDDL generators](https://github.com/AI-Planning/pddl-generators).

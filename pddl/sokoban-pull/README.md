@@ -7,4 +7,4 @@
 | `test-2.pddl` | 7×7  | 49      | 4     |
 | `test-3.pddl` | 9×9  | 81      | 5     |
 
-Generated with `pddl-generators/sokoban/sokoban-generator.py`.
+Generated with `sokoban/sokoban-generator.py` from [PDDL generators](https://github.com/AI-Planning/pddl-generators).

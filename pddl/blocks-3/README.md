@@ -7,4 +7,4 @@
 | `test-2.pddl` | 20     | 20            |
 | `test-3.pddl` | 40     | 40            |
 
-Generated from existing Blocks World benchmark instances in this repository.
+Generated with `blocksworld/blocksworld` from [PDDL generators](https://github.com/AI-Planning/pddl-generators).

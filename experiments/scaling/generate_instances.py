@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Regenerate the scaling-study instances from the upstream PDDL generators.
+"""Regenerate the scaling-study instances from PDDL generators.
 
 One instance per (domain, size) entry of ``sizes.yaml``, written to ``instances/<domain>/n<num_objects>.pddl`` plus an ``index.json``. Both are committed, so running the study needs neither this script nor the generators, which is why they are not vendored. To change the ladder, build them yourself and point ``--generators-dir`` at the checkout:
 
