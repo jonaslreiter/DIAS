@@ -79,7 +79,7 @@ class SaveAndLogConfigCallback(SaveConfigCallback):
         if isinstance(trainer.logger, Logger):
             import yaml
 
-            yaml_string = self.parser.dump(self.config, skip_none=False)
+            yaml_string = self.parser.dump(self.config, skip_unset=False)
             config = yaml.safe_load(yaml_string)
             trainer.logger.log_hyperparams(config)
 

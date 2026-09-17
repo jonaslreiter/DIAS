@@ -16,8 +16,9 @@ from dias.main import CLI
 
 ROOT = Path(__file__).resolve().parents[1]
 DOMAIN_CONFIGS = sorted((ROOT / "pddl").glob("*/config.yaml"))
-OVERLAYS = sorted((ROOT / "configs" / "experiments").glob("*.yaml"))
 MAIN = ROOT / "configs" / "main.yaml"
+# configs/ is flat, and every file in it but the base is an overlay, so a new one is covered from the moment it is added.
+OVERLAYS = sorted(path for path in (ROOT / "configs").glob("*.yaml") if path != MAIN)
 # A domain to carry the overlays. They are domain-independent, so the whole cross product would parse the same files again for no extra cover.
 A_DOMAIN = ROOT / "pddl" / "gripper" / "config.yaml"
 SCALING_OVERLAY = ROOT / "experiments" / "scaling" / "configs" / "scaling.yaml"
@@ -196,7 +197,7 @@ class SavedConfigTest(unittest.TestCase):
 
             with tempfile.TemporaryDirectory() as tmp:
                 saved = Path(tmp) / "config.yaml"
-                saved.write_text(cli.parser.dump(cli.config, skip_none=False))
+                saved.write_text(cli.parser.dump(cli.config, skip_unset=False))
                 reloaded = CLI(args=["--config", str(saved), *plain], run=False).model
 
         self.assertIs(type(reloaded.precondition_tau), type(original))
