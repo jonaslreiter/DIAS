@@ -12,9 +12,9 @@ Each atom lands in exactly one class:
 
 A static predicate is one that occurs in no action's effect, which is also what pymimir's ``Predicate.is_static()`` reports and therefore the flag DIAS itself is given; the two are compared per domain and a disagreement is a warning.
 
-The paper and the rebuttals quote a four-way split with no class for ``stat2``, folding those literals into ``pos`` / ``neg`` by polarity. Both groupings are always reported, since the four-way one is what the text quotes and the five-way one is what the class names mean.
+The paper quotes a four-way split with no class for ``stat2``, folding those literals into ``pos`` / ``neg`` by polarity. Both groupings are always reported, since the four-way one is what the text quotes and the five-way one is what the class names mean.
 
-Counting follows ``experiments/results/schema-complexity-dias-full.md``, so the two are comparable: distinct lifted atoms after de-duplication, and ``(not (p ...))`` is one atom. Type-derived unary predicates are excluded from the ground-truth counts, since a ``?t - truck`` in ``:parameters`` is not a precondition. DIAS does get a channel for them (pymimir materialises them, and ``include_statics`` defaults to true), which is what the ``stat1`` column measures.
+Atoms are counted after de-duplication, as distinct lifted atoms, with ``(not (p ...))`` counting as one. Type-derived unary predicates are excluded from the ground-truth counts, since a ``?t - truck`` in ``:parameters`` is not a precondition. DIAS does get a channel for them (pymimir materialises them, and ``include_statics`` defaults to true), which is what the ``stat1`` column measures.
 
 Usage:
     python experiments/precondition_categories.py --experiment dias-full
@@ -378,7 +378,7 @@ def write_markdown(
         f"- `python experiments/precondition_categories.py --experiment {experiment} --markdown {path}`.",
         f"- Learned schemas were read from `logs/dias/{experiment}-<domain>-s<seed>/checkpoints/best-epoch*.ckpt` through `dias.validation.dias.read_learned_schemas`, the function `DiasValidator` uses: `load_run`, then `DIAS.schema_logits()`, then `derive_schema(threshold={threshold:g})`, then `PDDLTranspiler`.",
         "- Ground-truth schemas were parsed from the `:precondition` conjunction of `pddl/<domain>/domain.pddl`.",
-        "- Distinct lifted atoms after de-duplication; `(not (p ...))` counts as one atom; type-derived unary predicates are excluded from the ground-truth counts, since a `?t - truck` in `:parameters` is not a precondition. This matches `schema-complexity-dias-full.md`, so the two files are comparable.",
+        "- Distinct lifted atoms after de-duplication; `(not (p ...))` counts as one atom; type-derived unary predicates are excluded from the ground-truth counts, since a `?t - truck` in `:parameters` is not a precondition.",
         "- A static predicate is one that occurs in no action's effect, which is also what `pymimir`'s `Predicate.is_static()` reports and so the flag DIAS is given. `pymimir` additionally marks static the unary predicates it materialises out of a `:types` declaration, and `include_statics` defaults to true, so DIAS does get a channel for `(truck ?x)` and its kind while a ground-truth schema states that guard in `:parameters` instead. That asymmetry is what the `stat1` column measures.",
         "",
         "## Five classes",
@@ -390,7 +390,7 @@ def write_markdown(
         *markdown_table(results, FIVE_WAY),
         "## Four classes",
         "",
-        "The grouping the paper and the rebuttals quote. It has no class for binary static literals (`link`, `adjacent`, `above`, `loc`, `on_board` and their kind), which land in `pos` or `neg` by their polarity, so these two columns are not what their names say; the five-class table above splits them out.",
+        "The grouping the paper quotes. It has no class for binary static literals (`link`, `adjacent`, `above`, `loc`, `on_board` and their kind), which land in `pos` or `neg` by their polarity, so these two columns are not what their names say; the five-class table above splits them out.",
         "",
         "| Class | Meaning |",
         "| --- | --- |",

@@ -32,7 +32,7 @@ Memory grows quadratically in the object count (the model works on dense `batch 
 
 ## Instances
 
-`experiments/scaling/instances/<domain>/n<objects>.pddl` are generated once from the [upstream PDDL generators](https://github.com/AI-Planning/pddl-generators) and committed, together with `index.json` (parameters + object/action/predicate counts per instance). **Running the study needs neither the generators nor this section**: they are only needed to change the ladder, which is why they are not vendored here.
+`experiments/scaling/instances/<domain>/n<objects>.pddl` are generated once from [PDDL generators](https://github.com/AI-Planning/pddl-generators) and committed, together with `index.json` (parameters + object/action/predicate counts per instance). **Running the study needs neither the generators nor this section**: they are only needed to change the ladder, which is why they are not vendored here.
 
 ```bash
 git clone https://github.com/AI-Planning/pddl-generators.git ../pddl-generators

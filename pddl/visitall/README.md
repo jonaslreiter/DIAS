@@ -7,4 +7,4 @@
 | `test-2.pddl` | 7×7  | 49     |
 | `test-3.pddl` | 8×8  | 64     |
 
-Generated with `pddl-generators/visitall/visitall-generator.py`.
+Generated with `visitall/visitall-generator.py` from [PDDL generators](https://github.com/AI-Planning/pddl-generators).
