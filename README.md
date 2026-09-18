@@ -125,8 +125,7 @@ Contributor notes about the pipeline's conventions are in [AGENTS.md](AGENTS.md)
 
 ```bibtex
 @misc{reiter2026dias,
-  title         = {Differentiable Learning of Lifted Action Schemas for
-                   Classical Planning},
+  title         = {Differentiable Learning of Lifted Action Schemas for Classical Planning},
   author        = {Reiter, Jonas and Gebler, Jakob Elias and Geffner, Hector},
   year          = {2026},
   eprint        = {2605.13282},
@@ -135,7 +134,3 @@ Contributor notes about the pipeline's conventions are in [AGENTS.md](AGENTS.md)
   url           = {https://arxiv.org/abs/2605.13282}
 }
 ```
-
-## License
-
-MIT; see [LICENSE](LICENSE).
