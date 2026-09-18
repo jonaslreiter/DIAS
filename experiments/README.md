@@ -1,6 +1,6 @@
 # Running the paper's experiments
 
-This folder holds everything beyond the [README](../README.md)'s quickstart: the full grids, the ablations, the sweeps, the threshold study, and the aggregation into the paper's tables. Every command below is run from the repository root.
+This folder holds everything beyond the [README](../README.md)'s quickstart: the full grids, the ablations, the sweeps, the threshold study, the instance-size scaling study, and the aggregation into the paper's tables. Every command below is run from the repository root.
 
 ## What is in here
 
@@ -196,6 +196,10 @@ A static predicate is one that occurs in no action's effect, which is also what 
 Learned columns are per-seed means and ground-truth columns count each action's schema once, which is the unit the two are comparable on. Atoms are counted after de-duplication, as distinct lifted atoms, with `(not (p ...))` as one atom, and type-derived unary predicates left out of the ground-truth counts, since a `?t - truck` in `:parameters` is not a precondition. DIAS does get a channel for those (pymimir materialises them, and `include_statics` defaults to true), which is what the `stat1` column measures.
 
 Schemas are read through `dias.validation.dias.read_learned_schemas`, the same function `DiasValidator` uses, so the atoms counted here are the ones a validator would score. `--threshold` defaults to 0.5, what `launch.py` uses for `--experiment-type dias`; a noise experiment wants `--threshold 0.75`.
+
+## Instance-size scaling
+
+How iterations per second and peak GPU memory grow as the *instance* grows is a separate one-off study, with its own launcher and its own [README](scaling/README.md). It produces timings rather than schemas, so `launch.py` knows nothing about it, and its instances are committed, so running it needs neither the upstream PDDL generators nor their toolchain.
 
 ## Validating one model
 

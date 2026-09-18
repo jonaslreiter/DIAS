@@ -6,32 +6,34 @@ DIAS learns **lifted STRIPS action schemas** (preconditions, add effects and del
 
 ## What it learns
 
-Ten thousand steps on gripper's training instance, given only `(state, action, successor)` triples, then the model's parameters read back as PDDL:
+Ten thousand steps on Blocksworld's five-block training instance, given only `(state, action, successor)` triples, then the model's parameters read back as PDDL:
 
 ```lisp
-;; ground truth                        ;; recovered (seed 0, threshold 0.5)
-(:action pick                          (:action learned_pick
-  :parameters (?obj ?room ?gripper)      :parameters (?x0 ?x1 ?x2)
-  :precondition (and                     :precondition (and
-    (ball    ?obj)                         (ball    ?x0)
-    (room    ?room)                        (room    ?x2)
-    (gripper ?gripper)                     (gripper ?x1)
-    (at      ?obj ?room)                   (at      ?x0 ?x2)
-    (at-robby ?room)                       (at-robby ?x2)
-    (free    ?gripper))                    (free    ?x1)
-                                           ... and 35 negative literals that
-                                           hold in every reachable state)
-  :effect (and                           :effect (and
-    (carry ?obj ?gripper)                  (carry ?x0 ?x1)
-    (not (at ?obj ?room))                  (not (at ?x0 ?x2))
-    (not (free ?gripper))))                (not (free ?x1))))
+;; ground truth                ;; recovered (seed 0, threshold 0.5)
+(:action move                  (:action learned_move
+  :parameters (?bm ?bf ?bt)      :parameters (?x1 ?x2 ?x4)
+  :precondition (and             :precondition (and
+    (clear ?bm)                    (clear ?x1)
+    (clear ?bt)                    (clear ?x2)
+    (on    ?bm ?bf)                (on    ?x1 ?x4)
+    (not (eq ?bm ?bt))             (not (eq ?x1 ?x2))
+    (not (eq ?bm ?bf))             (not (eq ?x1 ?x4))
+    (not (eq ?bf ?bt)))            (not (eq ?x4 ?x2))
+                                   ... and 16 redundant literals, such
+                                   as (eq ?x1 ?x1), that hold wherever
+                                   those six do)
+  :effect (and                   :effect (and
+    (on    ?bm ?bt)                (on    ?x1 ?x2)
+    (clear ?bf)                    (clear ?x4)
+    (not (clear ?bt))              (not (clear ?x2))
+    (not (on    ?bm ?bf))))        (not (on    ?x1 ?x4))))
 ```
 
-Both effect sets are exact and the arity is recovered; the extra negative preconditions are type-exclusion facts that no reachable state violates. Evaluation is behavioural throughout: a schema is *sound* when it generates no successor the real domain does not, and *complete* when it misses none.
+Both effect sets are exact and the arity is recovered. Slots are numbered by their position in the model's slot budget, so which of them are used, and in what order, is the model's to choose: here `?x1`, `?x2` and `?x4` stand for `?bm`, `?bt` and `?bf`. The 16 extra literals are either implied by the six real preconditions or invariants of the domain, so they block nothing the real schema allows. Evaluation is behavioural throughout: a schema is *sound* when it generates no successor the real domain does not, and *complete* when it misses none. This run is both, on all three held-out instances, the largest of them eight times the size of the instance it trained on.
 
 ## Install
 
-DIAS is installed from a clone, not from a package index:
+DIAS is installed from a clone:
 
 ```bash
 git clone https://github.com/jonaslreiter/DIAS.git
@@ -46,16 +48,16 @@ Python 3.10+, and a CUDA GPU for full-size runs. The domains, the configs and th
 Train on the smallest domain, on CPU, with no Weights & Biases account. Two configs: the base training setup, and the domain to apply it to.
 
 ```bash
-dias fit --config configs/main.yaml --config pddl/gripper/config.yaml --trainer.accelerator=cpu --trainer.max_steps=300 --trainer.val_check_interval=100 --trainer.logger=false --trainer.default_root_dir=logs/dias/quickstart
+dias fit --config configs/main.yaml --config pddl/blocks-3/config.yaml --trainer.accelerator=cpu --trainer.max_steps=300 --trainer.val_check_interval=100 --trainer.logger=false --trainer.default_root_dir=logs/dias/quickstart
 ```
 
 A few minutes later `logs/dias/quickstart/checkpoints/` holds the trained model. Read the schema it learned back as PDDL and score it on a held-out problem:
 
 ```bash
-python experiments/validate_checkpoint.py --validator dias --model-id quickstart --log-dir logs --problem pddl/gripper/test-1.pddl
+python experiments/validate_checkpoint.py --validator dias --model-id quickstart --log-dir logs --problem pddl/blocks-3/test-1.pddl
 ```
 
-This prints per-action `tp`/`fp`/`fn` and the precision and recall they sum to. 300 steps will not recover gripper; the paper's runs take 10 000 on a GPU.
+This prints per-action `tp`/`fp`/`fn` and the precision and recall they sum to. 300 steps will not recover Blocksworld; the paper's runs take 10 000 on a GPU.
 
 ### Choosing a domain
 
@@ -65,32 +67,26 @@ Swap the second config: it carries both the domain's files and its tuned hyperpa
 dias fit --config configs/main.yaml --config pddl/hanoi/config.yaml
 ```
 
-`configs/main.yaml` names no domain, so a chain that names none is refused rather than run on a guess. Every model and datamodule argument is listed, with a line on what it does, by `dias fit --model.help dias.models.DIAS` and `--data.help dias.data.datamodule.PddlGraphDataModule`, and any of them can be overridden on the command line.
+The 13 domains are `blocks-3`, `delivery`, `driverlog`, `gripper`, `hanoi`, `logistics`, `miconic`, `n-puzzle`, `satellite`, `sokoban`, `sokoban-pull`, `spanner`, `visitall`. Each `pddl/<domain>/` holds `domain.pddl`, a training instance `train.pddl`, three held-out `test-*.pddl` of increasing size, the STRIPS+ argument positions in `strips+.yaml`, and the tuned `config.yaml`.
+
+`configs/main.yaml` names no domain, so a chain that names none is refused. Every model and datamodule argument is listed, with a line on what it does, by `dias fit --model.help dias.models.DIAS` and `--data.help dias.data.datamodule.PddlGraphDataModule`, and any of them can be overridden on the command line.
+
+### Your own PDDL
+
+Point `domain_path` / `problem_path` at any domain whose predicates are unary or binary and whose actions are STRIPS with injective parameter binding. To make it a domain like the 13 above, give it a `pddl/<name>/` folder holding the same files. The folder *is* the domain, so `--domains <name>` works in the sweep launcher as soon as it exists.
 
 ### Weights & Biases
 
 W&B is the default logger, with `entity: null`, meaning whichever account you are logged into (or `$WANDB_ENTITY`). Use `--trainer.logger=false` to train without it, or `WANDB_MODE=offline` to record locally. When it is on, the learned schema is logged periodically as interactive heatmaps: effects, preconditions, slot-to-object assignments and slot weights.
 
-### Your own PDDL
-
-Point `domain_path` / `problem_path` at any domain whose predicates are unary or binary and whose actions are STRIPS with injective parameter binding. To make it a domain like the 13 below, give it a `pddl/<name>/` folder holding the same files. The folder *is* the domain, so `--domains <name>` works in the sweep launcher as soon as it exists.
-
-## The 13 domains
-
-`blocks-3`, `delivery`, `driverlog`, `gripper`, `hanoi`, `logistics`, `miconic`, `n-puzzle`, `satellite`, `sokoban`, `sokoban-pull`, `spanner`, `visitall`.
-
-Each `pddl/<domain>/` holds `domain.pddl`, a training instance `train.pddl`, three held-out `test-*.pddl` of increasing size, the STRIPS+ argument positions in `strips+.yaml`, and the tuned `config.yaml`.
-
 ## Reproducing the paper
 
-The recipes for the main table, the ablations, the sweeps, the threshold study, aggregation and cluster setup are in **[experiments/README.md](experiments/README.md)**. In short:
+The recipes for the main table, the ablations, the sweeps, the threshold study, the instance-size scaling study, aggregation and cluster setup are in **[experiments/README.md](experiments/README.md)**. In short:
 
 ```bash
 python experiments/launch.py --experiment dias-full
 python experiments/collect_results.py --experiment dias-full
 ```
-
-The separate instance-size scaling study has its own [README](experiments/scaling/README.md).
 
 ## Repository layout
 
@@ -107,7 +103,7 @@ src/dias/
 experiments/          everything you run to reproduce the paper, start here
 configs/              main.yaml and the `dias fit` overlays beside it
 pddl/                 the 13 domains, one folder each
-tests/
+tests/                one module per package module, named after it
 ```
 
 ## Development
