@@ -6,6 +6,7 @@ from torch_geometric.data import Batch, Data
 
 from dias.models.dias import DIAS
 from dias.schedules import Exponential
+from dias.validation.decoding import derive_schema
 
 
 def make_batch(action_args=(0, 1), changed=False):
@@ -170,6 +171,24 @@ class DIASModelTest(unittest.TestCase):
         self.assertTrue(torch.all(successor[0, :, 2, :] == 0))
         self.assertTrue(torch.all(successor[0, :, :, 2] == 0))
         self.assertTrue((successor[0, :, :2, :2] != 0).any())
+
+    def test_without_slot_weights_every_slot_is_a_parameter_of_the_read_schema(self):
+        """The ablation trains every slot at full weight, so every slot must survive decoding; reading the untrained zero logits dropped them all."""
+        model = self.make_model(num_objects=3, num_slots=3, use_slot_weights=False)
+        schema = model.schema_logits()
+        *_, active = derive_schema(
+            effect_logits=schema.effects,
+            precondition_logits=schema.preconditions,
+            slot_weight_logits=schema.slot_weight_logits,
+            force_action_args=False,
+            action_arguments=False,
+            strips_plus_actions=False,
+            strips_plus_positions={},
+            action_names=["action"],
+            action_arities=[2],
+            num_slots=3,
+        )
+        self.assertEqual(active.tolist(), [[True, True, True]])
 
     def test_optimizer_uses_the_configured_learning_rate(self):
         model = self.make_model()
