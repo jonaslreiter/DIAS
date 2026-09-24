@@ -92,5 +92,37 @@ class SlotWeightsTest(unittest.TestCase):
         self.assertLess(weights[0, 2].item(), 0.5)
 
 
+class AppliedSlotWeightLogitsTest(unittest.TestCase):
+    """The logits a schema is read off must say what `forward` does, not what the parameter holds."""
+
+    def selector(self, **kwargs):
+        torch.manual_seed(2)
+        return SlotSelector(num_actions=2, num_slots=3, object_dim=4, **kwargs)
+
+    def test_learned_weights_are_the_parameter_itself(self):
+        selector = self.selector()
+        self.assertIs(
+            selector.applied_slot_weight_logits(), selector.slot_weight_logits
+        )
+
+    def test_without_slot_weights_every_slot_reads_as_certain(self):
+        """The parameter stays at its zero initialisation, which a threshold of 0.5 would read as every slot inactive."""
+        selector = self.selector(use_slot_weights=False)
+        logits = selector.applied_slot_weight_logits()
+        self.assertTrue(torch.equal(torch.sigmoid(logits), torch.ones(2, 3)))
+
+    def test_per_action_slots_read_as_exactly_the_arity(self):
+        selector = self.selector(per_action_slots=True, action_arities=[1, 3])
+        with torch.no_grad():
+            selector.slot_weight_logits[1].fill_(-5.0)
+        logits = selector.applied_slot_weight_logits()
+        self.assertTrue(
+            torch.equal(
+                torch.sigmoid(logits),
+                torch.tensor([[1.0, 0.0, 0.0], [1.0, 1.0, 1.0]]),
+            )
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

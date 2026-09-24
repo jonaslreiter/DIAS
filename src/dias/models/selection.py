@@ -151,6 +151,15 @@ class SlotSelector(nn.Module):
                 weights = torch.where(forced, torch.ones_like(weights), weights)
         return weights
 
+    def applied_slot_weight_logits(self) -> torch.Tensor:
+        """``(A, k)`` logits of the weight `forward` gives each slot of every action, which is what a schema is read off. A slot the model always uses at full weight has an infinite logit, so that it decodes as active at any threshold: every slot when the weights are not learned, and every slot within the action's arity under per-action slots, whose stored logits the forward pass never consults."""
+        if self.use_slot_weights and not self.per_action_slots:
+            return self.slot_weight_logits
+        logits = torch.full_like(self.slot_weight_logits, torch.inf)
+        if self.per_action_slots:
+            logits.masked_fill_(self.unused_slots(), -torch.inf)
+        return logits
+
     @staticmethod
     def _pin_known_arguments(
         correspondence: torch.Tensor, y_action_args: torch.Tensor

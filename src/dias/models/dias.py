@@ -203,12 +203,12 @@ class DIAS(L.LightningModule):
     def schema_logits(self) -> SchemaLogits:
         """The learned schema as the model applies it, arity-masked, on the CPU.
 
-        The supported way to read a schema off a trained model: the raw parameters hold noise at masked cells.
+        The supported way to read a schema off a trained model: the raw parameters hold noise at masked cells, and the stored slot-weight logits are not what the forward pass applies when the weights are not learned.
         """
         with torch.no_grad():
             preconditions = self.predictor.preconditions.action_logits()
             effects = self.predictor.effects.action_logits()
-            slot_weights = self.predictor.selector.slot_weight_logits
+            slot_weights = self.predictor.selector.applied_slot_weight_logits()
             return SchemaLogits(
                 preconditions=preconditions.detach().cpu(),
                 effects=None if effects is None else effects.detach().cpu(),
