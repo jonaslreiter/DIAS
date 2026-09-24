@@ -30,6 +30,12 @@ class SoftConjunctionTest(unittest.TestCase):
         result.sum().backward()
         self.assertTrue(torch.isfinite(values.grad).all())
 
+    def test_a_value_of_exactly_one_still_takes_a_gradient(self):
+        """An atom that holds exactly is the common case, and the product still depends on it."""
+        values = torch.tensor([[1.0, 0.5]], requires_grad=True)
+        soft_conjunction(values, dim=1, tau=0.0).sum().backward()
+        torch.testing.assert_close(values.grad, torch.tensor([[0.5, 1.0]]))
+
 
 if __name__ == "__main__":
     unittest.main()

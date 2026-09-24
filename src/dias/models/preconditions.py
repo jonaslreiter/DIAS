@@ -41,6 +41,6 @@ def soft_conjunction(values: torch.Tensor, dim: int, tau: float = 1.0):
 
     The exact product collapses to zero as soon as one atom fails, carrying almost no gradient back to the others. Dividing the sum of logs by ``1 + tau*(n-1)`` softens that: geometric mean at 1, exact product at 0. Training anneals from one to the other.
     """
-    # Clamped so log stays finite: zeros are common here, and log(0) has an unstable backward.
-    logs = torch.log(values.clamp(min=1e-8, max=1.0))
+    # Clamped so log stays finite: zeros are common here, and log(0) has an unstable backward. No upper bound: a value never exceeds one, and exactly one is common, where recent torch gives a clamp no gradient at its bound.
+    logs = torch.log(values.clamp(min=1e-8))
     return torch.exp(logs.sum(dim=dim) / (1 + tau * (values.shape[dim] - 1)))
