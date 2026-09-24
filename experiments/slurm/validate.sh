@@ -5,7 +5,7 @@
 #SBATCH --partition=rleap_gpu_24gb,rleap_gpu_48gb,rleap_cpu,rleap_cpu_modern
 #SBATCH --output=logs/slurm/%x-%A_%a.out
 #
-: ${DIAS_ENV_SETUP:="source ~/.zshrc && conda activate ddl"}
+: ${DIAS_ENV_SETUP:="source ~/.zshrc && conda activate dias"}
 # ── end site configuration ────────────────────────────────────────────────────
 #
 # DIAS validation array task. Do NOT run directly; submit via

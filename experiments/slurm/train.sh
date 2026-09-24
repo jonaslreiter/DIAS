@@ -6,7 +6,7 @@
 #SBATCH --output=logs/slurm/%x-%A_%a.out
 #
 # How a compute node gets a `python` with dias importable. Export DIAS_ENV_SETUP before submitting to replace it; note that it is evaluated by the shell in the shebang above, which is part of this block too.
-: ${DIAS_ENV_SETUP:="source ~/.zshrc && conda activate ddl"}
+: ${DIAS_ENV_SETUP:="source ~/.zshrc && conda activate dias"}
 # ── end site configuration ────────────────────────────────────────────────────
 #
 # DIAS training array task. Do NOT run directly; submit via
