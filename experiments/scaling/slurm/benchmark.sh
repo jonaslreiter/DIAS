@@ -5,7 +5,7 @@
 #SBATCH --partition=rleap_gpu_24gb
 #SBATCH --output=logs/slurm/%x-%A_%a.out
 #
-: ${DIAS_ENV_SETUP:="source ~/.zshrc && conda activate ddl"}
+: ${DIAS_ENV_SETUP:="source ~/.zshrc && conda activate dias"}
 # ── end site configuration ────────────────────────────────────────────────────
 #
 # Scaling-study array task: one task = one (domain, seed) = the whole size ladder of that domain, measured on one GPU. Do NOT run directly; submit via
