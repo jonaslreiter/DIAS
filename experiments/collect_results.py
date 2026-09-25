@@ -44,9 +44,6 @@ from pipeline import (
     add_logging_arguments,
 )
 
-ONE = 1.0 - 1e-9
-
-
 logger = logging.getLogger("dias.collect")
 
 
@@ -156,9 +153,9 @@ def _aggregate(prs: list[tuple[float, float]]) -> dict:
     return {
         "P": sum(ps) / n,
         "R": sum(rs) / n,
-        "N_S": sum(p >= ONE for p in ps),
-        "N_C": sum(r >= ONE for r in rs),
-        "N_SC": sum(p >= ONE and r >= ONE for p, r in prs),
+        "N_S": sum(p == 1.0 for p in ps),
+        "N_C": sum(r == 1.0 for r in rs),
+        "N_SC": sum(p == 1.0 and r == 1.0 for p, r in prs),
         "n": n,
     }
 

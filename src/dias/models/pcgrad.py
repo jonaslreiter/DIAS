@@ -94,7 +94,7 @@ class PCGrad:
         """Keep the auxiliary gradient no longer than the primary one: orthogonality alone does not bound it, and it can dominate early."""
         primary_norm = torch.norm(primary)
         auxiliary_norm = torch.norm(auxiliary)
-        if auxiliary_norm > primary_norm and auxiliary_norm > cls.NEGLIGIBLE:
+        if auxiliary_norm > primary_norm:
             return auxiliary * (primary_norm / auxiliary_norm)
         return auxiliary
 
