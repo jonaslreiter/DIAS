@@ -41,7 +41,7 @@ class PCGrad:
     Per parameter, the auxiliary gradient is projected onto the plane orthogonal to the primary one wherever they oppose, so it can only act in directions the primary objective is indifferent to.
     """
 
-    # Below this the primary gradient carries no direction to project onto.
+    # Below this the primary gradient is noise, typically once training has converged, so a conflict with it says nothing about a wrong direction: the auxiliary gradient is left unprojected, and the norm cap bounds how much it can do.
     NEGLIGIBLE = 1e-12
 
     def __init__(self, alpha: float, norm_cap: bool = True):
@@ -94,7 +94,7 @@ class PCGrad:
         """Keep the auxiliary gradient no longer than the primary one: orthogonality alone does not bound it, and it can dominate early."""
         primary_norm = torch.norm(primary)
         auxiliary_norm = torch.norm(auxiliary)
-        if auxiliary_norm > primary_norm and auxiliary_norm > cls.NEGLIGIBLE:
+        if auxiliary_norm > primary_norm:
             return auxiliary * (primary_norm / auxiliary_norm)
         return auxiliary
 

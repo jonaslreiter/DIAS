@@ -285,8 +285,6 @@ class DIAS(L.LightningModule):
     def log_results(self, prefix: str, results: Mapping[str, torch.Tensor | int]):
         is_train = prefix == "train"
         for key, value in results.items():
-            if isinstance(value, torch.Tensor) and value.isnan():
-                continue
             self.log(
                 f"{prefix}/{key}",
                 value,

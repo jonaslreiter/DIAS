@@ -208,14 +208,16 @@ class DIASModelTest(unittest.TestCase):
         self.assertEqual(name, "schedule/precondition_tau")
         self.assertAlmostEqual(value, 0.1)
 
-    def test_log_results_skips_nan_and_handles_train_prefix(self):
+    def test_log_results_logs_nan_and_handles_train_prefix(self):
+        """A NaN is logged like any value, so a diverging run shows up as one."""
         model = self.make_model()
         model.log = Mock()
         model.log_results(
             "train",
             {"loss": torch.tensor(1.0), "nan": torch.tensor(float("nan")), "step": 2},
         )
-        self.assertEqual(model.log.call_count, 2)
+        self.assertEqual(model.log.call_count, 3)
+        self.assertEqual(model.log.call_args_list[1].args[0], "train/nan")
         first_call = model.log.call_args_list[0]
         self.assertEqual(first_call.args[0], "train/loss")
         self.assertTrue(first_call.kwargs["on_step"])

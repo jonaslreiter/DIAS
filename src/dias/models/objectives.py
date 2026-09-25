@@ -76,7 +76,7 @@ class DiasObjective:
             adjacency = (
                 F.binary_cross_entropy(
                     predicted.float().clamp(self.EPSILON, 1 - self.EPSILON),
-                    target.float().clamp(0.0, 1.0),
+                    target.float(),
                     reduction="sum",
                 )
                 / normalizer
@@ -105,8 +105,9 @@ class DiasObjective:
             weight_pairs = (
                 slot_weights[:, None, :, None] * slot_weights[:, None, None, :]
             )
+            # Off zero only: a masked cell is exactly zero, and nothing here exceeds one.
             restrictive = ((1 - prediction.preconditions.ignore) * weight_pairs).clamp(
-                self.EPSILON, 1 - self.EPSILON
+                min=self.EPSILON
             )
             terms = terms + _cross_entropy_against_one(restrictive)
         return terms
