@@ -67,7 +67,7 @@ Swap the second config: it carries both the domain's files and its tuned hyperpa
 dias fit --config configs/main.yaml --config pddl/hanoi/config.yaml
 ```
 
-The 13 domains are `blocks-3`, `delivery`, `driverlog`, `gripper`, `hanoi`, `logistics`, `miconic`, `n-puzzle`, `satellite`, `sokoban`, `sokoban-pull`, `spanner`, `visitall`. Each `pddl/<domain>/` holds `domain.pddl`, a training instance `train.pddl`, three held-out `test-*.pddl` of increasing size, the STRIPS+ argument positions in `strips+.yaml`, and the tuned `config.yaml`.
+The 13 domains are `blocks-3`, `delivery`, `driverlog`, `gripper`, `hanoi`, `logistics`, `miconic`, `n-puzzle`, `satellite`, `sokoban`, `sokoban-pull`, `spanner`, `visitall`. Each `pddl/<domain>/` holds `domain.pddl`, a training instance `train.pddl`, three held-out `test-*.pddl` of increasing size, the STRIPS+ argument positions in `strips+.yaml`, the tuned `config.yaml`, and `l1.pddl`, the action schemas the L1 baseline learned for the paper's comparison.
 
 `configs/main.yaml` names no domain, so a chain that names none is refused. Every model and datamodule argument is listed, with a line on what it does, by `dias fit --model.help dias.models.DIAS` and `--data.help dias.data.datamodule.PddlGraphDataModule`, and any of them can be overridden on the command line.
 

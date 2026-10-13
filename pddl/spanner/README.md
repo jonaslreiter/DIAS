@@ -8,3 +8,5 @@
 | `test-3.pddl` | 32       | 21   | 32        | 88            |
 
 Generated with `spanner/spanner-generator.py` from [PDDL generators](https://github.com/AI-Planning/pddl-generators).
+
+`l1.pddl` was learned from an instance with 6 spanners, 4 nuts and 8 locations (19 objects), not from `train.pddl`.

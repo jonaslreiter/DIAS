@@ -7,7 +7,6 @@ import unittest
 
 from dias.pddl.untype import (
     extract_domain_header,
-    inject_reflexive_atoms,
     problem_object_names,
     strip_problem_types,
     untype_action,
@@ -41,14 +40,12 @@ class StripProblemTypesTest(unittest.TestCase):
             PROBLEM,
             DOMAIN,
             equality_predicate_name="=",
-            reflexive_predicate_names=["same"],
         )
         self.assertIn("(:objects c-1)", text)
         # The whole ancestor chain, not just the declared type.
         self.assertIn("(child c-1)", text)
         self.assertIn("(parent c-1)", text)
         self.assertIn("(= c-1 c-1)", text)
-        self.assertIn("(same c-1 c-1)", text)
 
     def test_object_names_containing_a_hyphen_survive(self):
         self.assertNotIn("- child", strip_problem_types(PROBLEM, DOMAIN))
@@ -61,6 +58,17 @@ class StripProblemTypesTest(unittest.TestCase):
         self.assertIn("(:objects a b)", text)
         self.assertNotIn("- thing", text)
         self.assertNotIn("(thing a)", text)
+
+    def test_a_type_declared_without_a_parent_is_still_asserted(self):
+        # Satellite declares all four of its types this way.
+        text = strip_problem_types(
+            "(define (problem p) (:domain d)\n(:objects s1 - satellite d1 d2 - truck-bay)\n(:init)\n(:goal (ready s1)))\n",
+            "(define (domain d) (:requirements :typing) (:types satellite truck-bay))",
+        )
+        self.assertIn("(:objects s1 d1 d2)", text)
+        self.assertIn("(satellite s1)", text)
+        self.assertIn("(truck-bay d2)", text)
+        self.assertNotIn("(object", text)
 
 
 class ExtractDomainHeaderTest(unittest.TestCase):
@@ -92,6 +100,16 @@ class ExtractDomainHeaderTest(unittest.TestCase):
         self.assertNotIn("(= ", header)
         self.assertEqual(header.count("(ready"), 1)
 
+    def test_hyphenated_names_survive_untyping(self):
+        domain = "(define (domain d)\n  (:requirements :typing)\n  (:types loc)\n  (:predicates (on-table ?x) (link ?loc-from ?loc-to - loc))\n  (:action a :parameters () :precondition (and) :effect (and))\n)"
+        header = extract_domain_header(domain)
+        self.assertIn("(link ?loc-from ?loc-to)", header)
+        header = extract_domain_header(
+            domain, predicate_names=["link"], predicate_arities=[2]
+        )
+        # Declared by the original though no relation names it.
+        self.assertIn("(on-table ?x)", header)
+
 
 class UntypeActionTest(unittest.TestCase):
     ACTION = "(:action push\n  :parameters (?p - player ?c - crate)\n  :precondition (and (at ?p) (= ?p ?c))\n  :effect (at ?c))"
@@ -122,17 +140,9 @@ class UntypeActionTest(unittest.TestCase):
             untype_action("(:action broken :parameters (?x))")
 
 
-class ReflexiveAtomsTest(unittest.TestCase):
+class ProblemObjectsTest(unittest.TestCase):
     def test_objects_are_read_without_their_types(self):
         self.assertEqual(problem_object_names(PROBLEM), ["c-1"])
-
-    def test_atoms_are_injected_once_per_predicate_and_object(self):
-        text = inject_reflexive_atoms(PROBLEM, ["eq", "equal"])
-        self.assertIn("(eq c-1 c-1)", text)
-        self.assertIn("(equal c-1 c-1)", text)
-
-    def test_no_predicates_leaves_the_problem_untouched(self):
-        self.assertEqual(inject_reflexive_atoms(PROBLEM, []), PROBLEM)
 
 
 if __name__ == "__main__":

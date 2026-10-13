@@ -12,7 +12,6 @@ from dias.pddl import text as pddl_text
 from dias.pddl.untype import (
     EQUALITY_PREDICATE,
     extract_domain_header,
-    inject_reflexive_atoms,
     strip_problem_types,
     untype_action,
 )
@@ -42,15 +41,26 @@ class L1Validator:
     ):
         self.logs_path = logs_path
 
+        # Equality is `=` from here on, however each side spells it: L1 writes it as the static `eq` or `equal` its input domain had, the domains in pddl/ as `=`.
         original_domain_text = Path(original_domain_path).read_text()
+        original_equalities = pddl_text.equality_predicates(original_domain_text)
+        original_domain_text = pddl_text.write_equality_as_builtin(
+            original_domain_text, original_equalities
+        )
+        problem_text = pddl_text.drop_equality_facts(
+            Path(problem_path).read_text(), original_equalities
+        )
         learned_domain_text = Path(learned_domain_path).read_text()
+        learned_domain_text = pddl_text.write_equality_as_builtin(
+            learned_domain_text, pddl_text.equality_predicates(learned_domain_text)
+        )
+        self._check_learned_types(original_domain_text, learned_domain_text)
 
-        # Either domain may write `=`, and the merged one drops :equality, so both sides are compiled to the same reflexive predicate.
+        # The merged domain drops :equality, so `=` on either side is compiled to the same reflexive predicate.
         has_equality = pddl_text.domain_uses_equality(
             original_domain_text
         ) or pddl_text.domain_uses_equality(learned_domain_text)
         equality_predicate_name = EQUALITY_PREDICATE if has_equality else None
-        fluent_equal_predicates = self._fluent_equal_predicates(original_domain_text)
 
         # A merged untyped domain: transformed original + learned actions.
         original_actions_text = "\n\n".join(
@@ -70,7 +80,7 @@ class L1Validator:
             extract_domain_header(
                 original_domain_text, keep_equality_requirement=False
             ),
-            original_actions_text,
+            original_actions_text + "\n\n" + learned_actions_text,
             original_domain_text,
             has_equality=has_equality,
         )
@@ -91,10 +101,9 @@ class L1Validator:
         self.merged_problem_filename = self.workspace.write(
             "merged-problem.pddl",
             strip_problem_types(
-                Path(problem_path).read_text(),
+                problem_text,
                 original_domain_text,
                 equality_predicate_name=equality_predicate_name,
-                reflexive_predicate_names=fluent_equal_predicates or None,
             ),
         )
 
@@ -103,23 +112,46 @@ class L1Validator:
             self.merged_domain, Path(self.merged_problem_filename)
         )
 
-        self.original_domain = pymimir.Domain(Path(original_domain_path))
-
-        original_problem_path_to_use = problem_path
-        if fluent_equal_predicates:
-            # The original domain needs the same reflexive atoms, or the two enumerate different actions.
-            original_problem_path_to_use = self.workspace.write(
-                "original-problem.pddl",
-                inject_reflexive_atoms(
-                    Path(problem_path).read_text(), fluent_equal_predicates
-                ),
-            )
-
+        # The original as respelled, which is the file as written unless it spelled equality as a predicate.
+        self.original_domain = pymimir.Domain(
+            Path(self.workspace.write("original-domain.pddl", original_domain_text))
+        )
         self.original_problem = pymimir.Problem(
-            self.original_domain, Path(original_problem_path_to_use)
+            self.original_domain,
+            Path(self.workspace.write("original-problem.pddl", problem_text)),
         )
 
         self.state_set = None
+
+    @staticmethod
+    def _check_learned_types(
+        original_domain_text: str, learned_domain_text: str
+    ) -> None:
+        """Refuse a learned parameter type the original cannot supply. Types are given rather than learned, so a parameter may carry one of the original's types, or a unary predicate an untyped original writes its types as (logistics' `truck`); any other type would become a precondition no problem asserts, and its schema would silently never apply."""
+        known = {
+            name.lower()
+            for children, parent in pddl_text.parse_type_groups(original_domain_text)
+            for name in (*children, parent)
+        }
+        known |= {
+            name.lower()
+            for name, arity in pddl_text.declared_predicates(
+                original_domain_text
+            ).items()
+            if arity == 1
+        }
+        used = {
+            type_name.lower()
+            for block in pddl_text.extract_action_blocks(learned_domain_text)
+            for _, type_name in pddl_text.parse_typed_parameters(
+                pddl_text.find_balanced_expr(block, block.find(":parameters"))[0]
+            )[1]
+        }
+        unknown = sorted(used - known - UNINFORMATIVE_TYPES)
+        if unknown:
+            raise ValueError(
+                f"The learned domain types parameters as {', '.join(unknown)}, which the original declares neither as a type nor as a unary predicate"
+            )
 
     def _patch_missing_predicates(
         self,
@@ -128,17 +160,19 @@ class L1Validator:
         original_domain_text: str = "",
         has_equality: bool = False,
     ) -> str:
-        """Declare every predicate the merged domain uses but does not define: ones an action body references, the `eq` replacement for `=`, and the type names, which became unary atoms."""
+        """Declare every predicate the merged domain uses but does not define: ones an action body references, original or learned, the `eq` replacement for `=`, and the type names, which became unary atoms."""
         defined_words = {
-            m.group(1).lower() for m in re.finditer(r"\(\s*([a-zA-Z0-9_\-]+)", header)
+            m.group(1).lower() for m in re.finditer(r"\(\s*([^\s()]+)", header)
         }
         # `eq` is absent on purpose: here it is a user predicate, not a keyword.
         keywords = {"and", "or", "not", "imply", "when", "forall", "exists", "=", "-"}
 
         missing_preds: dict[str, int] = {}
 
-        for match in re.finditer(r"\(\s*([a-zA-Z0-9_\-]+)\s+([^()]*)\)", actions_text):
+        for match in re.finditer(r"\(\s*([^\s()]+)([^()]*)\)", actions_text):
             name = match.group(1).lower()
+            if name.startswith(":") or name.startswith("?"):
+                continue
             if name not in keywords and name not in defined_words:
                 arity = len([w for w in match.group(2).split() if w.startswith("?")])
                 missing_preds.setdefault(name, arity)
@@ -148,18 +182,11 @@ class L1Validator:
             if eq_name not in defined_words and eq_name not in missing_preds:
                 missing_preds[eq_name] = 2
 
-        types_match = re.search(r"\(:types(.*?)\)", original_domain_text, re.DOTALL)
-        if types_match:
-            type_names: set[str] = set()
-            for m2 in re.finditer(r"([\w\s]+)-\s+(\w+)", types_match.group(1)):
-                parent = m2.group(2).strip().lower()
-                for child in m2.group(1).split():
-                    type_names.add(child.strip().lower())
-                if parent and parent != "object":
-                    type_names.add(parent)
-            for name in type_names:
+        for children, parent in pddl_text.parse_type_groups(original_domain_text):
+            for name in (*children, parent):
+                name = name.lower()
                 if (
-                    name
+                    name != "object"
                     and name not in keywords
                     and name not in defined_words
                     and name not in missing_preds
@@ -196,21 +223,3 @@ class L1Validator:
         if self.state_set is None:
             raise RuntimeError("Call setup() before validate().")
         return compare_successors(self.state_set, LEARNED_ACTION_PREFIX)
-
-    @staticmethod
-    def _fluent_equal_predicates(domain_text: str) -> list[str]:
-        """Binary fluent predicates that look like reflexive equality (`equal`, `eq`). Some problem files initialize them as ``(equal X X)`` and others do not, so they are bootstrapped onto the merged problem."""
-        preds_match = re.search(r"\(:predicates(.*?)\n\s*\)", domain_text, re.DOTALL)
-        if not preds_match:
-            return []
-        block = preds_match.group(1)
-        results: list[str] = []
-        for m in re.finditer(r"\(\s*([a-zA-Z0-9_\-]+)([^()]*)\)", block):
-            name = m.group(1).lower()
-            if name not in {"equal", "eq"}:
-                continue
-            args = m.group(2)
-            var_count = len([w for w in args.split() if w.startswith("?")])
-            if var_count == 2:
-                results.append(m.group(1))
-        return results

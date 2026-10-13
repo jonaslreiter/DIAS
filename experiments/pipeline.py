@@ -53,6 +53,8 @@ TRAIN_PROBLEM = "train.pddl"
 # Held out from training, and validated on in this order.
 TEST_PROBLEMS = ("test-1.pddl", "test-2.pddl", "test-3.pddl")
 DOMAIN_CONFIG = "config.yaml"
+# Optional, unlike the rest: a domain added after the paper has no L1 output.
+L1_DOMAIN = "l1.pddl"
 
 
 def domain_dir(domain: str) -> Path:
@@ -76,6 +78,11 @@ def validation_problems(domain: str) -> list[Path]:
 def domain_config(domain: str) -> Path:
     """The Lightning partial config composed after configs/main.yaml."""
     return domain_dir(domain) / DOMAIN_CONFIG
+
+
+def l1_domain(domain: str) -> Path:
+    """The action schemas L1 learned for the paper's comparison, which ``validate_checkpoint.py --validator l1`` scores against ``domain_pddl``."""
+    return domain_dir(domain) / L1_DOMAIN
 
 
 def available_domains() -> list[str]:

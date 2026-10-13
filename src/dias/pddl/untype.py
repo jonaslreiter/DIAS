@@ -14,43 +14,28 @@ def strip_problem_types(
     problem_text: str,
     domain_text: str | None = None,
     equality_predicate_name: str | None = None,
-    reflexive_predicate_names: list[str] | None = None,
 ) -> str:
     """Remove the type annotations from a problem's ``:objects``.
 
-    With *domain_text*, type-derived unary atoms (``(cell c_0_0)``) go into ``:init`` so the untyped domain can use them as static preconditions. Named reflexive predicates get ``(name o o)`` per object, which is how ``(= ?x ?y)`` survives.
+    With *domain_text*, type-derived unary atoms (``(cell c_0_0)``) go into ``:init`` so the untyped domain can use them as static preconditions. With *equality_predicate_name*, that predicate gets ``(name o o)`` per object, which is how ``(= ?x ?y)`` survives.
     """
     type_atoms: list[str] = []
 
     if domain_text is not None:
         parents = pddl_text.type_parents(domain_text)
-        # Tokenize rather than split on '-', so object names like "p1-0" stay intact.
-        match = re.search(r"\(:objects(.*?)\)", problem_text, re.DOTALL)
-        tokens = match.group(1).split() if match else []
-        pending: list[str] = []
-        index = 0
-        while index < len(tokens):
-            if tokens[index] == "-" and index + 1 < len(tokens):
-                for name in pending:
-                    # Assert the object's type and every ancestor of it.
-                    type_name = tokens[index + 1]
-                    while type_name and type_name != "object":
-                        type_atoms.append(f"({type_name} {name})")
-                        type_name = parents.get(type_name)
-                pending = []
-                index += 2
-            else:
-                pending.append(tokens[index])
-                index += 1
+        for names, type_name in pddl_text.parse_typed_list(_objects_body(problem_text)):
+            for name in names:
+                # Assert the object's type and every ancestor of it.
+                ancestor = type_name
+                while ancestor and ancestor != "object":
+                    type_atoms.append(f"({ancestor} {name})")
+                    ancestor = parents.get(ancestor)
 
-    text = re.sub(r"\s+-\s+\w+", "", problem_text)
+    # Only a standalone dash, so object names like "p1-0" stay intact.
+    text = re.sub(r"\s+-\s+[^\s()]+", "", problem_text)
 
-    reflexive_names = [equality_predicate_name] if equality_predicate_name else []
-    reflexive_names += reflexive_predicate_names or []
-    objects = problem_object_names(problem_text) if reflexive_names else []
-    reflexive_atoms = [
-        f"({name} {obj} {obj})" for name in reflexive_names for obj in objects
-    ]
+    objects = problem_object_names(problem_text) if equality_predicate_name else []
+    reflexive_atoms = [f"({equality_predicate_name} {obj} {obj})" for obj in objects]
 
     for atoms in (type_atoms, reflexive_atoms):
         if atoms:
@@ -100,7 +85,7 @@ def extract_domain_header(
     # Drop the type declarations and every typed parameter annotation.
     header = re.sub(r"\(:types[^)]*\)\s*", "", header)
     header = re.sub(r":typing\s*", "", header)
-    header = re.sub(r"(\?\w+)\s+-\s+\w+", r"\1", header)
+    header = re.sub(r"(\?[^\s()]+)\s+-\s+[^\s()]+", r"\1", header)
 
     if predicate_names is None or predicate_arities is None:
         return header
@@ -136,45 +121,25 @@ def extract_domain_header(
         if parent and parent != "object":
             declare(parent, 1)
 
-    if domain_text.find("(:predicates") != -1:
-        block, _ = pddl_text.find_balanced_expr(
-            domain_text, domain_text.find("(:predicates")
-        )
-        for match in re.finditer(
-            r"\((\w+)((?:\s+\?\w+(?:\s+-\s+\w+)?)*)\)", block[len("(:predicates") : -1]
-        ):
-            declare(match.group(1), len(re.findall(r"\?\w+", match.group(2))))
+    for name, arity in pddl_text.declared_predicates(domain_text).items():
+        declare(name, arity)
 
     preds_block = "    (:predicates\n        " + "\n        ".join(decls) + "\n    )"
     return header.rstrip() + "\n\n" + preds_block
 
 
+def _objects_body(problem_text: str) -> str:
+    match = re.search(r"\(:objects(.*?)\)", problem_text, re.DOTALL)
+    return match.group(1) if match else ""
+
+
 def problem_object_names(problem_text: str) -> list[str]:
     """Every object a problem declares, with any type annotations dropped."""
-    match = re.search(r"\(:objects(.*?)\)", problem_text, re.DOTALL)
-    if not match:
-        return []
-    tokens = match.group(1).split()
-    names: list[str] = []
-    index = 0
-    while index < len(tokens):
-        if tokens[index] == "-" and index + 1 < len(tokens):
-            index += 2
-        else:
-            names.append(tokens[index])
-            index += 1
-    return names
-
-
-def inject_reflexive_atoms(problem_text: str, predicate_names: list[str]) -> str:
-    """Assert ``(p o o)`` in :init for each named predicate and every object, which a domain with its own equality-like predicate expects and a foreign problem file does not supply."""
-    objects = problem_object_names(problem_text) if predicate_names else []
-    if not objects:
-        return problem_text
-    return _extend_init(
-        problem_text,
-        [f"({name} {obj} {obj})" for name in predicate_names for obj in objects],
-    )
+    return [
+        name
+        for names, _ in pddl_text.parse_typed_list(_objects_body(problem_text))
+        for name in names
+    ]
 
 
 def untype_action(

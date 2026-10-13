@@ -8,3 +8,5 @@
 | `test-3.pddl` | 3    | 48    | 51            |
 
 Generated with `hanoi/hanoi-generator.py` from [PDDL generators](https://github.com/AI-Planning/pddl-generators).
+
+`l1.pddl` was learned from an instance with 3 pegs and 7 discs (10 objects), not from `train.pddl`.

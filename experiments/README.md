@@ -214,11 +214,15 @@ python experiments/validate_checkpoint.py --validator dias --model-id <run-id> -
 
 python experiments/validate_checkpoint.py --validator mlp --model-id <run-id> --problem pddl/satellite/test-1.pddl
 
-# L1 compares a learned PDDL domain produced outside this repository
-python experiments/validate_checkpoint.py --validator l1 --original-domain pddl/satellite/domain.pddl --learned-domain learned/satellite.pddl --problem pddl/satellite/test-1.pddl
+# L1 compares a learned PDDL domain produced outside this repository, such as the one committed per domain
+python experiments/validate_checkpoint.py --validator l1 --original-domain pddl/satellite/domain.pddl --learned-domain pddl/satellite/l1.pddl --problem pddl/satellite/test-1.pddl
 ```
 
 Its sampling defaults come from `experiments/configs/validation.yaml`, so it draws the same way the sweep does, and all three validators return the same payload. So does `injective`: a checkpoint's schema is scored with its parameters required distinct, as the model binds them (`--no-injective` scores it as learned, which is how the paper's numbers were produced). L1 is reachable only from here: it scores a domain another system produced, so there is no checkpoint and no `(domain, seed)` pair for `launch.py` to iterate over.
+
+Each `pddl/<domain>/l1.pddl` holds the action schemas L1 (Balyo et al., 2024) learned for the paper's comparison (its Table 17), from one random walk per domain. They are L1's output with two things respelled to match `domain.pddl`, which scores identically: equality, which L1 writes as the static `eq` or `equal` predicate its input domain had, is `=`, and the types are the domain's own (L1 types every parameter of an untyped domain `untyped`). The validator reads either spelling: a binary predicate named `eq` or `equal` that no action changes is `=` in both domains, and a learned parameter type the original declares neither as a type nor as a unary predicate is refused, since no problem would assert it. L1 learned from `train.pddl` in 11 domains, but in hanoi from a 7 disc instance and in spanner from a smaller one (6 spanners, 4 nuts, 8 locations), which were the training instances when its walks were sampled. Neither the walks nor those two instances are in the repository.
+
+TODO: check whether DIAS learns hanoi and spanner from L1's instances as well as from `train.pddl`.
 
 ## Reproducibility
 
