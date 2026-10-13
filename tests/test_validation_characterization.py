@@ -9,7 +9,8 @@ from pathlib import Path
 import torch
 
 from checkpoints import TEST_PROBLEM, build_model, domain_schema, save
-from dias.validation.dias import DiasValidator
+from dias.validation.checkpoint import load_run
+from dias.validation.dias import DiasValidator, read_learned_schemas
 from support import temp_dir
 
 torch.set_num_threads(1)
@@ -22,8 +23,8 @@ NUM_SAMPLES = 8
 SAMPLE_POPULATION = 20
 
 
-def build_checkpoint(directory: Path) -> str:
-    """Write a checkpoint whose only learned action is a correct `stack`."""
+def build_checkpoint(directory: Path, inequality: bool = True) -> str:
+    """Write a checkpoint whose only learned action is a correct `stack`, with or without its inequality."""
     schema = domain_schema()
     relation = {name: i for i, name in enumerate(schema.relation_names)}
     action = {name: i for i, name in enumerate(schema.action_names)}
@@ -53,7 +54,8 @@ def build_checkpoint(directory: Path) -> str:
         enable(preconditions, "clear", 0, 0, 1)
         enable(preconditions, "clear", 1, 1, 1)
         enable(preconditions, "on-table", 0, 0, 1)
-        enable(preconditions, "=", 0, 1, 2)
+        if inequality:
+            enable(preconditions, "=", 0, 1, 2)
         enable(effects, "on", 0, 1, 1)
         enable(effects, "clear", 1, 1, 2)
         enable(effects, "on-table", 0, 0, 2)
@@ -121,6 +123,52 @@ class ValidationCharacterizationTest(unittest.TestCase):
         drawn, result = run(None)
         self.assertIsInstance(drawn, int)
         self.assertEqual(run(drawn), (drawn, result))
+
+
+class InjectiveDecodingTest(unittest.TestCase):
+    def schemas(self, inequality: bool, injective: bool) -> dict:
+        directory = temp_dir(self)
+        model_id = build_checkpoint(directory, inequality=inequality)
+        run = load_run(model_id, str(directory))
+        transpiler = read_learned_schemas(run, True, 0.5, injective=injective)
+        return {schema.name: schema for schema in transpiler.action_schemas}
+
+    def test_injective_decoding_writes_the_inequality_the_model_assumes(self):
+        stack = self.schemas(inequality=False, injective=True)["stack"]
+        self.assertIn("(not (eq ?x0 ?x1))", [str(atom) for atom in stack.preconditions])
+        plain = self.schemas(inequality=False, injective=False)["stack"]
+        self.assertNotIn("eq", " ".join(str(atom) for atom in plain.preconditions))
+
+    def test_an_inequality_already_learned_is_not_repeated(self):
+        stack = self.schemas(inequality=True, injective=True)["stack"]
+        written = [
+            str(atom) for atom in stack.preconditions if atom.predicate_name == "eq"
+        ]
+        self.assertEqual(written, ["(not (eq ?x0 ?x1))"])
+
+    def score_stack(self, injective: bool) -> dict:
+        directory = temp_dir(self)
+        model_id = build_checkpoint(directory, inequality=False)
+        validation = DiasValidator(
+            model_id,
+            str(directory),
+            problem_path=str(TEST_PROBLEM),
+            injective=injective,
+        )
+        validation.setup(
+            num_samples=NUM_SAMPLES,
+            sample_population=SAMPLE_POPULATION,
+            seed=SAMPLE_SEED,
+        )
+        return validation.validate()["action_stats"]["stack"]
+
+    def test_a_repeated_object_is_excluded_on_the_test_problem(self):
+        """Without the inequality, stack(b, b) applies wherever b is clear on the table and puts it on itself; the distinctness written at decoding is what keeps it out, which takes the reflexive facts in the merged problem."""
+        self.assertGreater(self.score_stack(injective=False)["fp"], 0)
+        self.assertEqual(
+            self.score_stack(injective=True),
+            {"tp": 54, "fp": 0, "fn": 0, "conflicts": 0},
+        )
 
 
 if __name__ == "__main__":

@@ -111,6 +111,37 @@ class MlpEffectsTest(unittest.TestCase):
             SAMPLE_SEED,
         )
 
+    def learned_groundings(self, injective: bool) -> list[tuple[int, ...]]:
+        # Every slot on, so the actions have parameters to repeat; the untrained preconditions decode to none.
+        directory = temp_dir(self)
+        model, hparams = build_model(state_dependent_effects=True)
+        with torch.no_grad():
+            model.predictor.selector.slot_weight_logits.fill_(10.0)
+        validation = MlpEffectsValidator(
+            save(directory, model, hparams),
+            str(directory),
+            problem_path=str(TEST_PROBLEM),
+            injective=injective,
+        )
+        validation.setup(
+            num_samples=NUM_SAMPLES,
+            sample_population=SAMPLE_POPULATION,
+            seed=SAMPLE_SEED,
+        )
+        return [
+            tuple(o.get_index() for o in ground_action.get_objects())
+            for _, learned_state in validation.state_pairs
+            for ground_action in learned_state.generate_applicable_actions()
+        ]
+
+    def test_injective_groundings_never_repeat_an_object(self):
+        """The planted schema requires nothing, so repeats are applicable unless the distinctness holds, which needs the equality facts to survive the rebuilt state."""
+        repeats = lambda groundings: [g for g in groundings if len(set(g)) < len(g)]
+        self.assertTrue(repeats(self.learned_groundings(injective=False)))
+        injective = self.learned_groundings(injective=True)
+        self.assertTrue(any(len(g) > 1 for g in injective))
+        self.assertEqual(repeats(injective), [])
+
     def test_a_static_effects_checkpoint_is_refused(self):
         directory = temp_dir(self)
         model, hparams = build_model()

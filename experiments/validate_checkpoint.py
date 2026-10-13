@@ -60,6 +60,7 @@ def _construction_kwargs(args: argparse.Namespace) -> dict:
         )
     if args.validator == "mlp":
         kwargs |= {"num_workers": args.num_workers, "batch_size": args.batch_size}
+    kwargs["injective"] = args.injective
     return kwargs
 
 
@@ -99,6 +100,12 @@ def main() -> int:
         type=float,
         default=0.5,
         help="Binarization threshold for the learned schema (dias only). Default 0.5, what the paper reports.",
+    )
+    p.add_argument(
+        "--injective",
+        action=argparse.BooleanOptionalAction,
+        default=bool(defaults.get("injective", True)),
+        help="Require a learned schema's parameters to be distinct (dias and mlp). Default from validation.yaml.",
     )
     p.add_argument("--num-workers", type=int, default=1, help="mlp only.")
     p.add_argument("--batch-size", type=int, default=4096, help="mlp only.")

@@ -242,7 +242,8 @@ def learned_counts(
 
     run = load_run(run_id, str(log_dir))
     has_equality = pddl_text.domain_uses_equality(Path(run.domain_path).read_text())
-    transpiler = read_learned_schemas(run, has_equality, threshold)
+    # As learned: the distinctness a validator adds would count as learned equalities.
+    transpiler = read_learned_schemas(run, has_equality, threshold, injective=False)
     # read_learned_schemas renames the "=" channel, so the static map must use the same name.
     statics = {
         EQUALITY_PREDICATE if name == "=" else name for name in pymimir_statics(domain)

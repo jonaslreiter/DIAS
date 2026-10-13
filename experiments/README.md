@@ -197,7 +197,7 @@ A static predicate is one that occurs in no action's effect, which is also what 
 
 Learned columns are per-seed means and ground-truth columns count each action's schema once, which is the unit the two are comparable on. Atoms are counted after de-duplication, as distinct lifted atoms, with `(not (p ...))` as one atom, and type-derived unary predicates left out of the ground-truth counts, since a `?t - truck` in `:parameters` is not a precondition. DIAS does get a channel for those (pymimir materialises them, and `include_statics` defaults to true), which is what the `stat1` column measures.
 
-Schemas are read through `dias.validation.dias.read_learned_schemas`, the same function `DiasValidator` uses, so the atoms counted here are the ones a validator would score. `--threshold` defaults to 0.5, what `launch.py` uses for `--experiment-type dias`; a noise experiment wants `--threshold 0.75`.
+Schemas are read through `dias.validation.dias.read_learned_schemas`, the same function `DiasValidator` uses, so the atoms counted here are the ones a validator would score, less the parameter distinctness a validator writes in (counted, it would read as learned equalities). `--threshold` defaults to 0.5, what `launch.py` uses for `--experiment-type dias`; a noise experiment wants `--threshold 0.75`.
 
 ## Instance-size scaling
 
@@ -216,7 +216,7 @@ python experiments/validate_checkpoint.py --validator mlp --model-id <run-id> --
 python experiments/validate_checkpoint.py --validator l1 --original-domain pddl/satellite/domain.pddl --learned-domain learned/satellite.pddl --problem pddl/satellite/test-1.pddl
 ```
 
-Its sampling defaults come from `experiments/configs/validation.yaml`, so it draws the same way the sweep does, and all three validators return the same payload. L1 is reachable only from here: it scores a domain another system produced, so there is no checkpoint and no `(domain, seed)` pair for `launch.py` to iterate over.
+Its sampling defaults come from `experiments/configs/validation.yaml`, so it draws the same way the sweep does, and all three validators return the same payload. So does `injective`: a checkpoint's schema is scored with its parameters required distinct, as the model binds them (`--no-injective` scores it as learned, which is how the paper's numbers were produced). L1 is reachable only from here: it scores a domain another system produced, so there is no checkpoint and no `(domain, seed)` pair for `launch.py` to iterate over.
 
 ## Reproducibility
 

@@ -119,6 +119,7 @@ class ResumeTest(unittest.TestCase):
                 {
                     "sample_seed": 3449441584,
                     "threshold": 0.5,
+                    "injective": True,
                     "per_problem": per_problem,
                     **fields,
                 }
@@ -146,6 +147,20 @@ class ResumeTest(unittest.TestCase):
     def test_results_recording_another_checkpoint_are_refused(self):
         self.write_partial(checkpoint="/elsewhere/best.ckpt", checkpoint_mtime=1.0)
         with self.assertRaises(SystemExit):
+            self.validate()
+
+    def test_results_decoded_otherwise_are_refused(self):
+        """Requiring distinct parameters changes the schema scored, so the problems left must not be scored under the other reading."""
+        self.write_partial(injective=False)
+        with self.assertRaisesRegex(SystemExit, "injective"):
+            self.validate()
+
+    def test_results_from_before_the_injective_key_were_decoded_as_learned(self):
+        self.write_partial()
+        payload = json.loads(self.result.read_text())
+        del payload["injective"]
+        self.result.write_text(json.dumps(payload))
+        with self.assertRaisesRegex(SystemExit, "injective False"):
             self.validate()
 
     def test_without_resume_every_problem_is_scored(self):

@@ -73,7 +73,9 @@ class MlpEffectsValidator:
         batch_size: int = 65536,
         num_workers: int = 1,
         states_per_worker: int = 4,
+        injective: bool = True,
     ):
+        """With `injective`, every learned action also requires its parameters to be distinct, as `read_learned_schemas` writes them for a DIAS checkpoint."""
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.states_per_worker = states_per_worker
@@ -159,13 +161,19 @@ class MlpEffectsValidator:
             action_names=list(self.schema.action_names),
         )
         pddl_transpiler.generate_action_schemas()
+        if injective:
+            pddl_transpiler.require_distinct(
+                EQUALITY_PREDICATE, self.active_slot_indices
+            )
 
         num_learned_actions = len(pddl_transpiler.action_schemas)
         for schema in pddl_transpiler.action_schemas:
             schema.name = f"{LEARNED_ACTION_PREFIX}{schema.name}"
 
-        # With every learned :effect empty, pymimir would classify all predicates as static and transfer_state would drop the source state's fluent atoms. One never-applicable action with effects on all of them keeps them fluent.
-        pddl_transpiler.add_unreachable_action()
+        # With every learned :effect empty, pymimir would classify all predicates as static and transfer_state would drop the source state's fluent atoms. One never-applicable action with effects on all of them keeps them fluent, except the equality predicate: a state is rebuilt from atoms that spell it `=`, so only as a static does it keep its facts from :init.
+        pddl_transpiler.add_unreachable_action(
+            static_predicate_names=(EQUALITY_PREDICATE,)
+        )
 
         # The learned-only domain.
         header = extract_domain_header(
@@ -197,7 +205,9 @@ class MlpEffectsValidator:
             strip_problem_types(
                 Path(problem_path).read_text(),
                 original_domain_text,
-                equality_predicate_name=(EQUALITY_PREDICATE if has_equality else None),
+                equality_predicate_name=(
+                    EQUALITY_PREDICATE if has_equality or injective else None
+                ),
             ),
         )
 

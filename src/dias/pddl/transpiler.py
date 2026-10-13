@@ -104,14 +104,48 @@ class PDDLTranspiler:
         ]
         return self.action_schemas
 
+    def require_distinct(
+        self, predicate_name: str, parameters: list[list[int]] | None = None
+    ) -> None:
+        """Require every two parameters of each schema to be bound to different objects, through `predicate_name`, the reflexive predicate `=` is compiled to, which is declared if the tensors had no channel for it.
+
+        `parameters` lists each schema's parameter slots where they are more than the slots its atoms mention. A distinctness a schema already requires, in either order, is not written again.
+        """
+        if predicate_name not in self.predicate_names:
+            self.predicate_names.append(predicate_name)
+            self.predicate_arities.append(2)
+            self.num_predicates += 1
+        for a, schema in enumerate(self.action_schemas):
+            slots = (
+                sorted(
+                    {
+                        i
+                        for atom in schema.preconditions + schema.effects
+                        for i in atom.slots
+                    }
+                )
+                if parameters is None
+                else parameters[a]
+            )
+            for k, x in enumerate(slots):
+                for y in slots[k + 1 :]:
+                    distinct = LiftedAtom(predicate_name, 2, [x, y], False)
+                    if (
+                        distinct not in schema.preconditions
+                        and LiftedAtom(predicate_name, 2, [y, x], False)
+                        not in schema.preconditions
+                    ):
+                        schema.preconditions.append(distinct)
+
     def add_unreachable_action(
         self,
         action_name: str = "dummy_action_unreachable",
         guard_predicate_name: str = "dummy_guard",
+        static_predicate_names: tuple[str, ...] = (),
     ) -> ActionSchema:
         """Append an action that mentions every predicate but can never fire, which is what keeps every predicate fluent for pymimir.
 
-        A nullary guard nothing produces makes it unreachable, without the contradictory preconditions some PDDL compilers optimise away.
+        A nullary guard nothing produces makes it unreachable, without the contradictory preconditions some PDDL compilers optimise away. `static_predicate_names` are left out, so they stay static and a state rebuilt on the problem keeps their atoms from its ``:init``.
         """
         self.predicate_names.append(guard_predicate_name)
         self.predicate_arities.append(0)
@@ -123,6 +157,7 @@ class PDDLTranspiler:
             effects=[
                 LiftedAtom(name, arity, list(range(arity)), True)
                 for name, arity in zip(self.predicate_names, self.predicate_arities)
+                if name not in static_predicate_names
             ],
         )
         self.action_schemas.append(schema)

@@ -117,6 +117,52 @@ class TranspilerTest(unittest.TestCase):
         self.assertEqual(names, ["ready"])
         self.assertEqual(arities, [1])
 
+    def test_distinct_parameters_are_required_once_and_declared(self):
+        on = np.zeros((1, 2, 3, 3), dtype=np.int64)
+        on[0, 0, 0, 1] = 1
+        pre = np.zeros_like(on)
+        pre[0, 1, 1, 0] = 1  # (not (eq ?x1 ?x0)), already learned
+        transpiler = PDDLTranspiler(
+            on, np.zeros_like(on), np.zeros_like(on), pre, ["on", "eq"], [2, 2], ["a"]
+        )
+        transpiler.generate_action_schemas()
+        transpiler.require_distinct("eq")
+        self.assertEqual(
+            [str(atom) for atom in transpiler.action_schemas[0].preconditions],
+            ["(not (eq ?x1 ?x0))"],
+        )
+        self.assertEqual(transpiler.predicate_names, ["on", "eq"])
+
+    def test_distinct_parameters_cover_named_slots_and_declare_the_predicate(self):
+        empty = np.zeros((1, 1, 3, 3), dtype=np.int64)
+        transpiler = PDDLTranspiler(
+            empty, empty.copy(), empty.copy(), empty.copy(), ["on"], [2], ["a"]
+        )
+        transpiler.generate_action_schemas()
+        transpiler.require_distinct("eq", [[0, 2]])
+        self.assertEqual(
+            [str(atom) for atom in transpiler.action_schemas[0].preconditions],
+            ["(not (eq ?x0 ?x2))"],
+        )
+        self.assertEqual(transpiler.predicate_names, ["on", "eq"])
+        self.assertEqual(transpiler.predicate_arities, [2, 2])
+
+    def test_a_static_predicate_stays_out_of_the_unreachable_action(self):
+        valid = np.zeros((1, 2, 1, 1), dtype=np.int64)
+        transpiler = PDDLTranspiler(
+            valid,
+            valid.copy(),
+            valid.copy(),
+            valid.copy(),
+            ["ready", "eq"],
+            [1, 2],
+            ["go"],
+        )
+        schema = transpiler.add_unreachable_action(static_predicate_names=("eq",))
+        self.assertEqual(
+            [str(atom) for atom in schema.effects], ["(ready ?x0)", "(dummy_guard)"]
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

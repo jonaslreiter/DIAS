@@ -31,10 +31,14 @@ from .successors import (
 logger = logging.getLogger(__name__)
 
 
-def read_learned_schemas(run, has_equality: bool, threshold: float) -> PDDLTranspiler:
+def read_learned_schemas(
+    run, has_equality: bool, threshold: float, injective: bool = True
+) -> PDDLTranspiler:
     """Binarize a trained run's logits into action schemas.
 
     Returns the transpiler, which also carries the predicate names and arities a generated domain must declare. This is the one path from a checkpoint to lifted schemas: `DiasValidator` merges what it returns into the original domain, and an analysis script reads the same schemas without building a validator.
+
+    With `injective`, every schema also requires its parameters to be distinct, written with `EQUALITY_PREDICATE`, which the transpiler then declares and a validator must give its reflexive facts. That is how the model binds them: it is trained on injective bindings only, so nothing it learns says what a binding that repeats an object does, while in PDDL such a binding is applicable unless a precondition rules it out. No domain in `pddl/` has an applicable grounding that repeats an object, so this never removes a successor a correct schema has. Off, the schema is read as learned, which is what a count of its literals wants.
     """
     hparams = run.datamodule_hparams
     logits = run.model.schema_logits()
@@ -97,13 +101,18 @@ def read_learned_schemas(run, has_equality: bool, threshold: float) -> PDDLTrans
         action_names=list(run.schema.action_names),
     )
     transpiler.generate_action_schemas()
+    if injective:
+        transpiler.require_distinct(EQUALITY_PREDICATE)
     return transpiler
 
 
 class DiasValidator:
-    def __init__(self, model_id, logs_path, problem_path=None, threshold=0.5):
+    def __init__(
+        self, model_id, logs_path, problem_path=None, threshold=0.5, injective=True
+    ):
         self.model_id = model_id
         self.threshold = threshold
+        self.injective = injective
 
         run = load_run(model_id, logs_path)
         self.schema = run.schema
@@ -123,7 +132,10 @@ class DiasValidator:
             strip_problem_types(
                 Path(problem_path).read_text(),
                 domain_text,
-                equality_predicate_name=EQUALITY_PREDICATE if has_equality else None,
+                # The distinctness `injective` writes needs the reflexive facts whether or not the domain has :equality.
+                equality_predicate_name=(
+                    EQUALITY_PREDICATE if has_equality or injective else None
+                ),
             ),
         )
 
@@ -139,7 +151,9 @@ class DiasValidator:
 
     def _read_learned_schemas(self, run, has_equality: bool, threshold: float):
         """The learned schemas under the prefix that tells them apart from the originals in the merged domain."""
-        transpiler = read_learned_schemas(run, has_equality, threshold)
+        transpiler = read_learned_schemas(
+            run, has_equality, threshold, injective=self.injective
+        )
         for schema in transpiler.action_schemas:
             schema.name = f"{LEARNED_ACTION_PREFIX}{schema.name}"
         logger.info(
