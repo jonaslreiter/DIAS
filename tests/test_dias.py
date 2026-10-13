@@ -148,6 +148,36 @@ class DIASModelTest(unittest.TestCase):
         self.assertTrue(torch.isfinite(test_loss))
         self.assertEqual(model.log_results.call_count, 2)
 
+    def test_the_rejection_loss_trains_the_preconditions_through_a_step(self):
+        model = self.make_model(
+            successor_relations=False,
+            precondition_loss="reject",
+            rejection_samples=4,
+        )
+        batch = (*make_batch(changed=True), torch.tensor([0]))
+        batch_state, batch_next_state, _ = batch
+        admitted = model.admitted(
+            batch_state, model.dense(batch_state), model.dense(batch_next_state)
+        )
+        self.assertEqual(
+            admitted.shape, (2, 1)
+        )  # the state and its successor, one action
+        losses = model.step(batch)
+        self.assertIn("precondition_admitted", losses.logged(model.aux_loss_alpha))
+        losses.auxiliary.backward()
+        self.assertGreater(
+            model.predictor.preconditions.logits.grad.abs().sum().item(), 0.0
+        )
+
+    def test_the_restrictive_loss_samples_no_ground_actions(self):
+        model = self.make_model()
+        batch_state, batch_next_state = make_batch()
+        self.assertIsNone(
+            model.admitted(
+                batch_state, model.dense(batch_state), model.dense(batch_next_state)
+            )
+        )
+
     def test_retarget_accepts_a_bigger_instance_and_refuses_a_smaller_one(self):
         """A lifted schema transfers; the recorded instance size does not."""
         model = self.make_model(num_objects=4, num_slots=2, action_arities=[2])

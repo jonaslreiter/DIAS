@@ -96,8 +96,10 @@ CURRENT_HPARAMS = {
     "precondition_tau": to_mapping(
         Exponential(start=1.0, floor=0.0, factor=0.1, every=500)
     ),
-    # Added later, so an unversioned checkpoint gets the constructor default.
+    # Added later, so an unversioned checkpoint gets the constructor defaults.
     "encoder_hidden_dims": None,
+    "precondition_loss": "restrict",
+    "rejection_samples": 16,
 }
 
 

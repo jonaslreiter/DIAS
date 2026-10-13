@@ -10,6 +10,8 @@ import torch.nn.functional as F
 
 from .outputs import SchemaPrediction
 
+PRECONDITION_LOSSES = ("restrict", "reject")
+
 
 @dataclass(frozen=True)
 class Losses:
@@ -27,12 +29,15 @@ class Losses:
     precondition_satisfaction: torch.Tensor
     precondition_product: torch.Tensor
 
+    precondition_admitted: torch.Tensor | None = None
+    """Mean fraction of the sampled ground actions the preconditions admit. Only the rejection loss samples them."""
+
     def total(self, alpha: float) -> torch.Tensor:
         return self.adjacency + alpha * self.auxiliary
 
     def logged(self, alpha: float) -> dict[str, torch.Tensor]:
         """What one step reports, under the names a run's history uses."""
-        return {
+        logged = {
             "loss": self.total(alpha).detach(),
             "loss_adjacency": self.adjacency.detach(),
             "loss_aux": self.auxiliary.detach(),
@@ -40,12 +45,17 @@ class Losses:
             "precondition_satisfaction": self.precondition_satisfaction,
             "precondition_product": self.precondition_product,
         }
+        if self.precondition_admitted is not None:
+            logged["precondition_admitted"] = self.precondition_admitted
+        return logged
 
 
 class DiasObjective:
     """Reproduce the observed successor state, with two nudges toward simplicity.
 
-    `L_adj` is a cross-entropy over every cell of the predicted successor. `L_eff` asks the schema to ignore every effect it can and `L_pre` every precondition it can, which stops it explaining a transition with a schema that fires everywhere else. The two are returned beside `L_adj`, never summed with it: that is `pcgrad`'s decision.
+    `L_adj` is a cross-entropy over every cell of the predicted successor. `L_eff` asks the schema to ignore every effect it can and `L_pre` to restrict every precondition it can, which stops it explaining a transition with a schema that fires everywhere else. The two are returned beside `L_adj`, never summed with it: that is `pcgrad`'s decision.
+
+    `L_pre` comes in two forms. `restrict`, the paper's, asks every precondition cell to require or forbid its atom. `reject` asks the preconditions to reject as many uniformly sampled ground actions of the batch's states as they can (see `rejection.py`), and needs their satisfaction passed in as `admitted`.
     """
 
     # Clamp off 0 and 1: the cross-entropy gradient is unbounded at both ends.
@@ -57,17 +67,29 @@ class DiasObjective:
         num_slots: int,
         use_effect_loss: bool = True,
         use_precondition_loss: bool = True,
+        precondition_loss: str = "restrict",
     ):
+        if precondition_loss not in PRECONDITION_LOSSES:
+            raise ValueError(
+                f"precondition_loss must be one of {PRECONDITION_LOSSES}, not {precondition_loss!r}"
+            )
         # One schema cell per slot tuple a relation of that arity ranges over.
         self.schema_cells = int(sum(num_slots**arity for arity in relation_arities))
         self.use_effect_loss = use_effect_loss
         self.use_precondition_loss = use_precondition_loss
+        self.precondition_loss = precondition_loss
+
+    @property
+    def rejects(self) -> bool:
+        """Whether `L_pre` is the rejection loss, and so needs `admitted`."""
+        return self.use_precondition_loss and self.precondition_loss == "reject"
 
     def __call__(
         self,
         prediction: SchemaPrediction,
         target: torch.Tensor,
         slot_weights: torch.Tensor,
+        admitted: torch.Tensor | None = None,
     ) -> Losses:
         predicted = prediction.adjacency
         # In half precision a sum over every cell of every relation loses too much.
@@ -81,7 +103,7 @@ class DiasObjective:
                 )
                 / normalizer
             )
-            auxiliary = self._auxiliary(prediction, slot_weights) / normalizer
+            auxiliary = self._auxiliary(prediction, slot_weights, admitted) / normalizer
 
         return Losses(
             adjacency=adjacency,
@@ -89,10 +111,16 @@ class DiasObjective:
             hamming_distance=((predicted > 0.5) ^ (target > 0.5)).sum(),
             precondition_satisfaction=prediction.precondition_satisfaction.mean().detach(),
             precondition_product=prediction.precondition_product.mean(),
+            precondition_admitted=(
+                None if admitted is None else admitted.mean().detach()
+            ),
         )
 
     def _auxiliary(
-        self, prediction: SchemaPrediction, slot_weights: torch.Tensor
+        self,
+        prediction: SchemaPrediction,
+        slot_weights: torch.Tensor,
+        admitted: torch.Tensor | None,
     ) -> torch.Tensor:
         """`L_eff + L_pre`, either of which can be ablated away."""
         ignore_effects = prediction.effects.ignore
@@ -100,7 +128,15 @@ class DiasObjective:
         terms = torch.zeros((), device=ignore_effects.device, dtype=torch.float32)
         if self.use_effect_loss:
             terms = terms + _cross_entropy_against_one(ignore_effects)
-        if self.use_precondition_loss:
+        if self.rejects:
+            if admitted is None:
+                raise ValueError(
+                    "The rejection loss needs `admitted`, the satisfaction of sampled ground actions."
+                )
+            # Counted as the schema cells of the restrictive term it replaces, which is what the normalizer counts, so alpha weighs the two alike.
+            batch = prediction.adjacency.size(0)
+            terms = terms + admitted.float().mean() * self.schema_cells * batch
+        elif self.use_precondition_loss:
             # Weighting by slot weights makes an unrestrictive precondition as costly as an active slot, so the two cannot be traded off.
             weight_pairs = (
                 slot_weights[:, None, :, None] * slot_weights[:, None, None, :]

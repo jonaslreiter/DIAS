@@ -91,6 +91,29 @@ class SlotWeightsTest(unittest.TestCase):
         self.assertLess(weights[0, 1].item(), 0.5)
         self.assertLess(weights[0, 2].item(), 0.5)
 
+    def test_every_actions_weights_are_the_ones_its_samples_see(self):
+        """What the rejection loss grounds with: an action's row agrees with the weights of its samples, named arguments included."""
+        selector = self.selector(force_action_args=True)
+        with torch.no_grad():
+            selector.slot_weight_logits.copy_(
+                torch.tensor([[2.0, -2.0, 0.0], [-1.0, 1.0, -3.0]])
+            )
+        y_action, y_action_args = torch.tensor([1, 1]), torch.tensor([[-1, 0], [-1, 2]])
+        every_action = selector.action_slot_weights(y_action, y_action_args)
+        torch.testing.assert_close(
+            every_action[1], selector.slot_weights(y_action, y_action_args)[0]
+        )
+        torch.testing.assert_close(
+            every_action[0], torch.sigmoid(torch.tensor([2.0, -2.0, 0.0]))
+        )
+
+    def test_per_action_slots_weigh_the_slots_an_action_has_fully(self):
+        selector = self.selector(per_action_slots=True, action_arities=[1, 3])
+        weights = selector.action_slot_weights(torch.tensor([0]))
+        self.assertTrue(
+            torch.equal(weights, torch.tensor([[1.0, 0.0, 0.0], [1.0, 1.0, 1.0]]))
+        )
+
 
 class AppliedSlotWeightLogitsTest(unittest.TestCase):
     """The logits a schema is read off must say what `forward` does, not what the parameter holds."""

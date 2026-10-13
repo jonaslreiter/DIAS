@@ -151,6 +151,25 @@ class SlotSelector(nn.Module):
                 weights = torch.where(forced, torch.ones_like(weights), weights)
         return weights
 
+    def action_slot_weights(
+        self, y_action: torch.Tensor, y_action_args: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        """``(A, k)``: how strongly each slot of every action enters its schema's projection, as `forward` weights it. An action's slot that a label of the batch names keeps its full weight, since argument positions are observed per action."""
+        if self.per_action_slots:
+            return (~self.unused_slots()).float()
+        if not self.use_slot_weights:
+            return torch.ones_like(self.slot_weight_logits)
+
+        weights = torch.sigmoid(self.slot_weight_logits)
+        if self.force_action_args and y_action_args is not None:
+            named = (y_action_args >= 0).float()
+            if named.shape[1] < weights.shape[1]:
+                named = F.pad(named, (0, weights.shape[1] - named.shape[1]))
+            named = named[:, : weights.shape[1]]
+            forced = torch.zeros_like(weights).index_add_(0, y_action, named) > 0
+            weights = torch.where(forced, torch.ones_like(weights), weights)
+        return weights
+
     def applied_slot_weight_logits(self) -> torch.Tensor:
         """``(A, k)`` logits of the weight `forward` gives each slot of every action, which is what a schema is read off. A slot the model always uses at full weight has an infinite logit, so that it decodes as active at any threshold: every slot when the weights are not learned, and every slot within the action's arity under per-action slots, whose stored logits the forward pass never consults."""
         if self.use_slot_weights and not self.per_action_slots:
