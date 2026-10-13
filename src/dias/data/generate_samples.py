@@ -53,15 +53,26 @@ def _groundings_by_action(actions):
     return groundings
 
 
+def _require_injective(groundings_by_action: dict) -> None:
+    """Refuse a state in which an action applies with one object in two parameters. The model binds injectively and validation requires distinct parameters, so such a domain is outside what DIAS learns; no domain in pddl/ has one."""
+    for name, groundings in groundings_by_action.items():
+        for objects in groundings:
+            if len(set(objects)) < len(objects):
+                raise ValueError(
+                    f"{name}{objects} binds one object to two parameters, but DIAS assumes injective bindings. A domain whose actions apply that way needs (not (= ?a ?b)) preconditions to be learned here."
+                )
+
+
 def _make_sample(state, ground_action, successor, include_statics):
+    # The executed action is one of the applicable ones, so checking those covers it.
+    applicable = _groundings_by_action(state.generate_applicable_actions())
+    _require_injective(applicable)
     return {
         "state": state_to_groundings(state, include_statics),
         "action": ground_action.get_action().get_name(),
         "action_args": [o.get_index() for o in ground_action.get_objects()],
         "next_state": state_to_groundings(successor, include_statics),
-        "applicable_actions": _groundings_by_action(
-            state.generate_applicable_actions()
-        ),
+        "applicable_actions": applicable,
     }
 
 

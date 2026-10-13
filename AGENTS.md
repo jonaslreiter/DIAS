@@ -12,7 +12,7 @@ The setting, which code changes should preserve unless a task says otherwise:
 - States are symbolic PDDL states over **unary and binary predicates only**, fully observed.
 - Action labels are full STRIPS actions, STRIPS+ actions, or names only, depending on the experiment.
 - The output is, per action schema, lifted positive and negative preconditions and lifted add and delete effects.
-- Action binding is assumed injective, and the domain's predicates are known.
+- Action binding is assumed injective, and the domain's predicates are known. Sampling refuses a state in which an action applies with one object in two parameters (`generate_samples._require_injective`); no domain in `pddl/` has one, and validation requires distinct parameters accordingly.
 - Objects are embedded by a relational GNN; slot queries plus a Sinkhorn-style rectangular assignment bind objects to schema parameters; slot activations give the learned arity.
 - Auxiliary losses push toward minimal effects and restrictive preconditions, and PCGrad keeps them from overriding the prediction objective.
 - Evaluation is **behavioural**: does the learned domain generate the same successor states as the real one, on held-out problems.

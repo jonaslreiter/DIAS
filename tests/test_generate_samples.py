@@ -191,6 +191,25 @@ class SampleGenerationTest(unittest.TestCase):
         self.assertEqual(len(samples), 1)
         self.assertEqual(samples[0]["action"], "go")
 
+    def test_an_action_applicable_to_one_object_twice_is_refused(self):
+        """Even when the walk does not take it: the model could not learn the domain either way."""
+        action = FakeAction("move", 2)
+        predicate = FakePredicate("ready", 1)
+        a, b = FakeObject(0, "a"), FakeObject(1, "b")
+        terminal = FakeState(1, [FakeAtom(predicate, [0])])
+        initial = FakeState(0, [FakeAtom(predicate, [0])])
+        initial.actions = [
+            FakeGroundAction(action, [a, b], terminal),
+            FakeGroundAction(action, [a, a], initial),
+        ]
+        problem = FakeProblem(
+            FakeDomain("demo", [predicate], [action]), initial, [a, b]
+        )
+        with self.assertRaisesRegex(ValueError, "injective"):
+            generate_random_walk(problem, min_total_samples=1, max_steps=3)
+        with self.assertRaisesRegex(ValueError, "injective"):
+            generate_bfs(problem, num_states=2)
+
     def test_samples_to_tensors_encodes_unary_binary_and_actions(self):
         metadata = {
             "predicates": [
