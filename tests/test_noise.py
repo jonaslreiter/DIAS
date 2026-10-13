@@ -86,19 +86,20 @@ class ExpectedCountNoiseTest(unittest.TestCase):
         self.assertGreater(removed, 0.0)
         self.assertLess(removed, 4 * len(states))
 
-    def test_a_static_relation_is_left_alone_unless_asked_for(self):
+    def test_a_static_relation_shares_the_budget_unless_left_out(self):
+        """The paper's runs noised the statics too, so that is the default."""
         states = self.pool()
         measured = stats(states, is_fluent=(True, False))
+        touched = ExpectedCount(20.0, 20.0).corrupt(
+            states, measured, torch.Generator().manual_seed(5)
+        )
+        self.assertFalse(torch.equal(touched[:, 1], states[:, 1]))
+
         untouched = ExpectedCount(20.0, 20.0, fluents_only=True).corrupt(
             states, measured, torch.Generator().manual_seed(5)
         )
         self.assertTrue(torch.equal(untouched[:, 1], states[:, 1]))
         self.assertFalse(torch.equal(untouched[:, 0], states[:, 0]))
-
-        touched = ExpectedCount(20.0, 20.0, fluents_only=False).corrupt(
-            states, measured, torch.Generator().manual_seed(5)
-        )
-        self.assertFalse(torch.equal(touched[:, 1], states[:, 1]))
 
     def test_a_budget_larger_than_the_state_flips_everything_once(self):
         """Positions are drawn without replacement, so nothing flips twice."""

@@ -100,11 +100,13 @@ class ExpectedCount:
     """Spend a Poisson budget of atom flips across the relations.
 
     Each relation's share is proportional to ``min(num_true, num_false)``, so the ones closest to an even split carry most of the noise. Being per tensor rather than per cell, the corruption does not grow with the instance.
+
+    Static relations share the budget, as they did in the paper's runs. `fluents_only` leaves them clean and spends the whole budget on the fluents instead, which at the same counts is between 2 and 25 times more noise on what the effects have to explain, depending on the domain.
     """
 
     removed_atoms: float = 0.0
     added_atoms: float = 0.0
-    fluents_only: bool = True
+    fluents_only: bool = False
 
     def __post_init__(self):
         if self.removed_atoms < 0.0 or self.added_atoms < 0.0:

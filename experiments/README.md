@@ -72,7 +72,7 @@ python experiments/launch.py --backend local --domains gripper --num-runs 1 --ex
 
 ### Noise levels
 
-`--experiment-type noise` brings the paper's noise setup (Appendix A.4.2): expected-count input noise, per-action minima floored at 200/100, batch size 50, a floor of 0.1 on τ, and validation at threshold 0.75. Override the atom budgets to move along the noise axis:
+`--experiment-type noise` brings the paper's noise setup (Appendix A.4.2): expected-count input noise, per-action minima floored at 200/100, batch size 50, a floor of 0.1 on τ, and validation at threshold 0.75. The atom budgets are per state and both states of a transition are corrupted, so a transition sees `2 × (removed_atoms + added_atoms)` flips in expectation: the overlay's 1/1 is the paper's 4 flips, and Table 2's 1, 2, 4 and 8 flips are budgets of 0.25, 0.5, 1 and 2 each. Override the budgets to move along the noise axis (this one is 8 flips):
 
 ```bash
 python experiments/launch.py --experiment-type noise --experiment noise-a2r2 --set data.init_args.noise.added_atoms=2 --set data.init_args.noise.removed_atoms=2
@@ -86,11 +86,13 @@ noise:
   class_path: dias.data.noise.Ratio
   init_args: { remove: 0.1, add: 0.1 }
 
-# a Poisson flip budget per adjacency tensor, statics untouched
+# a Poisson flip budget per adjacency tensor, shared by static and fluent relations as in the paper
 noise:
   class_path: dias.data.noise.ExpectedCount
-  init_args: { removed_atoms: 2.0, added_atoms: 2.0, fluents_only: true }
+  init_args: { removed_atoms: 2.0, added_atoms: 2.0 }
 ```
+
+`fluents_only: true` keeps the static relations clean and spends the whole budget on the fluents, which at the same budget is several times the noise on what the effects have to explain (statics take 47% to 96% of the flips on the paper's domains), so its results are not comparable to the paper's columns.
 
 ## Ablations
 
