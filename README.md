@@ -16,11 +16,11 @@ Ten thousand steps on Blocksworld's five-block training instance, given only `(s
     (clear ?bm)                    (clear ?x1)
     (clear ?bt)                    (clear ?x2)
     (on    ?bm ?bf)                (on    ?x1 ?x4)
-    (not (eq ?bm ?bt))             (not (eq ?x1 ?x2))
-    (not (eq ?bm ?bf))             (not (eq ?x1 ?x4))
-    (not (eq ?bf ?bt)))            (not (eq ?x4 ?x2))
+    (not (= ?bm ?bt))              (not (= ?x1 ?x2))
+    (not (= ?bm ?bf))              (not (= ?x1 ?x4))
+    (not (= ?bf ?bt)))             (not (= ?x4 ?x2))
                                    ... and 16 redundant literals, such
-                                   as (eq ?x1 ?x1), that hold wherever
+                                   as (= ?x1 ?x1), that hold wherever
                                    those six do)
   :effect (and                   :effect (and
     (on    ?bm ?bt)                (on    ?x1 ?x2)

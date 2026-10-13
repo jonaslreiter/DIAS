@@ -48,12 +48,12 @@ def build_checkpoint(directory: Path) -> str:
             tensor[stack, relation[name], row, column, channel] = ON
 
         # stack(?bm=slot0, ?bt=slot1):
-        # pre  (clear ?bm) (clear ?bt) (on-table ?bm) (not (eq ?bm ?bt))
+        # pre  (clear ?bm) (clear ?bt) (on-table ?bm) (not (= ?bm ?bt))
         # eff  (on ?bm ?bt) (not (clear ?bt)) (not (on-table ?bm))
         enable(preconditions, "clear", 0, 0, 1)
         enable(preconditions, "clear", 1, 1, 1)
         enable(preconditions, "on-table", 0, 0, 1)
-        enable(preconditions, "eq", 0, 1, 2)
+        enable(preconditions, "=", 0, 1, 2)
         enable(effects, "on", 0, 1, 1)
         enable(effects, "clear", 1, 1, 2)
         enable(effects, "on-table", 0, 0, 2)

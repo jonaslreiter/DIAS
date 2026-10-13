@@ -26,10 +26,10 @@ class ReadMetadataTest(unittest.TestCase):
         predicates = self.metadata["predicates"]
         self.assertEqual(
             [p["name"] for p in predicates],
-            ["clear", "eq", "number", "object", "on", "on-table"],
+            ["=", "clear", "number", "object", "on", "on-table"],
         )
         self.assertEqual(
-            {p["name"] for p in predicates if p["static"]}, {"eq", "number", "object"}
+            {p["name"] for p in predicates if p["static"]}, {"=", "number", "object"}
         )
         self.assertEqual(predicates[4], {"name": "on", "arity": 2, "static": False})
 

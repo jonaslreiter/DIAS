@@ -45,15 +45,16 @@ class L1Validator:
         original_domain_text = Path(original_domain_path).read_text()
         learned_domain_text = Path(learned_domain_path).read_text()
 
-        has_equality = pddl_text.domain_uses_equality(original_domain_text)
+        # Either domain may write `=`, and the merged one drops :equality, so both sides are compiled to the same reflexive predicate.
+        has_equality = pddl_text.domain_uses_equality(
+            original_domain_text
+        ) or pddl_text.domain_uses_equality(learned_domain_text)
+        equality_predicate_name = EQUALITY_PREDICATE if has_equality else None
         fluent_equal_predicates = self._fluent_equal_predicates(original_domain_text)
 
         # A merged untyped domain: transformed original + learned actions.
         original_actions_text = "\n\n".join(
-            untype_action(
-                action_block,
-                equality_predicate_name=(EQUALITY_PREDICATE if has_equality else None),
-            )
+            untype_action(action_block, equality_predicate_name=equality_predicate_name)
             for action_block in pddl_text.extract_action_blocks(original_domain_text)
         )
         learned_actions_text = "\n\n".join(
@@ -61,6 +62,7 @@ class L1Validator:
                 action_block,
                 name_prefix=LEARNED_ACTION_PREFIX,
                 ignored_types=UNINFORMATIVE_TYPES,
+                equality_predicate_name=equality_predicate_name,
             )
             for action_block in pddl_text.extract_action_blocks(learned_domain_text)
         )
@@ -91,7 +93,7 @@ class L1Validator:
             strip_problem_types(
                 Path(problem_path).read_text(),
                 original_domain_text,
-                equality_predicate_name=(EQUALITY_PREDICATE if has_equality else None),
+                equality_predicate_name=equality_predicate_name,
                 reflexive_predicate_names=fluent_equal_predicates or None,
             ),
         )

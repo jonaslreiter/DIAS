@@ -1,17 +1,16 @@
 (define (domain gripper-strips)
-   (:requirements :negative-preconditions :typing)
+   (:requirements :negative-preconditions :typing :equality)
    (:predicates (room ?r)
 		(ball ?b)
 		(gripper ?g)
 		(at-robby ?r)
 		(at ?b ?r)
 		(free ?g)
-		(carry ?o ?g)
-        (eq ?r1 ?r2))
+		(carry ?o ?g))
 
    (:action move
        :parameters  (?from ?to)
-       :precondition (and  (room ?from) (room ?to) (at-robby ?from) (not (eq ?from ?to)))
+       :precondition (and  (room ?from) (room ?to) (at-robby ?from) (not (= ?from ?to)))
        :effect (and  (at-robby ?to)
 		     (not (at-robby ?from))))
 
@@ -22,7 +21,7 @@
        :precondition  (and  (ball ?obj) (room ?room) (gripper ?gripper)
 			    (at ?obj ?room) (at-robby ?room) (free ?gripper))
        :effect (and (carry ?obj ?gripper)
-		    (not (at ?obj ?room)) 
+		    (not (at ?obj ?room))
 		    (not (free ?gripper))))
 
 

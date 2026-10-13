@@ -45,8 +45,6 @@
 (at ball11 rooma)
 (at ball12 rooma)
 (at-robby rooma)
-(eq rooma rooma)
-(eq roomb roomb)
 )
 (:goal
 (and
