@@ -92,6 +92,28 @@ class CheckpointSchemaTest(unittest.TestCase):
     def test_a_current_run_has_no_equality_relation(self):
         self.assertNotIn("=", self.relation_names(legacy=False))
 
+    def test_a_run_from_when_blocksworld_spelt_equality_eq_keeps_its_channel_order(
+        self,
+    ):
+        """Blocks-3's predicates were clear, eq, on, on-table; = sorts first, so read in the file's order the channels would be shuffled."""
+        schema = DomainSchema.from_run(datamodule_hparams(legacy=True), [1, 2, 2, 1])
+        self.assertEqual(schema.relation_names, ("clear", "=", "on", "on-table"))
+        self.assertEqual(schema.relation_arities, (1, 2, 2, 1))
+
+    def test_a_run_from_when_gripper_spelt_equality_eq_is_refused(self):
+        """Gripper's eq held of the rooms only, so `=` in its place would change what its literals mean."""
+        gripper = dict(datamodule_hparams(legacy=True))
+        gripper["domain_path"] = gripper["domain_path"].replace("blocks-3", "gripper")
+        gripper["problem_path"] = gripper["problem_path"].replace("blocks-3", "gripper")
+        with self.assertRaisesRegex(ValueError, "changed since the run"):
+            DomainSchema.from_run(gripper, [2, 1, 1, 2, 2, 1, 1, 1])
+
+    def test_a_domain_that_changed_since_the_run_is_refused(self):
+        with self.assertRaisesRegex(ValueError, "now gives"):
+            DomainSchema.from_run(datamodule_hparams(), [1, 1, 1])
+        with self.assertRaisesRegex(ValueError, "now gives"):
+            DomainSchema.from_run(datamodule_hparams(legacy=True), [1, 1, 1, 1])
+
 
 if __name__ == "__main__":
     unittest.main()

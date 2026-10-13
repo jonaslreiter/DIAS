@@ -140,6 +140,7 @@ Three deliberate departures. **A relation is a predicate that became a channel o
 - **Migration is driven by the stamp, not by a failed load**, because Lightning silently drops a hyper-parameter it does not recognise instead of raising.
 - For the same reason, **renaming a constructor argument of `DIAS` needs an entry in `_RENAMED_HPARAMS` and a line in `tests/test_checkpoint_layout.UNVERSIONED_HPARAM_NAMES`**. A datamodule argument does not, since nothing feeds stored datamodule hyper-parameters back to a constructor.
 - If checkpoint naming, run directory layout or logger config changes, update the validation loaders and sweep scripts in the same change.
+- **A run's relations are rebuilt in the order it was trained on** (`DomainSchema.from_run`, which `load_run` calls with the model's stored `relation_arities`), and a domain file that no longer gives that order is refused, never read with its channels shuffled. Relations sort by name, and until 2026-10-13 blocks-3 and Gripper spelt equality as their own `eq`, which sorts elsewhere than `=`: blocks-3's held of every object, so its earlier runs read `=` where `eq` sorted (`EQUALITY_SPELT_BEFORE_ARGUMENT`); Gripper's held of the rooms only, which `=` does not express, so its earlier runs are refused and are scored with main's code and domain files.
 
 ## Editing Rules
 

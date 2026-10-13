@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Mapping, Sequence
 
@@ -13,6 +13,9 @@ EQUALITY = "="
 
 # What a checkpoint written before `include_equality` existed did: every one of them gave `=` a channel.
 EQUALITY_BEFORE_ARGUMENT = True
+
+# Domains, by name, that spelt equality as a predicate of their own until 2026-10-13, so that their runs from before `include_equality` hold that channel where the old name sorts. Blocks-3's eq held of every object, which is exactly `=`. Gripper's held of the rooms only, which `=` does not express (its runs learned `(not (eq ?x ?x))` as "not a room"), so it is left out and its runs from then are refused: score them with main's code and domain files.
+EQUALITY_SPELT_BEFORE_ARGUMENT = {"blocksworld": "eq"}
 
 
 @dataclass(frozen=True)
@@ -111,8 +114,17 @@ class DomainSchema:
     @classmethod
     def from_checkpoint(cls, checkpoint: Mapping) -> "DomainSchema":
         """Rebuild from the datamodule hyper-parameters stored in a checkpoint."""
-        hparams = checkpoint["datamodule_hyper_parameters"]
-        return cls.from_pddl(
+        return cls.from_run(checkpoint["datamodule_hyper_parameters"])
+
+    @classmethod
+    def from_run(
+        cls, hparams: Mapping, relation_arities: Sequence[int] | None = None
+    ) -> "DomainSchema":
+        """Rebuild from a run's stored datamodule hyper-parameters.
+
+        Given the model's `relation_arities`, the relations come back in the order the model was trained on them. A run from before `include_equality` on a domain that then spelt equality as a predicate of its own holds that channel where the old name sorts, not where `=` does; a domain that gives neither order has changed since the run, and is refused rather than read with its channels shuffled.
+        """
+        schema = cls.from_pddl(
             hparams["domain_path"],
             hparams["problem_path"],
             include_statics=hparams.get("include_statics", False),
@@ -120,6 +132,27 @@ class DomainSchema:
             default_statics=hparams.get("default_statics"),
             action_arguments=hparams.get("action_arguments", False),
             strips_plus_actions=hparams.get("strips_plus_actions", False),
+        )
+        if relation_arities is None or list(schema.relation_arities) == list(
+            relation_arities
+        ):
+            return schema
+        spelt = EQUALITY_SPELT_BEFORE_ARGUMENT.get(schema.domain_name)
+        if "include_equality" not in hparams and spelt is not None:
+            names = schema.relation_names
+            order = sorted(
+                range(len(names)),
+                key=lambda i: spelt if names[i] == EQUALITY else names[i],
+            )
+            respelt = replace(
+                schema,
+                relation_names=tuple(names[i] for i in order),
+                relation_arities=tuple(schema.relation_arities[i] for i in order),
+            )
+            if list(respelt.relation_arities) == list(relation_arities):
+                return respelt
+        raise ValueError(
+            f"The run was trained on relations of arities {list(relation_arities)}, but {hparams['domain_path']} now gives {dict(zip(schema.relation_names, schema.relation_arities))}. The domain changed since the run; score it with the code and domain files it was trained with."
         )
 
 

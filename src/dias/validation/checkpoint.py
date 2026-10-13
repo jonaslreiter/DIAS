@@ -9,7 +9,6 @@ import torch
 
 from dias.models.dias import DIAS
 from dias.schema import DomainSchema
-from dias.schema.domain import EQUALITY_BEFORE_ARGUMENT
 
 # Sampling parameters PddlGraphDataModule no longer accepts; dropped so older checkpoints still load.
 RETIRED_HPARAMS = frozenset(
@@ -76,13 +75,6 @@ def load_run(model_id: str, logs_path: str) -> TrainedRun:
         checkpoint_path=str(checkpoint_path),
         model=model,
         datamodule_hparams=hparams,
-        schema=DomainSchema.from_pddl(
-            hparams["domain_path"],
-            hparams["problem_path"],
-            include_statics=hparams.get("include_statics", False),
-            include_equality=hparams.get("include_equality", EQUALITY_BEFORE_ARGUMENT),
-            default_statics=hparams.get("default_statics"),
-            action_arguments=hparams.get("action_arguments", False),
-            strips_plus_actions=hparams.get("strips_plus_actions", False),
-        ),
+        # In the order the model was trained on, which the domain file alone no longer fixes for every run.
+        schema=DomainSchema.from_run(hparams, model.hparams["relation_arities"]),
     )
