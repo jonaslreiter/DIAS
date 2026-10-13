@@ -8,6 +8,12 @@ from typing import Mapping, Sequence
 
 DEFAULT_STATICS = ("number", "object")
 
+# The name pymimir gives PDDL's built-in equality, which a domain with :equality declares.
+EQUALITY = "="
+
+# What a checkpoint written before `include_equality` existed did: every one of them gave `=` a channel.
+EQUALITY_BEFORE_ARGUMENT = True
+
 
 @dataclass(frozen=True)
 class DomainSchema:
@@ -47,6 +53,7 @@ class DomainSchema:
         metadata: Mapping,
         *,
         include_statics: bool = False,
+        include_equality: bool = False,
         default_statics: Sequence[str] | None = None,
         action_arg_positions: Sequence[Sequence[int]] | None = None,
     ) -> "DomainSchema":
@@ -54,6 +61,7 @@ class DomainSchema:
         relations = tensor_relations(
             metadata["predicates"],
             include_statics=include_statics,
+            include_equality=include_equality,
             default_statics=list(default_statics or DEFAULT_STATICS),
         )
         actions = metadata["actions"]
@@ -77,6 +85,7 @@ class DomainSchema:
         problem_path: str | Path,
         *,
         include_statics: bool = False,
+        include_equality: bool = False,
         default_statics: Sequence[str] | None = None,
         action_arguments: bool = False,
         strips_plus_actions: bool = False,
@@ -89,6 +98,7 @@ class DomainSchema:
         return cls.from_metadata(
             metadata,
             include_statics=include_statics,
+            include_equality=include_equality,
             default_statics=default_statics,
             action_arg_positions=argument_positions(
                 metadata["actions"],
@@ -106,6 +116,7 @@ class DomainSchema:
             hparams["domain_path"],
             hparams["problem_path"],
             include_statics=hparams.get("include_statics", False),
+            include_equality=hparams.get("include_equality", EQUALITY_BEFORE_ARGUMENT),
             default_statics=hparams.get("default_statics"),
             action_arguments=hparams.get("action_arguments", False),
             strips_plus_actions=hparams.get("strips_plus_actions", False),
@@ -156,13 +167,16 @@ def tensor_relations(
     predicates: Sequence[Mapping],
     *,
     include_statics: bool = False,
+    include_equality: bool = False,
     default_statics: Sequence[str] | None = None,
 ) -> list[Mapping]:
-    """The predicates that become channels of the adjacency tensor: arity at most two, and statics only when asked for, minus the ones every domain declares."""
+    """The predicates that become channels of the adjacency tensor: arity at most two, statics only when asked for, minus the ones every domain declares, and `=` only when asked for. Bindings are injective, so `=` is constant at every slot pair: true where a slot meets itself, false elsewhere."""
     default_statics = default_statics or DEFAULT_STATICS
     keep = []
     for p in predicates:
         if p["arity"] > 2:
+            continue
+        if not include_equality and p["name"] == EQUALITY:
             continue
         if not include_statics and p["static"]:
             continue

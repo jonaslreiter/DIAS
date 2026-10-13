@@ -1,6 +1,6 @@
 """End-to-end characterization of the DIAS validation path, which the unit tests do not cover: a transposed einsum, a changed enumeration order or a flipped logit channel would pass them all.
 
-Rather than train a model, this plants a schema by hand: blocks-3's `stack` written into the checkpoint exactly, the other two actions left inert. The expected result then follows independently of the numbers, so the assertion is sensitive in both directions: `stack` recovered perfectly, everything the others would reach a false negative.
+Rather than train a model, this plants a schema by hand: blocks-3's `stack` written into the checkpoint exactly, its inequality left to decoding as for any run without the `=` relation, and the other two actions left inert. The expected result then follows independently of the numbers, so the assertion is sensitive in both directions: `stack` recovered perfectly, everything the others would reach a false negative.
 """
 
 import unittest
@@ -23,12 +23,12 @@ NUM_SAMPLES = 8
 SAMPLE_POPULATION = 20
 
 
-def build_checkpoint(directory: Path, inequality: bool = True) -> str:
-    """Write a checkpoint whose only learned action is a correct `stack`, with or without its inequality."""
-    schema = domain_schema()
+def build_checkpoint(directory: Path, inequality: bool = False) -> str:
+    """Write a checkpoint whose only learned action is `stack`, correct apart from its inequality, which needs a run from before `include_equality` to have a channel at all."""
+    schema = domain_schema(legacy=inequality)
     relation = {name: i for i, name in enumerate(schema.relation_names)}
     action = {name: i for i, name in enumerate(schema.action_names)}
-    model, hparams = build_model()
+    model, hparams = build_model(legacy=inequality)
 
     stack = action["stack"]
     with torch.no_grad():
@@ -60,7 +60,7 @@ def build_checkpoint(directory: Path, inequality: bool = True) -> str:
         enable(effects, "clear", 1, 1, 2)
         enable(effects, "on-table", 0, 0, 2)
 
-    return save(directory, model, hparams)
+    return save(directory, model, hparams, legacy=inequality)
 
 
 class ValidationCharacterizationTest(unittest.TestCase):

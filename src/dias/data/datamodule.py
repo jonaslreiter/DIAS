@@ -49,6 +49,7 @@ class PddlGraphDataModule(L.LightningDataModule):
         seed: Optional[int] = None,
         include_statics: bool = True,
         default_statics: list[str] = ["number", "object"],
+        include_equality: bool = False,
         action_arguments: bool = False,
         strips_plus_actions: bool = False,
         pt_file: Optional[str] = None,
@@ -74,6 +75,7 @@ class PddlGraphDataModule(L.LightningDataModule):
             seed: Seed for the walk and the split. Unset follows the run's own seed.
             include_statics: Give static predicates channels of their own, so preconditions can name types.
             default_statics: Static predicates to leave out even then.
+            include_equality: Give `=` a channel too. Bindings are injective, so it is constant, and validation writes parameter distinctness itself.
             action_arguments: Label a transition with the action's arguments, not only its name.
             strips_plus_actions: Restrict those labels to the STRIPS+ positions in strips+.yaml.
             pt_file: Load transitions from this file instead of exploring the state space.
@@ -110,6 +112,7 @@ class PddlGraphDataModule(L.LightningDataModule):
         self.strips_plus_actions = strips_plus_actions
         self.include_statics = include_statics
         self.default_statics = default_statics
+        self.include_equality = include_equality
 
         if batch_sampling_strategy not in ("random", "stratified"):
             raise ValueError(
@@ -139,6 +142,7 @@ class PddlGraphDataModule(L.LightningDataModule):
         self.schema = DomainSchema.from_metadata(
             self.metadata,
             include_statics=include_statics,
+            include_equality=include_equality,
             default_statics=default_statics,
             action_arg_positions=argument_positions(
                 self.metadata["actions"],
@@ -212,6 +216,7 @@ class PddlGraphDataModule(L.LightningDataModule):
                 self.metadata,
                 include_statics=self.include_statics,
                 default_statics=self.default_statics,
+                include_equality=self.include_equality,
             )
         self._base = PddlTransitionDataset(data)
 

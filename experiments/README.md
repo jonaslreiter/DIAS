@@ -47,6 +47,8 @@ python experiments/launch.py --experiment noise --experiment-type noise  # noisy
 
 `--experiment-type` picks the training overlay, the validator, and the schema-derivation threshold: 0.5, except 0.75 for `noise` as in the paper (`--validation-threshold T` overrides). Defaults are all 13 domains × the 10 seeds in `experiments/configs/validation.yaml`.
 
+Two defaults differ from how the paper's numbers were produced: the model gets no `=` relation (`data.init_args.include_equality`, since injective bindings make it constant), and validation requires a learned schema's parameters to be distinct (`injective` in `experiments/configs/validation.yaml`). The second costs a correct schema nothing, since no domain here has an action applicable to one object twice. For the paper's setting, add `--set data.init_args.include_equality=true` and set `injective: false`.
+
 `--validate-only` submits the validation array alone, for when training survived but validation did not. Runs that stopped short of `max_steps` are refused before anything is submitted, unless `--allow-unfinished`.
 
 The MLP-effects validator is far the most expensive one, and its cost follows how permissive the learned preconditions are. It grounds states across the CPUs the job was allocated and predicts on the GPU; memory bounds the worker count, since a grounding worker holds its ground actions until it is replaced after `--states-per-worker` states (over 20 GB on driverlog test-3 for a bad schema). `--resume` continues a seed from the problems and states an earlier run on the same checkpoint scored.

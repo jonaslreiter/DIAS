@@ -104,6 +104,13 @@ class PDDLTranspiler:
         ]
         return self.action_schemas
 
+    def declare_predicate(self, name: str, arity: int) -> None:
+        """Declare a predicate the tensors have no channel for, so a generated domain can use it. Declaring one twice is a no-op."""
+        if name not in self.predicate_names:
+            self.predicate_names.append(name)
+            self.predicate_arities.append(arity)
+            self.num_predicates += 1
+
     def require_distinct(
         self, predicate_name: str, parameters: list[list[int]] | None = None
     ) -> None:
@@ -111,10 +118,7 @@ class PDDLTranspiler:
 
         `parameters` lists each schema's parameter slots where they are more than the slots its atoms mention. A distinctness a schema already requires, in either order, is not written again.
         """
-        if predicate_name not in self.predicate_names:
-            self.predicate_names.append(predicate_name)
-            self.predicate_arities.append(2)
-            self.num_predicates += 1
+        self.declare_predicate(predicate_name, 2)
         for a, schema in enumerate(self.action_schemas):
             slots = (
                 sorted(

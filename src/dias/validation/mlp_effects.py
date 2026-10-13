@@ -161,6 +161,9 @@ class MlpEffectsValidator:
             action_names=list(self.schema.action_names),
         )
         pddl_transpiler.generate_action_schemas()
+        if has_equality:
+            # The learned problem carries its reflexive facts, whether or not the model had a channel for `=`.
+            pddl_transpiler.declare_predicate(EQUALITY_PREDICATE, 2)
         if injective:
             pddl_transpiler.require_distinct(
                 EQUALITY_PREDICATE, self.active_slot_indices

@@ -35,28 +35,33 @@ TEST_PROBLEM = PROJECT_ROOT / "pddl" / "blocks-3" / "test-1.pddl"
 MODEL_SEED = 5
 
 
-def datamodule_hparams() -> dict:
-    return {
+def datamodule_hparams(legacy: bool = False) -> dict:
+    """What a run stores of its datamodule. `legacy` is a run from before `include_equality`, which stored no such key and gave `=` a channel."""
+    hparams = {
         "domain_path": str(DOMAIN),
         "problem_path": str(TRAIN_PROBLEM),
         "include_statics": True,
         "action_arguments": False,
         "strips_plus_actions": False,
     }
+    return hparams if legacy else hparams | {"include_equality": False}
 
 
-def domain_schema() -> DomainSchema:
-    hparams = datamodule_hparams()
+def domain_schema(legacy: bool = False) -> DomainSchema:
+    hparams = datamodule_hparams(legacy)
     return DomainSchema.from_pddl(
-        hparams["domain_path"], hparams["problem_path"], include_statics=True
+        hparams["domain_path"],
+        hparams["problem_path"],
+        include_statics=True,
+        include_equality=legacy,
     )
 
 
-def build_model(**overrides):
+def build_model(legacy: bool = False, **overrides):
     """A small untrained DIAS for blocks-3, plus the hparams it was built from."""
     from dias.models.dias import DIAS
 
-    schema = domain_schema()
+    schema = domain_schema(legacy)
     hparams = {
         "num_objects": schema.num_objects,
         "relation_arities": list(schema.relation_arities),
@@ -74,14 +79,20 @@ def build_model(**overrides):
     return DIAS(**hparams), hparams
 
 
-def save(directory: Path, model, model_hparams: dict, model_id: str = "run0") -> str:
+def save(
+    directory: Path,
+    model,
+    model_hparams: dict,
+    model_id: str = "run0",
+    legacy: bool = False,
+) -> str:
     """Write `model` where the validators expect to find a finished run."""
     checkpoints = directory / "dias" / model_id / "checkpoints"
     checkpoints.mkdir(parents=True)
     checkpoint = {
         "state_dict": model.state_dict(),
         "hyper_parameters": dict(model.hparams),
-        "datamodule_hyper_parameters": datamodule_hparams(),
+        "datamodule_hyper_parameters": datamodule_hparams(legacy),
         "pytorch-lightning_version": "2.6.1",
         "epoch": 1,
         "global_step": 10,

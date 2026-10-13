@@ -2,7 +2,8 @@
 
 import unittest
 
-from checkpoints import DOMAIN, TRAIN_PROBLEM
+from checkpoints import DOMAIN, TRAIN_PROBLEM, datamodule_hparams
+from dias.schema import DomainSchema
 from dias.schema.domain import read_metadata, tensor_relations
 
 
@@ -67,6 +68,29 @@ class TensorRelationsTest(unittest.TestCase):
             self.names(include_statics=True, default_statics=["static"]),
             ["one", "two", "object"],
         )
+
+    def test_equality_is_a_relation_only_when_asked_for(self):
+        predicates = self.PREDICATES + [{"name": "=", "arity": 2, "static": True}]
+        names = lambda **kwargs: [
+            p["name"]
+            for p in tensor_relations(predicates, include_statics=True, **kwargs)
+        ]
+        self.assertEqual(names(), ["one", "two", "static"])
+        self.assertEqual(names(include_equality=True), ["one", "two", "static", "="])
+
+
+class CheckpointSchemaTest(unittest.TestCase):
+    """A stored run rebuilds the relations it was trained with."""
+
+    def relation_names(self, legacy: bool) -> tuple[str, ...]:
+        checkpoint = {"datamodule_hyper_parameters": datamodule_hparams(legacy)}
+        return DomainSchema.from_checkpoint(checkpoint).relation_names
+
+    def test_a_run_from_before_the_argument_kept_equality(self):
+        self.assertIn("=", self.relation_names(legacy=True))
+
+    def test_a_current_run_has_no_equality_relation(self):
+        self.assertNotIn("=", self.relation_names(legacy=False))
 
 
 if __name__ == "__main__":

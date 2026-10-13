@@ -101,6 +101,9 @@ def read_learned_schemas(
         action_names=list(run.schema.action_names),
     )
     transpiler.generate_action_schemas()
+    if has_equality:
+        # The original actions are compiled to it, whether or not the model had a channel for `=`.
+        transpiler.declare_predicate(EQUALITY_PREDICATE, 2)
     if injective:
         transpiler.require_distinct(EQUALITY_PREDICATE)
     return transpiler

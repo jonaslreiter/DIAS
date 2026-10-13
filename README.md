@@ -88,6 +88,8 @@ python experiments/launch.py --experiment dias-full
 python experiments/collect_results.py --experiment dias-full
 ```
 
+Two defaults have moved on since the paper: the model gets no `=` relation, and validation requires a learned schema's parameters to be distinct, both because bindings are injective. The recipes say how to restore the paper's setting.
+
 ## Repository layout
 
 ```

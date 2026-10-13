@@ -182,11 +182,13 @@ def samples_to_tensors(
     metadata,
     include_statics: bool = False,
     default_statics: list[str] = ["number", "object"],
+    include_equality: bool = False,
 ):
     """Convert samples to adjacency-matrix tensors of shape [N, R, O, O]."""
     relation_info = tensor_relations(
         metadata["predicates"],
         include_statics=include_statics,
+        include_equality=include_equality,
         default_statics=default_statics,
     )
     relation_names = [r["name"] for r in relation_info]
