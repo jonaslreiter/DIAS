@@ -2,10 +2,10 @@
 #
 # Validation-array resources are configured separately in experiments/configs/slurm-resources-validation.yaml.
 #
-# Some seeds train far slower than others of the same domain: the step rate falls over the run, to 0.15 steps per second on one MLP-effects hanoi seed that took 18.6 hours where the domain's median is 2. The times leave room for that, since a run that times out starts over.
+# Some seeds train far slower than others of the same domain: the step rate falls over the run, to 0.15 steps per second on one MLP-effects hanoi seed that took 18.6 hours where the domain's median is 2. The times leave room for that, since a run that times out starts over: at least 24 hours, which one of the suite's MLP-effects sokoban seeds needs where its others take two.
 
 defaults:
-  time: "04:00:00"
+  time: "24:00:00"
   mem: "8G"
   cpus: "8"
   gres: "shard:4"
@@ -16,32 +16,24 @@ blocks-3:
 delivery:
   gres: "shard:6"
 driverlog:
-  time: "12:00:00"
   gres: "shard:6"
-gripper:
-  time: "12:00:00"
+gripper: {}
 hanoi:
   gres: "shard:12"
   time: "48:00:00"
-logistics:
-  time: "08:00:00"
+logistics: {}
 miconic:
   gres: "shard:12"
   time: "36:00:00"
 n-puzzle: {}
 satellite:
-  time: "12:00:00"
   gres: "shard:10"
 sokoban:
-  time: "06:00:00"
   mem: "32G"
   gres: "shard:6"
 sokoban-pull:
-  time: "12:00:00"
   gres: "shard:6"
 spanner:
-  time: "06:00:00"
   gres: "shard:6"
 visitall:
-  time: "08:00:00"
   gres: "shard:8"
