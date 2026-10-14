@@ -27,7 +27,6 @@ from pipeline import (
     EXPERIMENT_VALIDATOR,
     PROJECT_ROOT,
     SLURM_DIR,
-    SLURM_RESOURCES_VALIDATION,
     VALIDATORS,
     add_domain_arguments,
     add_logging_arguments,
@@ -41,6 +40,7 @@ from pipeline import (
     sbatch_output_opt,
     sbatch_resource_opts,
     select_domains,
+    validation_resources_file,
 )
 
 # Grid of the bare --thresholds flag. 0.5 is re-run rather than reused, so every column comes from one code path.
@@ -210,7 +210,8 @@ def main() -> int:
     p.add_argument(
         "--slurm-resources-validation",
         type=Path,
-        default=SLURM_RESOURCES_VALIDATION,
+        default=None,
+        help="Default: experiments/configs/slurm-resources-validation-mlp.yaml for the MLP-effects validator, slurm-resources-validation.yaml for the others.",
     )
     args = p.parse_args()
     configure_logging(args)
@@ -253,7 +254,12 @@ def main() -> int:
     if args.backend == "slurm" and not args.dry_run:
         prepare_slurm_logs(args.log_dir)
     val_slurm_cfg = (
-        load_yaml(args.slurm_resources_validation) if args.backend == "slurm" else {}
+        load_yaml(
+            args.slurm_resources_validation
+            or validation_resources_file(EXPERIMENT_VALIDATOR[args.experiment_type])
+        )
+        if args.backend == "slurm"
+        else {}
     )
 
     for threshold in thresholds:

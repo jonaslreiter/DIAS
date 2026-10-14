@@ -1,0 +1,31 @@
+# Per-domain Slurm resources for the VALIDATION array of an MLP-effects experiment, passed as `launch.py --experiment-type mlp --slurm-resources-validation experiments/configs/slurm-resources-validation-mlp.yaml`. Same schema as experiments/configs/slurm-resources-validation.yaml, resolved on its own.
+#
+# The MLP-effects validator grounds the learned preconditions in every sampled state, so its cost follows how permissive they are rather than the instance alone, and it grounds across every CPU the task is allocated. The times are about twice what the 250 breadth-first states took, for the 500 walk states drawn now; a task that runs out of time keeps the states it scored, and `launch.py --validate-only --resume` continues from them. Memory bounds the worker count: a worker holds its ground actions until it is replaced after `--states-per-worker` states, over 20 GB on driverlog test-3 for a permissive schema.
+
+defaults:
+  time: "02:00:00"
+  mem: "32G"
+  cpus: "16"
+
+blocks-3: {}
+delivery: {}
+driverlog:
+  time: "2-00:00:00"
+  mem: "180G"
+gripper: {}
+hanoi: {}
+logistics:
+  time: "04:00:00"
+miconic: {}
+n-puzzle: {}
+satellite: {}
+sokoban: {}
+sokoban-pull: {}
+spanner:
+  time: "12:00:00"
+  mem: "64G"
+  cpus: "32"
+visitall:
+  time: "24:00:00"
+  mem: "64G"
+  cpus: "32"

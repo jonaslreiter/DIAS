@@ -8,6 +8,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "experiments"))
 
 import launch
+import pipeline
 from support import temp_dir
 
 
@@ -107,6 +108,29 @@ class ValidationThresholdTest(unittest.TestCase):
     def test_validation_scores_the_final_checkpoint_unless_asked_for_the_best(self):
         self.assertNotIn("CHECKPOINT", self.exported())
         self.assertIn("CHECKPOINT=best", self.exported(validation_checkpoint="best"))
+
+
+class ValidationResourcesTest(unittest.TestCase):
+    def setUp(self):
+        self.log_dir = temp_dir(self)
+
+    def test_mlp_effects_validation_asks_for_the_resources_of_its_own_file(self):
+        """It grounds every learned precondition, which takes far longer than scoring a learned domain."""
+        requested = {}
+        for experiment_type, resources in (
+            ("mlp", pipeline.SLURM_RESOURCES_VALIDATION_MLP),
+            ("dias", pipeline.SLURM_RESOURCES_VALIDATION),
+        ):
+            plan = launch.build_plan(
+                plan_args(self.log_dir, experiment_type=experiment_type)
+            )
+            validation = submitted(plan)[-1]
+            requested[experiment_type] = launch.sbatch_resource_opts(
+                launch.resolve_resources(launch.load_yaml(resources), "gripper")
+            )
+            for option in requested[experiment_type]:
+                self.assertIn(option, validation)
+        self.assertNotEqual(requested["mlp"], requested["dias"])
 
 
 class L1LaunchTest(unittest.TestCase):

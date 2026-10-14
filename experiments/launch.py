@@ -52,7 +52,6 @@ from pipeline import (
     PROJECT_ROOT,
     SLURM_DIR,
     SLURM_RESOURCES,
-    SLURM_RESOURCES_VALIDATION,
     VALIDATORS,
     add_domain_arguments,
     add_logging_arguments,
@@ -69,6 +68,7 @@ from pipeline import (
     sbatch_resource_opts,
     select_domains,
     train_problem,
+    validation_resources_file,
 )
 
 EXPERIMENT_OVERLAYS = {
@@ -417,7 +417,12 @@ def build_plan(args: argparse.Namespace) -> LaunchPlan:
         validation_config=args.validation_config,
         train_resources=load_yaml(args.slurm_resources) if on_slurm else {},
         validation_resources=(
-            load_yaml(args.slurm_resources_validation) if on_slurm else {}
+            load_yaml(
+                args.slurm_resources_validation
+                or validation_resources_file(EXPERIMENT_VALIDATOR[args.experiment_type])
+            )
+            if on_slurm
+            else {}
         ),
     )
 
@@ -676,7 +681,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument(
         "--slurm-resources-validation",
         type=Path,
-        default=SLURM_RESOURCES_VALIDATION,
+        default=None,
+        help="Default: experiments/configs/slurm-resources-validation-mlp.yaml for the MLP-effects validator, slurm-resources-validation.yaml for the others.",
     )
     return p.parse_args(argv)
 
