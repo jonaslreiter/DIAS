@@ -54,7 +54,7 @@ def _groundings_by_action(actions):
 
 
 def _require_injective(groundings_by_action: dict) -> None:
-    """Refuse a state in which an action applies with one object in two parameters. The model binds injectively and validation requires distinct parameters, so such a domain is outside what DIAS learns; no domain in pddl/ has one."""
+    """Refuse a state in which an action applies with one object in two parameters. The model binds injectively, so such a domain is outside what DIAS learns; no domain in pddl/ has one."""
     for name, groundings in groundings_by_action.items():
         for objects in groundings:
             if len(set(objects)) < len(objects):

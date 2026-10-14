@@ -1,5 +1,3 @@
-; The action schemas L1 (Balyo et al., 2024) learned for the paper's comparison, as its authors returned them, with equality written as = and the types as in domain.pddl.
-; Learned from one random walk on train.pddl.
 (define (domain miconic)
   (:requirements :negative-preconditions)
   (:predicates

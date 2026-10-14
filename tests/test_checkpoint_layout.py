@@ -100,6 +100,7 @@ CURRENT_HPARAMS = {
     "encoder_hidden_dims": None,
     "precondition_loss": "restrict",
     "rejection_samples": 16,
+    "schema_threshold": 0.5,
 }
 
 

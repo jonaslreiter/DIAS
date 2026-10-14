@@ -1,6 +1,3 @@
-; The action schemas L1 (Balyo et al., 2024) learned for the paper's comparison, as its authors returned them, with equality written as = and the types as in domain.pddl.
-; Learned from one random walk on train.pddl.
-; L1's input asserted its equality predicate for the two rooms only, so (= ?r ?r) stood for (room ?r), which every schema writing it also requires.
 (define (domain gripper-strips)
   (:requirements :negative-preconditions :typing :equality)
   (:predicates

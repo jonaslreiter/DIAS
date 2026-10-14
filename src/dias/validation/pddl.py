@@ -1,4 +1,4 @@
-"""Scoring a learned PDDL domain produced outside this repository, against the original domain it was learned from."""
+"""Scoring a learned PDDL domain against the original domain it was learned from."""
 
 from __future__ import annotations
 
@@ -31,20 +31,19 @@ logger = logging.getLogger(__name__)
 UNINFORMATIVE_TYPES = frozenset({"untyped", "object"})
 
 
-class L1Validator:
+class PddlValidator:
+    """Compares the successors of the learned actions with the original ones, in one untyped domain holding both."""
+
+    threshold: float | None = None
+
     def __init__(
         self,
         original_domain_path,
         learned_domain_path,
-        logs_path,
-        problem_path=None,
-        injective=False,
+        problem_path,
+        force_injective=False,
     ):
-        """With `injective`, every learned action also requires its parameters to be distinct, as a DIAS checkpoint's schema is decoded. Off by default: L1's output is scored as the PDDL it is, which a planner also grounds with one object in two parameters."""
-        self.logs_path = logs_path
-        self.injective = injective
-
-        # Equality is `=` from here on, however each side spells it: L1 writes it as the static `eq` or `equal` its input domain had, the domains in pddl/ as `=`.
+        self.learned_domain_text = Path(learned_domain_path).read_text()
         original_domain_text = Path(original_domain_path).read_text()
         original_equalities = pddl_text.equality_predicates(original_domain_text)
         original_domain_text = pddl_text.write_equality_as_builtin(
@@ -53,23 +52,21 @@ class L1Validator:
         problem_text = pddl_text.drop_equality_facts(
             Path(problem_path).read_text(), original_equalities
         )
-        learned_domain_text = Path(learned_domain_path).read_text()
         learned_domain_text = pddl_text.write_equality_as_builtin(
-            learned_domain_text, pddl_text.equality_predicates(learned_domain_text)
+            self.learned_domain_text,
+            pddl_text.equality_predicates(self.learned_domain_text),
         )
-        if injective:
-            learned_domain_text = pddl_text.require_distinct_parameters(
+        if force_injective:
+            learned_domain_text = pddl_text.force_distinct_parameters(
                 learned_domain_text
             )
         self._check_learned_types(original_domain_text, learned_domain_text)
 
-        # The merged domain drops :equality, so `=` on either side is compiled to the same reflexive predicate.
         has_equality = pddl_text.domain_uses_equality(
             original_domain_text
         ) or pddl_text.domain_uses_equality(learned_domain_text)
         equality_predicate_name = EQUALITY_PREDICATE if has_equality else None
 
-        # A merged untyped domain: transformed original + learned actions.
         original_actions_text = "\n\n".join(
             untype_action(action_block, equality_predicate_name=equality_predicate_name)
             for action_block in pddl_text.extract_action_blocks(original_domain_text)
@@ -91,35 +88,29 @@ class L1Validator:
             original_domain_text,
             has_equality=has_equality,
         )
-        merged_domain_text = (
-            header
-            + "\n\n"
-            + original_actions_text
-            + "\n\n"
-            + learned_actions_text
-            + "\n)"
-        )
 
         self.workspace = PddlWorkspace()
-        self.merged_domain_filename = self.workspace.write(
-            "merged-domain.pddl", merged_domain_text + "\n\n"
+        self.merged_domain = pymimir.Domain(
+            Path(
+                self.workspace.write(
+                    "merged-domain.pddl",
+                    f"{header}\n\n{original_actions_text}\n\n{learned_actions_text}\n)\n",
+                )
+            )
         )
-        # An untyped problem, with the type and equality facts in :init.
-        self.merged_problem_filename = self.workspace.write(
-            "merged-problem.pddl",
-            strip_problem_types(
-                problem_text,
-                original_domain_text,
-                equality_predicate_name=equality_predicate_name,
+        self.merged_problem = pymimir.Problem(
+            self.merged_domain,
+            Path(
+                self.workspace.write(
+                    "merged-problem.pddl",
+                    strip_problem_types(
+                        problem_text,
+                        original_domain_text,
+                        equality_predicate_name=equality_predicate_name,
+                    ),
+                )
             ),
         )
-
-        self.merged_domain = pymimir.Domain(Path(self.merged_domain_filename))
-        self.merged_problem = pymimir.Problem(
-            self.merged_domain, Path(self.merged_problem_filename)
-        )
-
-        # The original as respelled, which is the file as written unless it spelled equality as a predicate.
         self.original_domain = pymimir.Domain(
             Path(self.workspace.write("original-domain.pddl", original_domain_text))
         )
@@ -127,14 +118,13 @@ class L1Validator:
             self.original_domain,
             Path(self.workspace.write("original-problem.pddl", problem_text)),
         )
-
         self.state_set = None
 
     @staticmethod
     def _check_learned_types(
         original_domain_text: str, learned_domain_text: str
     ) -> None:
-        """Refuse a learned parameter type the original cannot supply. Types are given rather than learned, so a parameter may carry one of the original's types, or a unary predicate an untyped original writes its types as (logistics' `truck`); any other type would become a precondition no problem asserts, and its schema would silently never apply."""
+        """Refuse a learned parameter type that is neither a type nor a unary predicate of the original: no problem would assert it."""
         known = {
             name.lower()
             for children, parent in pddl_text.parse_type_groups(original_domain_text)
@@ -167,7 +157,7 @@ class L1Validator:
         original_domain_text: str = "",
         has_equality: bool = False,
     ) -> str:
-        """Declare every predicate the merged domain uses but does not define: ones an action body references, original or learned, the `eq` replacement for `=`, and the type names, which became unary atoms."""
+        """Declare every predicate the merged domain uses but does not define: those its actions use, `eq` for `=`, and the types, which became unary atoms."""
         defined_words = {
             m.group(1).lower() for m in re.finditer(r"\(\s*([^\s()]+)", header)
         }

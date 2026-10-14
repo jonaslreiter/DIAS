@@ -1,4 +1,4 @@
-"""Lifted action schemas and the atoms they are built from, serialising to PDDL. Slot indices are the parameter identity: an atom refers to ``?x{slot}``, and the parameter list is the union of the slots its atoms mention."""
+"""Lifted action schemas and the atoms they are built from, serialising to PDDL. Slot indices are the parameter identity: an atom refers to ``?x{slot}``, and the parameter list is the union of the slots its atoms mention unless given."""
 
 from __future__ import annotations
 
@@ -43,17 +43,31 @@ class ActionSchema:
     """A named action with lifted preconditions and effects."""
 
     def __init__(
-        self, name: str, preconditions: list[LiftedAtom], effects: list[LiftedAtom]
+        self,
+        name: str,
+        preconditions: list[LiftedAtom],
+        effects: list[LiftedAtom],
+        parameters: list[int] | None = None,
     ):
         self.name = name
         self.preconditions = preconditions
         self.effects = effects
+        self._parameters = parameters
 
-    def __str__(self):
-        slots = sorted(
+    @property
+    def parameters(self) -> list[int]:
+        if self._parameters is not None:
+            return list(self._parameters)
+        return sorted(
             {i for atom in self.preconditions + self.effects for i in atom.slots}
         )
-        params = " ".join(f"?x{i}" for i in slots)
+
+    @parameters.setter
+    def parameters(self, slots: list[int]) -> None:
+        self._parameters = list(slots)
+
+    def __str__(self):
+        params = " ".join(f"?x{i}" for i in self.parameters)
 
         def conjunction(atoms: list[LiftedAtom]) -> str:
             return "(and " + " ".join(str(a) for a in atoms) + ")" if atoms else "()"

@@ -8,18 +8,19 @@ This folder holds everything beyond the [README](../README.md)'s quickstart: the
 experiments/
 ├── launch.py                       the sweep launcher, start here
 ├── validate_runs.py                one (domain, seed); the arrays call it
-├── validate_checkpoint.py          one model by hand; the only route to L1
+├── validate_checkpoint.py          one model on one problem, by hand
 ├── collect_results.py              per-run JSON or W&B -> the paper's tables
 ├── precondition_categories.py      what the learned preconditions are made of
 ├── launch_threshold_validation.py  re-validate at other thresholds
 ├── pipeline.py                     shared paths, sbatch flags, validators
 ├── configs/                        validation.yaml, Slurm resources
+├── l1_pddl/                        the domains the L1 baseline learned (own README)
 ├── slurm/                          train.sh, validate.sh (the array jobs)
 ├── scaling/                        the instance-size study (own README)
 └── results/                        collected tables land here (gitignored)
 ```
 
-Runs produce `logs/dias/` (checkpoints), `logs/validation/` (per-run result JSON) and `logs/slurm/` (job output).
+Runs produce `logs/dias/` (checkpoints, each with the domain it learned beside it as PDDL), `logs/validation/` (per-run result JSON, with the learned domain it scored) and `logs/slurm/` (job output).
 
 ## How a launch works
 
@@ -43,11 +44,14 @@ Later layers win, which is why a sweep value beats a domain's tuned one. Validat
 python experiments/launch.py --experiment dias-full                      # DIAS
 python experiments/launch.py --experiment mlp --experiment-type mlp      # MLP effects
 python experiments/launch.py --experiment noise --experiment-type noise  # noisy input
+python experiments/launch.py --experiment l1 --experiment-type l1        # the L1 baseline
 ```
 
-`--experiment-type` picks the training overlay, the validator, and the schema-derivation threshold: 0.5, except 0.75 for `noise` as in the paper (`--validation-threshold T` overrides). Defaults are all 13 domains × the 10 seeds in `experiments/configs/validation.yaml`.
+`--experiment-type` picks the training overlay and the validator. Defaults are all 13 domains × the 10 seeds in `experiments/configs/validation.yaml`. L1 trains nothing: it validates the domains in `l1_pddl/`, once per domain.
 
-Two defaults differ from how the paper's numbers were produced: the model gets no `=` relation (`data.init_args.include_equality`, since injective bindings make it constant), and validation requires a learned schema's parameters to be distinct (`injective` in `experiments/configs/validation.yaml`). The second costs a correct schema nothing, since no domain here has an action applicable to one object twice. For the paper's setting, add `--set data.init_args.include_equality=true` and set `injective: false`.
+Every checkpoint a run saves has its learned domain beside it, binarized at `model.init_args.schema_threshold` (0.5; 0.75 in the noise overlay, as in the paper), and validation scores that domain. `--validation-threshold T` extracts it anew at `T` instead; a checkpoint from before these domains were written is extracted at validation either way.
+
+One default differs from how the paper's numbers were produced: the model gets no equality relation (`data.init_args.include_equality`), so its learned domain requires every schema's parameters to be distinct instead, which costs a correct schema nothing, since bindings are injective and no domain here has an action applicable to one object twice. For the paper's setting, add `--set data.init_args.include_equality=true`, which learns `=` like any other binary predicate and writes nothing for it; the paper's own noise checkpoints also need `--validation-threshold 0.75`. `force_injective` in `experiments/configs/validation.yaml` (off) replaces whatever a learned domain says about equality with distinct parameters, which changes nothing for a run without the relation, and so is how a run that learned equality, or L1, is scored as if it bound injectively.
 
 `--validate-only` submits the validation array alone, for when training survived but validation did not. Runs that stopped short of `max_steps` are refused before anything is submitted, unless `--allow-unfinished`.
 
@@ -74,7 +78,7 @@ python experiments/launch.py --backend local --domains gripper --num-runs 1 --ex
 
 ### Noise levels
 
-`--experiment-type noise` brings the paper's noise setup (Appendix A.4.2): expected-count input noise, per-action minima floored at 200/100, batch size 50, a floor of 0.1 on τ, and validation at threshold 0.75. The atom budgets are per state and both states of a transition are corrupted, so a transition sees `2 × (removed_atoms + added_atoms)` flips in expectation: the overlay's 1/1 is the paper's 4 flips, and Table 2's 1, 2, 4 and 8 flips are budgets of 0.25, 0.5, 1 and 2 each. Override the budgets to move along the noise axis (this one is 8 flips):
+`--experiment-type noise` brings the paper's noise setup (Appendix A.4.2): expected-count input noise, per-action minima floored at 200/100, batch size 50, a floor of 0.1 on τ, and the learned domain read off at threshold 0.75. The atom budgets are per state and both states of a transition are corrupted, so a transition sees `2 × (removed_atoms + added_atoms)` flips in expectation: the overlay's 1/1 is the paper's 4 flips, and Table 2's 1, 2, 4 and 8 flips are budgets of 0.25, 0.5, 1 and 2 each. Override the budgets to move along the noise axis (this one is 8 flips):
 
 ```bash
 python experiments/launch.py --experiment-type noise --experiment noise-a2r2 --set data.init_args.noise.added_atoms=2 --set data.init_args.noise.removed_atoms=2
@@ -147,7 +151,7 @@ python experiments/launch.py --experiment datasize-noise --sweep dataset-size --
 
 ## Threshold sensitivity
 
-Reading a schema off a checkpoint binarizes the slot activations and the add/delete/positive/negative tensors at one threshold (0.5 in the paper). `launch_threshold_validation.py` re-runs *only* the validation step of a finished experiment at other thresholds, on the same checkpoints, with no retraining. Each threshold writes to its own `logs/validation/<experiment>-thr<T>/`, so the original results are untouched.
+Reading a schema off a checkpoint binarizes the slot activations and the add/delete/positive/negative tensors at one threshold (0.5 in the paper). `launch_threshold_validation.py` re-runs *only* the validation step of a finished experiment at other thresholds, extracting each learned domain anew from the same checkpoints, with no retraining. Each threshold writes to its own `logs/validation/<experiment>-thr<T>/`, so the original results are untouched.
 
 ```bash
 python experiments/launch_threshold_validation.py --experiment dias-full --num-runs 3
@@ -199,7 +203,7 @@ A static predicate is one that occurs in no action's effect, which is also what 
 
 Learned columns are per-seed means and ground-truth columns count each action's schema once, which is the unit the two are comparable on. Atoms are counted after de-duplication, as distinct lifted atoms, with `(not (p ...))` as one atom, and type-derived unary predicates left out of the ground-truth counts, since a `?t - truck` in `:parameters` is not a precondition. DIAS does get a channel for those (pymimir materialises them, and `include_statics` defaults to true), which is what the `stat1` column measures.
 
-Schemas are read through `dias.validation.dias.read_learned_schemas`, the same function `DiasValidator` uses, so the atoms counted here are the ones a validator would score, less the parameter distinctness a validator writes in (counted, it would read as learned equalities). `--threshold` defaults to 0.5, what `launch.py` uses for `--experiment-type dias`; a noise experiment wants `--threshold 0.75`.
+Schemas are read through `dias.schema.export.read_learned_schemas`, the function a run's learned domain is written with, so the atoms counted here are the ones validation scores, less the parameter distinctness that domain writes when the run did not learn equality (counted, it would read as learned equalities). `--threshold` defaults to 0.5; a noise experiment wants `--threshold 0.75`.
 
 ## Instance-size scaling
 
@@ -207,22 +211,17 @@ How iterations per second and peak GPU memory grow as the *instance* grows is a 
 
 ## Validating one model
 
-For a single checkpoint against a single problem:
+For a single learned domain against a single problem:
 
 ```bash
 python experiments/validate_checkpoint.py --validator dias --model-id <run-id> --problem pddl/satellite/test-1.pddl
 
 python experiments/validate_checkpoint.py --validator mlp --model-id <run-id> --problem pddl/satellite/test-1.pddl
 
-# L1 compares a learned PDDL domain produced outside this repository, such as the one committed per domain
-python experiments/validate_checkpoint.py --validator l1 --original-domain pddl/satellite/domain.pddl --learned-domain pddl/satellite/l1.pddl --problem pddl/satellite/test-1.pddl
+python experiments/validate_checkpoint.py --validator l1 --original-domain pddl/satellite/domain.pddl --learned-domain experiments/l1_pddl/satellite.pddl --problem pddl/satellite/test-1.pddl
 ```
 
-Its sampling defaults come from `experiments/configs/validation.yaml`, so it draws the same way the sweep does, and all three validators return the same payload. So does `injective`: a checkpoint's schema is scored with its parameters required distinct, as the model binds them (`--no-injective` scores it as learned, which is how the paper's numbers were produced). L1 is reachable only from here: it scores a domain another system produced, so there is no checkpoint and no `(domain, seed)` pair for `launch.py` to iterate over.
-
-Each `pddl/<domain>/l1.pddl` holds the action schemas L1 (Balyo et al., 2024) learned for the paper's comparison (its Table 17), from one random walk per domain. They are L1's output with two things respelled to match `domain.pddl`, which scores identically: equality, which L1 writes as the static `eq` or `equal` predicate its input domain had, is `=`, and the types are the domain's own (L1 types every parameter of an untyped domain `untyped`). The validator reads either spelling: a binary predicate named `eq` or `equal` that no action changes is `=` in both domains, and a learned parameter type the original declares neither as a type nor as a unary predicate is refused, since no problem would assert it. L1's output is scored as written, as the PDDL a planner would ground, where nothing stops one object filling two parameters; `--injective` requires them distinct, as a DIAS checkpoint's schema is decoded, which removes all of blocks-3's false positives and part of logistics'. The result records which it was. L1 learned from `train.pddl` in 11 domains, but in hanoi from a 7 disc instance and in spanner from a smaller one (6 spanners, 4 nuts, 8 locations), which were the training instances when its walks were sampled. Neither the walks nor those two instances are in the repository.
-
-TODO: check whether DIAS learns hanoi and spanner from L1's instances as well as from `train.pddl`.
+Its sampling defaults and `force_injective` come from `experiments/configs/validation.yaml`, so it scores the way the sweep does, and all three validators return the same payload. `--threshold` extracts a run's learned domain anew, and `l1` accepts any learned PDDL domain, typed or not, with equality written as `=` or as a static `eq` or `equal`.
 
 ## Reproducibility
 

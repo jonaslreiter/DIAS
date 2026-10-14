@@ -152,12 +152,6 @@ class ValidatorRegistryTest(unittest.TestCase):
             with self.subTest(experiment_type=experiment_type):
                 self.assertIn(validator, VALIDATORS)
 
-    def test_only_a_lifted_schema_can_be_binarized(self):
-        """The threshold is a property of reading a schema off a model, so the two validators that produce no lifted schema must refuse one."""
-        self.assertTrue(VALIDATORS["dias"].binarizes_schema)
-        self.assertFalse(VALIDATORS["mlp"].binarizes_schema)
-        self.assertFalse(VALIDATORS["l1"].binarizes_schema)
-
     def test_l1_is_the_one_validator_without_a_checkpoint(self):
         self.assertFalse(VALIDATORS["l1"].from_checkpoint)
         self.assertTrue(VALIDATORS["dias"].from_checkpoint)

@@ -70,13 +70,23 @@ class TensorRelationsTest(unittest.TestCase):
         )
 
     def test_equality_is_a_relation_only_when_asked_for(self):
-        predicates = self.PREDICATES + [{"name": "=", "arity": 2, "static": True}]
+        equality = [
+            {"name": "=", "arity": 2, "static": True},
+            {"name": "Equal", "arity": 2, "static": True},
+            # Changed by some action, so an ordinary predicate whatever its name.
+            {"name": "eq", "arity": 2, "static": False},
+        ]
         names = lambda **kwargs: [
             p["name"]
-            for p in tensor_relations(predicates, include_statics=True, **kwargs)
+            for p in tensor_relations(
+                self.PREDICATES + equality, include_statics=True, **kwargs
+            )
         ]
-        self.assertEqual(names(), ["one", "two", "static"])
-        self.assertEqual(names(include_equality=True), ["one", "two", "static", "="])
+        self.assertEqual(names(), ["one", "two", "static", "eq"])
+        self.assertEqual(
+            names(include_equality=True),
+            ["one", "two", "static", "=", "Equal", "eq"],
+        )
 
 
 class CheckpointSchemaTest(unittest.TestCase):

@@ -1,11 +1,11 @@
 """Validate one learned action model on one PDDL problem and print the result, where ``experiments/validate_runs.py`` walks a whole grid.
 
-``--validator`` picks what is scored: ``dias`` a trained checkpoint, whose lifted schema is binarized at ``--threshold``; ``mlp`` an MLP-effects checkpoint, which has no lifted schema; ``l1`` a learned PDDL domain from outside this repository, given as ``--original-domain`` / ``--learned-domain`` rather than a run id. Sampling defaults come from ``experiments/configs/validation.yaml``.
+``--validator`` picks what is scored: ``dias`` and ``mlp`` the learned domain of a training run, given as ``--model-id``, which ``--threshold`` extracts anew; ``l1`` a learned PDDL domain from another system, given as ``--original-domain`` / ``--learned-domain``. Sampling defaults come from ``experiments/configs/validation.yaml``.
 
 Examples
 --------
     python experiments/validate_checkpoint.py --validator dias --model-id <run-id> --problem pddl/satellite/test-1.pddl
-    python experiments/validate_checkpoint.py --validator l1 --original-domain pddl/satellite/domain.pddl --learned-domain learned/satellite.pddl --problem pddl/satellite/test-1.pddl
+    python experiments/validate_checkpoint.py --validator l1 --original-domain pddl/satellite/domain.pddl --learned-domain experiments/l1_pddl/satellite.pddl --problem pddl/satellite/test-1.pddl
 """
 
 from __future__ import annotations
@@ -33,35 +33,36 @@ def _validator_help() -> str:
 
 
 def _construction_kwargs(args: argparse.Namespace) -> dict:
-    """The arguments that differ between a checkpoint and a learned domain."""
+    """The arguments that differ between a training run and a learned domain."""
     validator = VALIDATORS[args.validator]
     common = {
-        "logs_path": str(args.log_dir.resolve()),
         "problem_path": str(args.problem.resolve()),
+        "force_injective": args.force_injective,
     }
     if not validator.from_checkpoint:
         if not (args.original_domain and args.learned_domain):
             raise SystemExit(
                 f"--validator {args.validator} scores a learned PDDL domain: pass --original-domain and --learned-domain"
             )
+        if args.threshold is not None:
+            raise SystemExit(
+                f"--threshold extracts a training run's learned domain anew; {validator.summary}"
+            )
         return {
             **common,
             "original_domain_path": str(args.original_domain.resolve()),
             "learned_domain_path": str(args.learned_domain.resolve()),
-            "injective": args.injective,
         }
     if not args.model_id:
         raise SystemExit(f"--validator {args.validator} needs --model-id")
-    kwargs = {**common, "model_id": args.model_id}
-    if validator.binarizes_schema:
-        kwargs["threshold"] = args.threshold
-    elif args.threshold != 0.5:
-        raise SystemExit(
-            f"--threshold applies to a validator that reads a lifted schema; {validator.summary}"
-        )
-    if args.validator == "mlp":
+    kwargs = {
+        **common,
+        "model_id": args.model_id,
+        "logs_path": str(args.log_dir.resolve()),
+        "threshold": args.threshold,
+    }
+    if validator.grounds_in_parallel:
         kwargs |= {"num_workers": args.num_workers, "batch_size": args.batch_size}
-    kwargs["injective"] = args.injective
     return kwargs
 
 
@@ -99,14 +100,14 @@ def main() -> int:
     p.add_argument(
         "--threshold",
         type=float,
-        default=0.5,
-        help="Binarization threshold for the learned schema (dias only). Default 0.5, what the paper reports.",
+        default=None,
+        help="Extract the run's learned domain anew at this binarization threshold, instead of scoring the one written beside its checkpoint (dias and mlp).",
     )
     p.add_argument(
-        "--injective",
+        "--force-injective",
         action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Require a learned schema's parameters to be distinct. Default: validation.yaml's for dias and mlp, which bind injectively; off for l1, whose output is scored as the PDDL it is.",
+        default=bool(defaults.get("force_injective", False)),
+        help="Replace whatever the learned domain says about equality with distinct parameters in every schema. Default from validation.yaml.",
     )
     p.add_argument("--num-workers", type=int, default=1, help="mlp only.")
     p.add_argument("--batch-size", type=int, default=4096, help="mlp only.")
@@ -114,12 +115,6 @@ def main() -> int:
     add_logging_arguments(p)
     args = p.parse_args()
     configure_logging(args)
-    if args.injective is None:
-        # As validate_runs.py resolves it: the configured default is for a model that binds injectively.
-        args.injective = (
-            bool(defaults.get("injective", True))
-            and VALIDATORS[args.validator].from_checkpoint
-        )
 
     validation = validator_class(args.validator)(**_construction_kwargs(args))
     validation.setup(
@@ -131,7 +126,8 @@ def main() -> int:
     # Passing this back as --sample-seed scores the next run on these exact states.
     result = {
         "sample_seed": validation.sample_seed,
-        "injective": args.injective,
+        "threshold": validation.threshold,
+        "force_injective": args.force_injective,
         **result,
     }
 

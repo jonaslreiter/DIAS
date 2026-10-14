@@ -51,6 +51,7 @@ class DIAS(L.LightningModule):
         use_effect_loss: bool = True,
         use_pcgrad: bool = True,
         encoder_hidden_dims: list[int] | None = None,
+        schema_threshold: float = 0.5,
     ):
         """
         Args:
@@ -78,6 +79,7 @@ class DIAS(L.LightningModule):
             use_effect_loss: Include the minimal-effects auxiliary term.
             use_pcgrad: Project the auxiliary gradient rather than adding a weighted sum.
             encoder_hidden_dims: Widths of the relational convolutions.
+            schema_threshold: Probability at which the learned domain written beside each checkpoint binarizes slots, effects and preconditions (Eq. 14).
         """
         super().__init__()
         self.save_hyperparameters()

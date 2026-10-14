@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import multiprocessing as _mp
+import re
 import sys
 from collections import defaultdict
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
@@ -16,17 +17,16 @@ import torch
 from tqdm import tqdm
 
 from dias.pddl import text as pddl_text
-from dias.pddl.transpiler import PDDLTranspiler
 from dias.pddl.untype import (
     EQUALITY_PREDICATE,
     extract_domain_header,
     strip_problem_types,
+    untype_action,
 )
-from dias.schema.domain import strips_plus_arguments
+from dias.schema.action import ActionSchema, LiftedAtom
 
 from .artifacts import PddlWorkspace
-from .checkpoint import load_run
-from .decoding import derive_schema
+from .checkpoint import learned_pddl, load_run
 from .grounding import ground_state, init_worker, signature_from_words, successor_keys
 from .successors import (
     LEARNED_ACTION_PREFIX,
@@ -36,6 +36,21 @@ from .successors import (
     score_successors,
     transfer_states,
 )
+
+UNREACHABLE_GUARD = "dummy_guard"
+
+
+def _unreachable_action(predicates: list[tuple[str, int]]) -> ActionSchema:
+    """An action that never applies, with an effect on every predicate but `eq`: with every learned effect empty, pymimir would otherwise take them all for static."""
+    return ActionSchema(
+        name="dummy_action_unreachable",
+        preconditions=[LiftedAtom(UNREACHABLE_GUARD, 0, [], True)],
+        effects=[
+            LiftedAtom(name, arity, list(range(arity)), True)
+            for name, arity in predicates
+            if name != EQUALITY_PREDICATE
+        ],
+    )
 
 
 def _xor_reduce(words: torch.Tensor) -> torch.Tensor:
@@ -69,13 +84,13 @@ class MlpEffectsValidator:
         self,
         model_id,
         logs_path,
-        problem_path=None,
+        problem_path,
+        threshold=None,
+        force_injective=False,
         batch_size: int = 65536,
         num_workers: int = 1,
         states_per_worker: int = 4,
-        injective: bool = True,
     ):
-        """With `injective`, every learned action also requires its parameters to be distinct, as `read_learned_schemas` writes them for a DIAS checkpoint."""
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.states_per_worker = states_per_worker
@@ -84,57 +99,31 @@ class MlpEffectsValidator:
         self.checkpoint_path = str(run.checkpoint_path)
         self.schema = run.schema
         self.model = run.model
-        datamodule_hparams = run.datamodule_hparams
 
-        schema = self.model.schema_logits()
-        if schema.effects is not None:
+        if self.model.schema_logits().effects is not None:
             raise ValueError(
                 "MlpEffectsValidator expects a model trained with state_dependent_effects=True. A model with lifted effects is scored by DiasValidator."
             )
 
-        strips_plus_positions = (
-            strips_plus_arguments(datamodule_hparams["domain_path"])
-            if datamodule_hparams.get("strips_plus_actions", False)
-            else {}
+        self.learned_domain_text, self.threshold = learned_pddl(run, threshold)
+        learned_domain_text = pddl_text.write_equality_as_builtin(
+            self.learned_domain_text,
+            pddl_text.equality_predicates(self.learned_domain_text),
         )
-        action_arguments = datamodule_hparams.get("action_arguments", False)
-        strips_plus_actions = datamodule_hparams.get("strips_plus_actions", False)
-
-        # `schema.effects` is None here, so only preconditions and slot activations are read off.
-        _, _, positive_preconditions, negative_preconditions, active_slots = (
-            derive_schema(
-                effect_logits=schema.effects,
-                precondition_logits=schema.preconditions,
-                slot_weight_logits=schema.slot_weight_logits,
-                force_action_args=self.model.force_action_args,
-                action_arguments=action_arguments,
-                strips_plus_actions=strips_plus_actions,
-                strips_plus_positions=strips_plus_positions,
-                action_names=list(self.schema.action_names),
-                action_arities=list(self.schema.action_arities),
-                num_slots=self.model.num_slots,
-                random_flip=False,
+        if force_injective:
+            learned_domain_text = pddl_text.force_distinct_parameters(
+                learned_domain_text
             )
-        )
 
-        original_domain_path = datamodule_hparams["domain_path"]
+        original_domain_path = run.domain_path
         original_domain_text = Path(original_domain_path).read_text()
-        has_equality = pddl_text.domain_uses_equality(original_domain_text)
+        has_equality = pddl_text.domain_uses_equality(
+            original_domain_text
+        ) or pddl_text.domain_uses_equality(learned_domain_text)
+        equality_predicate_name = EQUALITY_PREDICATE if has_equality else None
 
         relation_names = list(self.schema.relation_names)
         relation_arities = list(self.schema.relation_arities)
-        if not has_equality:
-            keep = [i for i, n in enumerate(relation_names) if n != "="]
-            positive_preconditions = positive_preconditions[:, keep, :, :]
-            negative_preconditions = negative_preconditions[:, keep, :, :]
-            relation_names = [relation_names[i] for i in keep]
-            relation_arities = [relation_arities[i] for i in keep]
-
-        transpiler_predicate_names = [
-            EQUALITY_PREDICATE if has_equality and n == "=" else n
-            for n in relation_names
-        ]
-
         self.relation_names = relation_names
         self.relation_arities = relation_arities
         self.eq_channel_idx = (
@@ -143,74 +132,57 @@ class MlpEffectsValidator:
         self.action_names = list(self.schema.action_names)
         self.num_slots = int(self.model.num_slots)
 
-        # The active slots of each action become its PDDL parameters, named ?x{slot} so the transpiler's atoms line up when they are not contiguous. Grounding is read back through this.
+        # A learned action's parameters are its active slots, named ?x{slot}; grounding reads bindings back through them.
+        blocks = {
+            re.match(r"\(\s*:action\s+(\S+)", block).group(1): block
+            for block in pddl_text.extract_action_blocks(learned_domain_text)
+        }
         self.active_slot_indices = [
-            [int(i) for i in range(self.num_slots) if bool(active_slots[a][i])]
-            for a in range(len(self.action_names))
+            [
+                int(variable[2:])
+                for variable in pddl_text.parse_typed_parameters(
+                    pddl_text.find_balanced_expr(
+                        blocks[name], blocks[name].find(":parameters")
+                    )[0]
+                )[0]
+            ]
+            for name in self.action_names
+        ]
+        actions = [
+            untype_action(
+                blocks[name],
+                name_prefix=LEARNED_ACTION_PREFIX,
+                equality_predicate_name=equality_predicate_name,
+            )
+            for name in self.action_names
         ]
 
-        # The transpiler only supplies the precondition atoms; the blocks are written below.
-        zero_effects = np.zeros_like(positive_preconditions)
-        pddl_transpiler = PDDLTranspiler(
-            add_effects=zero_effects,
-            delete_effects=zero_effects,
-            positive_preconditions=positive_preconditions,
-            negative_preconditions=negative_preconditions,
-            predicate_names=transpiler_predicate_names,
-            predicate_arities=relation_arities,
-            action_names=list(self.schema.action_names),
-        )
-        pddl_transpiler.generate_action_schemas()
-        if has_equality:
-            # The learned problem carries its reflexive facts, whether or not the model had a channel for `=`.
-            pddl_transpiler.declare_predicate(EQUALITY_PREDICATE, 2)
-        if injective:
-            pddl_transpiler.require_distinct(
-                EQUALITY_PREDICATE, self.active_slot_indices
-            )
-
-        num_learned_actions = len(pddl_transpiler.action_schemas)
-        for schema in pddl_transpiler.action_schemas:
-            schema.name = f"{LEARNED_ACTION_PREFIX}{schema.name}"
-
-        # With every learned :effect empty, pymimir would classify all predicates as static and transfer_state would drop the source state's fluent atoms. One never-applicable action with effects on all of them keeps them fluent, except the equality predicate: a state is rebuilt from atoms that spell it `=`, so only as a static does it keep its facts from :init.
-        pddl_transpiler.add_unreachable_action(
-            static_predicate_names=(EQUALITY_PREDICATE,)
-        )
-
-        # The learned-only domain.
+        predicates = [
+            (EQUALITY_PREDICATE if name == "=" else name, arity)
+            for name, arity in zip(relation_names, relation_arities)
+        ]
+        if has_equality and (EQUALITY_PREDICATE, 2) not in predicates:
+            predicates.append((EQUALITY_PREDICATE, 2))
+        predicates.append((UNREACHABLE_GUARD, 0))
         header = extract_domain_header(
             original_domain_text,
-            predicate_names=pddl_transpiler.predicate_names,
-            predicate_arities=pddl_transpiler.predicate_arities,
+            predicate_names=[name for name, _ in predicates],
+            predicate_arities=[arity for _, arity in predicates],
             keep_equality_requirement=False,
-        )
-        action_blocks = [
-            self._format_learned_action(
-                schema=schema, slot_indices=self.active_slot_indices[a]
-            )
-            for a, schema in enumerate(
-                pddl_transpiler.action_schemas[:num_learned_actions]
-            )
-        ]
-        # The unreachable action keeps the transpiler's serializer: its effects are the point.
-        action_blocks.append(
-            str(pddl_transpiler.action_schemas[num_learned_actions]).rstrip()
         )
 
         self.workspace = PddlWorkspace()
         self.learned_domain_filename = self.workspace.write(
             "learned-domain.pddl",
-            header + "\n\n" + "\n\n".join(action_blocks) + "\n)" + "\n",
+            "\n\n".join([header, *actions, str(_unreachable_action(predicates))])
+            + "\n)\n",
         )
         self.learned_problem_filename = self.workspace.write(
             "learned-problem.pddl",
             strip_problem_types(
                 Path(problem_path).read_text(),
                 original_domain_text,
-                equality_predicate_name=(
-                    EQUALITY_PREDICATE if has_equality or injective else None
-                ),
+                equality_predicate_name=equality_predicate_name,
             ),
         )
 
@@ -421,14 +393,3 @@ class MlpEffectsValidator:
         )
         flipped_keys = torch.where(flips[..., None], flipped_keys, 0)
         return _xor_reduce(flipped_keys.reshape(batch, -1, 2))
-
-    @staticmethod
-    def _format_learned_action(schema, slot_indices: list[int]) -> str:
-        """Serialize a learned action: empty effects, one parameter per active slot, named ``?x{slot}``.
-
-        A slot with no precondition stays a parameter, which pymimir grounds over all objects, matching the model's view that it carries no learned constraint.
-        """
-        params = " ".join(f"?x{i}" for i in slot_indices)
-        precs = [str(p) for p in schema.preconditions]
-        prec_str = "(and " + " ".join(precs) + ")" if precs else "()"
-        return f"(:action {schema.name}\n  :parameters ({params})\n  :precondition {prec_str}\n  :effect ()\n)"

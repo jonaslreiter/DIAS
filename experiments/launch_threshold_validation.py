@@ -23,9 +23,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))  # for `import pipeline
 
 from pipeline import configure_logging  # noqa: E402
 from pipeline import (
+    EXPERIMENT_VALIDATOR,
     PROJECT_ROOT,
     SLURM_DIR,
     SLURM_RESOURCES_VALIDATION,
+    VALIDATORS,
     add_domain_arguments,
     add_logging_arguments,
     add_path_arguments,
@@ -160,8 +162,12 @@ def main() -> int:
     p.add_argument(
         "--experiment-type",
         default="dias",
-        choices=["dias", "noise"],
-        help="Validator to use. The MLP-effects model has no schema to binarize.",
+        choices=[
+            kind
+            for kind, validator in EXPERIMENT_VALIDATOR.items()
+            if VALIDATORS[validator].from_checkpoint
+        ],
+        help="The source experiment's type, which picks the validator.",
     )
     add_domain_arguments(p)
     p.add_argument("--backend", default="slurm", choices=["slurm", "local"])

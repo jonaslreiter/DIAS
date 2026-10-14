@@ -9,8 +9,9 @@ from pathlib import Path
 import torch
 
 from checkpoints import TEST_PROBLEM, build_model, domain_schema, save
-from dias.validation.checkpoint import load_run
-from dias.validation.dias import DiasValidator, read_learned_schemas
+from dias.schema.export import learned_domain
+from dias.validation.checkpoint import load_run, resolve_best_checkpoint
+from dias.validation.dias import DiasValidator
 from support import temp_dir
 
 torch.set_num_threads(1)
@@ -23,12 +24,14 @@ NUM_SAMPLES = 8
 SAMPLE_POPULATION = 20
 
 
-def build_checkpoint(directory: Path, inequality: bool = False) -> str:
-    """Write a checkpoint whose only learned action is `stack`, correct apart from its inequality, which needs a run from before `include_equality` to have a channel at all."""
-    schema = domain_schema(legacy=inequality)
+def build_checkpoint(
+    directory: Path, legacy: bool = False, inequality: bool = False
+) -> str:
+    """Write a checkpoint whose only learned action is `stack`, correct apart from its inequality, which only a `legacy` run, from before `include_equality`, has a channel to learn."""
+    schema = domain_schema(legacy=legacy)
     relation = {name: i for i, name in enumerate(schema.relation_names)}
     action = {name: i for i, name in enumerate(schema.action_names)}
-    model, hparams = build_model(legacy=inequality)
+    model, hparams = build_model(legacy=legacy)
 
     stack = action["stack"]
     with torch.no_grad():
@@ -60,7 +63,7 @@ def build_checkpoint(directory: Path, inequality: bool = False) -> str:
         enable(effects, "clear", 1, 1, 2)
         enable(effects, "on-table", 0, 0, 2)
 
-    return save(directory, model, hparams, legacy=inequality)
+    return save(directory, model, hparams, legacy=legacy)
 
 
 class ValidationCharacterizationTest(unittest.TestCase):
@@ -125,35 +128,28 @@ class ValidationCharacterizationTest(unittest.TestCase):
         self.assertEqual(run(drawn), (drawn, result))
 
 
-class InjectiveDecodingTest(unittest.TestCase):
-    def schemas(self, inequality: bool, injective: bool) -> dict:
+class LearnedDomainTest(unittest.TestCase):
+    def stack(self, legacy: bool, inequality: bool = False) -> str:
         directory = temp_dir(self)
-        model_id = build_checkpoint(directory, inequality=inequality)
-        run = load_run(model_id, str(directory))
-        transpiler = read_learned_schemas(run, True, 0.5, injective=injective)
-        return {schema.name: schema for schema in transpiler.action_schemas}
+        run = load_run(build_checkpoint(directory, legacy, inequality), str(directory))
+        text = learned_domain(run.model, run.schema, run.datamodule_hparams, 0.5)
+        return text[text.index("(:action stack") : text.index("(:action newtower")]
 
-    def test_injective_decoding_writes_the_inequality_the_model_assumes(self):
-        stack = self.schemas(inequality=False, injective=True)["stack"]
-        self.assertIn("(not (eq ?x0 ?x1))", [str(atom) for atom in stack.preconditions])
-        plain = self.schemas(inequality=False, injective=False)["stack"]
-        self.assertNotIn("eq", " ".join(str(atom) for atom in plain.preconditions))
+    def test_a_run_without_equality_requires_distinct_parameters(self):
+        self.assertIn("(not (= ?x0 ?x1))", self.stack(legacy=False))
 
-    def test_an_inequality_already_learned_is_not_repeated(self):
-        stack = self.schemas(inequality=True, injective=True)["stack"]
-        written = [
-            str(atom) for atom in stack.preconditions if atom.predicate_name == "eq"
-        ]
-        self.assertEqual(written, ["(not (eq ?x0 ?x1))"])
+    def test_a_run_that_learned_equality_writes_only_what_it_learned(self):
+        self.assertNotIn("(= ", self.stack(legacy=True))
+        self.assertEqual(self.stack(legacy=True, inequality=True).count("(= "), 1)
 
-    def score_stack(self, injective: bool) -> dict:
+    def score_stack(self, legacy: bool, force_injective: bool = False) -> dict:
         directory = temp_dir(self)
-        model_id = build_checkpoint(directory, inequality=False)
+        model_id = build_checkpoint(directory, legacy)
         validation = DiasValidator(
             model_id,
             str(directory),
-            problem_path=str(TEST_PROBLEM),
-            injective=injective,
+            str(TEST_PROBLEM),
+            force_injective=force_injective,
         )
         validation.setup(
             num_samples=NUM_SAMPLES,
@@ -162,13 +158,32 @@ class InjectiveDecodingTest(unittest.TestCase):
         )
         return validation.validate()["action_stats"]["stack"]
 
-    def test_a_repeated_object_is_excluded_on_the_test_problem(self):
-        """Without the inequality, stack(b, b) applies wherever b is clear on the table and puts it on itself; the distinctness written at decoding is what keeps it out, which takes the reflexive facts in the merged problem."""
-        self.assertGreater(self.score_stack(injective=False)["fp"], 0)
-        self.assertEqual(
-            self.score_stack(injective=True),
-            {"tp": 54, "fp": 0, "fn": 0, "conflicts": 0},
-        )
+    def test_forcing_distinct_parameters_excludes_a_repeated_object(self):
+        """Without the inequality, stack(b, b) applies wherever b is clear on the table and puts it on itself."""
+        perfect = {"tp": 54, "fp": 0, "fn": 0, "conflicts": 0}
+        self.assertEqual(self.score_stack(legacy=False), perfect)
+        self.assertGreater(self.score_stack(legacy=True)["fp"], 0)
+        self.assertEqual(self.score_stack(legacy=True, force_injective=True), perfect)
+
+    def test_the_domain_written_beside_the_checkpoint_is_scored_unless_a_threshold_is_given(
+        self,
+    ):
+        directory = temp_dir(self)
+        model_id = build_checkpoint(directory)
+        run = load_run(model_id, str(directory))
+        text = learned_domain(run.model, run.schema, run.datamodule_hparams, 0.5)
+        written = resolve_best_checkpoint(
+            directory / "dias" / model_id / "checkpoints"
+        ).with_suffix(".pddl")
+        written.write_text(text.replace("(clear ?x0) ", "", 1))
+
+        def scored(threshold):
+            return DiasValidator(
+                model_id, str(directory), str(TEST_PROBLEM), threshold=threshold
+            ).learned_domain_text
+
+        self.assertEqual(scored(None), written.read_text())
+        self.assertEqual(scored(0.5), text)
 
 
 if __name__ == "__main__":

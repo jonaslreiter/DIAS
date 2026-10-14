@@ -1,6 +1,6 @@
 """Sort the precondition atoms of an experiment's learned schemas, and of the ground-truth domains, into categories.
 
-Every ``(domain, seed)`` checkpoint is read through ``dias.validation.dias.read_learned_schemas``, the function ``DiasValidator`` itself uses (``load_run``, then ``DIAS.schema_logits()``, then ``derive_schema`` at ``--threshold``, then ``PDDLTranspiler``), so what is counted here is exactly what a validator would score. Ground truth is parsed out of the ``:precondition`` conjunctions of ``pddl/<domain>/domain.pddl``.
+Every ``(domain, seed)`` checkpoint is read through ``dias.schema.export.read_learned_schemas``, the function a run's learned domain is written with (``load_run``, then ``DIAS.schema_logits()``, then ``derive_schema`` at ``--threshold``, then ``PDDLTranspiler``), less the parameter distinctness that domain writes when equality was not learned. Ground truth is parsed out of the ``:precondition`` conjunctions of ``pddl/<domain>/domain.pddl``.
 
 Each atom lands in exactly one class:
 
@@ -49,7 +49,7 @@ from validate_runs import run_id_for  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-# Equality reaches the schemas under two spellings: the built-in "=", which read_learned_schemas renames, and the ordinary predicate a domain declares in its place.
+# Equality reaches the schemas under two spellings: the built-in "=", and the ordinary predicate a domain declares in its place.
 EQUALITY_NAMES = frozenset({"=", EQUALITY_PREDICATE})
 
 # Atoms are counted per (class, polarity), because the two reported groupings cut across the pair differently.
@@ -237,17 +237,15 @@ def learned_counts(
     domain: str, run_id: str, log_dir: Path, threshold: float
 ) -> Counter:
     """One run's precondition atoms, classified. Raises FileNotFoundError if the run has no checkpoint."""
+    from dias.schema.export import read_learned_schemas
     from dias.validation.checkpoint import load_run
-    from dias.validation.dias import read_learned_schemas
 
     run = load_run(run_id, str(log_dir))
-    has_equality = pddl_text.domain_uses_equality(Path(run.domain_path).read_text())
-    # As learned: the distinctness a validator adds would count as learned equalities.
-    transpiler = read_learned_schemas(run, has_equality, threshold, injective=False)
-    # read_learned_schemas renames the "=" channel, so the static map must use the same name.
-    statics = {
-        EQUALITY_PREDICATE if name == "=" else name for name in pymimir_statics(domain)
-    }
+    # As learned: the distinctness a learned domain writes would count as learned equalities.
+    transpiler = read_learned_schemas(
+        run.model, run.schema, run.datamodule_hparams, threshold
+    )
+    statics = pymimir_statics(domain)
 
     counts = Counter()
     for schema in transpiler.action_schemas:
@@ -377,7 +375,7 @@ def write_markdown(
         "## How the numbers were produced",
         "",
         f"- `python experiments/precondition_categories.py --experiment {experiment} --markdown {path}`.",
-        f"- Learned schemas were read from `logs/dias/{experiment}-<domain>-s<seed>/checkpoints/best-epoch*.ckpt` through `dias.validation.dias.read_learned_schemas`, the function `DiasValidator` uses: `load_run`, then `DIAS.schema_logits()`, then `derive_schema(threshold={threshold:g})`, then `PDDLTranspiler`.",
+        f"- Learned schemas were read from `logs/dias/{experiment}-<domain>-s<seed>/checkpoints/best-epoch*.ckpt` through `dias.schema.export.read_learned_schemas`, the function a run's learned domain is written with: `load_run`, then `DIAS.schema_logits()`, then `derive_schema(threshold={threshold:g})`, then `PDDLTranspiler`.",
         "- Ground-truth schemas were parsed from the `:precondition` conjunction of `pddl/<domain>/domain.pddl`.",
         "- Distinct lifted atoms after de-duplication; `(not (p ...))` counts as one atom; type-derived unary predicates are excluded from the ground-truth counts, since a `?t - truck` in `:parameters` is not a precondition.",
         "- A static predicate is one that occurs in no action's effect, which is also what `pymimir`'s `Predicate.is_static()` reports and so the flag DIAS is given. `pymimir` additionally marks static the unary predicates it materialises out of a `:types` declaration, and `include_statics` defaults to true, so DIAS does get a channel for `(truck ?x)` and its kind while a ground-truth schema states that guard in `:parameters` instead. That asymmetry is what the `stat1` column measures.",
@@ -420,7 +418,7 @@ def main() -> int:
         "--threshold",
         type=float,
         default=0.5,
-        help="Binarization threshold handed to derive_schema (default: 0.5, what launch.py uses for --experiment-type dias; it uses 0.75 for noise).",
+        help="Binarization threshold handed to derive_schema (default: 0.5, schema_threshold's default; the noise overlay uses 0.75).",
     )
     p.add_argument(
         "--markdown",

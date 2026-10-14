@@ -6,7 +6,7 @@ from torch_geometric.data import Batch, Data
 
 from dias.models.dias import DIAS
 from dias.schedules import Exponential
-from dias.validation.decoding import derive_schema
+from dias.schema.decoding import derive_schema
 
 
 def make_batch(action_args=(0, 1), changed=False):

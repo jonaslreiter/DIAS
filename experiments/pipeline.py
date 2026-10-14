@@ -25,6 +25,7 @@ PROJECT_ROOT = EXPERIMENTS_ROOT.parent
 SLURM_DIR = EXPERIMENTS_ROOT / "slurm"
 PIPELINE_CONFIGS = EXPERIMENTS_ROOT / "configs"
 RESULTS_DIR = EXPERIMENTS_ROOT / "results"
+L1_PDDL_DIR = EXPERIMENTS_ROOT / "l1_pddl"
 
 CONFIGS_DIR = PROJECT_ROOT / "configs"
 PDDL_DIR = PROJECT_ROOT / "pddl"
@@ -53,8 +54,6 @@ TRAIN_PROBLEM = "train.pddl"
 # Held out from training, and validated on in this order.
 TEST_PROBLEMS = ("test-1.pddl", "test-2.pddl", "test-3.pddl")
 DOMAIN_CONFIG = "config.yaml"
-# Optional, unlike the rest: a domain added after the paper has no L1 output.
-L1_DOMAIN = "l1.pddl"
 
 
 def domain_dir(domain: str) -> Path:
@@ -78,11 +77,6 @@ def validation_problems(domain: str) -> list[Path]:
 def domain_config(domain: str) -> Path:
     """The Lightning partial config composed after configs/main.yaml."""
     return domain_dir(domain) / DOMAIN_CONFIG
-
-
-def l1_domain(domain: str) -> Path:
-    """The action schemas L1 learned for the paper's comparison, which ``validate_checkpoint.py --validator l1`` scores against ``domain_pddl``."""
-    return domain_dir(domain) / L1_DOMAIN
 
 
 def available_domains() -> list[str]:
@@ -117,14 +111,13 @@ def run_command(cmd: list[str], dry_run: bool, capture: bool = True) -> str | No
 class Validator:
     """One way of scoring a learned action model against the real domain.
 
-    ``binarizes_schema``: only a model with lifted schema tensors has anything to threshold. ``from_checkpoint``: L1 is handed a learned PDDL domain instead of a trained model. ``grounds_in_parallel``: whether the class takes ``num_workers``, which only the MLP-effects one does, its per-state grounding being the one that pays for a pool. ``module`` / ``class_name``: each validator module is named for the model it scores (``dias``, ``mlp_effects``, ``l1``) and holds one ``<Model>Validator``, rather than three modules sharing one name by convention.
+    ``from_checkpoint``: the learned domain is a training run's, so it can be extracted anew at another threshold; L1's is a PDDL file. ``grounds_in_parallel``: whether the class takes ``num_workers``, which only the MLP-effects one does, its per-state grounding being the one that pays for a pool.
     """
 
     name: str
     module: str
     class_name: str
     summary: str
-    binarizes_schema: bool
     from_checkpoint: bool
     grounds_in_parallel: bool = False
 
@@ -134,32 +127,34 @@ VALIDATORS: dict[str, Validator] = {
         name="dias",
         module="dias.validation.dias",
         class_name="DiasValidator",
-        summary="DIAS: lifted schemas read off a trained checkpoint",
-        binarizes_schema=True,
+        summary="DIAS: the learned domain of a training run",
         from_checkpoint=True,
     ),
     "mlp": Validator(
         name="mlp",
         module="dias.validation.mlp_effects",
         class_name="MlpEffectsValidator",
-        summary="MLP effects: effects predicted from the state, no lifted schema",
-        binarizes_schema=False,
+        summary="MLP effects: learned preconditions, effects predicted from the state",
         from_checkpoint=True,
         grounds_in_parallel=True,
     ),
     "l1": Validator(
         name="l1",
-        module="dias.validation.l1",
-        class_name="L1Validator",
-        summary="L1 baseline: a learned PDDL domain produced outside this repo",
-        binarizes_schema=False,
+        module="dias.validation.pddl",
+        class_name="PddlValidator",
+        summary="L1 baseline: the learned domain in experiments/l1_pddl/",
         from_checkpoint=False,
     ),
 }
 
 # Noise is a training-side setting, so its runs are still DIAS models.
-EXPERIMENT_VALIDATOR = {"dias": "dias", "noise": "dias", "mlp": "mlp"}
+EXPERIMENT_VALIDATOR = {"dias": "dias", "noise": "dias", "mlp": "mlp", "l1": "l1"}
 EXPERIMENT_TYPES = tuple(EXPERIMENT_VALIDATOR)
+
+
+def l1_domain(domain: str) -> Path:
+    """The domain L1 learned for the paper's comparison."""
+    return L1_PDDL_DIR / f"{domain}.pddl"
 
 
 def validator_class(name: str):

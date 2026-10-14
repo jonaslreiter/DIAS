@@ -111,17 +111,19 @@ class MlpEffectsTest(unittest.TestCase):
             SAMPLE_SEED,
         )
 
-    def learned_groundings(self, injective: bool) -> list[tuple[int, ...]]:
+    def learned_groundings(
+        self, legacy: bool, force_injective: bool = False
+    ) -> list[tuple[int, ...]]:
         # Every slot on, so the actions have parameters to repeat; the untrained preconditions decode to none.
         directory = temp_dir(self)
-        model, hparams = build_model(state_dependent_effects=True)
+        model, hparams = build_model(legacy=legacy, state_dependent_effects=True)
         with torch.no_grad():
             model.predictor.selector.slot_weight_logits.fill_(10.0)
         validation = MlpEffectsValidator(
-            save(directory, model, hparams),
+            save(directory, model, hparams, legacy=legacy),
             str(directory),
-            problem_path=str(TEST_PROBLEM),
-            injective=injective,
+            str(TEST_PROBLEM),
+            force_injective=force_injective,
         )
         validation.setup(
             num_samples=NUM_SAMPLES,
@@ -134,13 +136,16 @@ class MlpEffectsTest(unittest.TestCase):
             for ground_action in learned_state.generate_applicable_actions()
         ]
 
-    def test_injective_groundings_never_repeat_an_object(self):
+    def test_groundings_repeat_an_object_only_where_equality_was_learned(self):
         """The planted schema requires nothing, so repeats are applicable unless the distinctness holds, which needs the equality facts to survive the rebuilt state."""
         repeats = lambda groundings: [g for g in groundings if len(set(g)) < len(g)]
-        self.assertTrue(repeats(self.learned_groundings(injective=False)))
-        injective = self.learned_groundings(injective=True)
-        self.assertTrue(any(len(g) > 1 for g in injective))
-        self.assertEqual(repeats(injective), [])
+        self.assertTrue(repeats(self.learned_groundings(legacy=True)))
+        for groundings in (
+            self.learned_groundings(legacy=False),
+            self.learned_groundings(legacy=True, force_injective=True),
+        ):
+            self.assertTrue(any(len(g) > 1 for g in groundings))
+            self.assertEqual(repeats(groundings), [])
 
     def test_a_static_effects_checkpoint_is_refused(self):
         directory = temp_dir(self)

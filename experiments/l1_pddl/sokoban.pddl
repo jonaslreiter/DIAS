@@ -1,5 +1,3 @@
-; The action schemas L1 (Balyo et al., 2024) learned for the paper's comparison, as its authors returned them, with equality written as = and the types as in domain.pddl.
-; Learned from one random walk on train.pddl.
 (define (domain sokoban-domain)
   (:requirements :equality :negative-preconditions)
   (:predicates
@@ -20,28 +18,6 @@
     :effect (and
       (has_player ?untyped1)
       (not(has_player ?untyped2))
-    )
-  )
-
-  (:action pull-box
-    :parameters (?untyped1 ?untyped2 ?untyped3)
-    :precondition (and
-      (adjacent ?untyped1 ?untyped3)
-      (adjacent ?untyped2 ?untyped3)
-      (adjacent ?untyped3 ?untyped1)
-      (adjacent ?untyped3 ?untyped2)
-      (adjacent_2 ?untyped1 ?untyped2)
-      (adjacent_2 ?untyped2 ?untyped1)
-      (has_box ?untyped2)
-      (has_player ?untyped3)
-      (not(has_box ?untyped3))
-      (not(has_player ?untyped1))
-    )
-    :effect (and
-      (has_box ?untyped3)
-      (has_player ?untyped1)
-      (not(has_box ?untyped2))
-      (not(has_player ?untyped3))
     )
   )
 

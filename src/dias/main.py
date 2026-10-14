@@ -11,6 +11,7 @@ from lightning.pytorch.loggers import Logger
 
 from dias.data.datamodule import PddlGraphDataModule  # noqa: F401  (registered for CLI)
 from dias.models.dias import DIAS  # noqa: F401  (registered for CLI)
+from dias.schema.export import learned_domain
 
 logger = logging.getLogger("dias.run")
 
@@ -62,6 +63,28 @@ class CLI(LightningCLI):
             data.seed = seed
 
 
+class SchemaCheckpoint(ModelCheckpoint):
+    """A checkpoint with its learned domain beside it, as PDDL under the same name."""
+
+    def _save_checkpoint(self, trainer, filepath):
+        super()._save_checkpoint(trainer, filepath)
+        if trainer.is_global_zero:
+            model, datamodule = trainer.lightning_module, trainer.datamodule
+            Path(filepath).with_suffix(".pddl").write_text(
+                learned_domain(
+                    model,
+                    datamodule.schema,
+                    datamodule.hparams,
+                    model.hparams.schema_threshold,
+                )
+            )
+
+    def _remove_checkpoint(self, trainer, filepath):
+        super()._remove_checkpoint(trainer, filepath)
+        if trainer.is_global_zero:
+            Path(filepath).with_suffix(".pddl").unlink(missing_ok=True)
+
+
 class SaveAndLogConfigCallback(SaveConfigCallback):
     """Save config to the logger run directory and log all hyper-parameters."""
 
@@ -93,8 +116,8 @@ def main():
         # No logger: the W&B account belongs in configs/main.yaml, not the library.
         trainer_defaults={
             "callbacks": [
-                ModelCheckpoint(filename="final-{epoch}-{step}"),
-                ModelCheckpoint(
+                SchemaCheckpoint(filename="final-{epoch}-{step}"),
+                SchemaCheckpoint(
                     filename="best-{epoch}-{step}", monitor="valid/loss_adjacency"
                 ),
                 TQDMProgressBar(),

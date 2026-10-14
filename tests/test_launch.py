@@ -93,6 +93,51 @@ class ValidateOnlyTest(unittest.TestCase):
         self.assertFalse(plan.validate_only)
 
 
+class ValidationThresholdTest(unittest.TestCase):
+    def exported(self, **overrides) -> str:
+        plan = launch.build_plan(plan_args(temp_dir(self), **overrides))
+        return next(opt for opt in submitted(plan)[-1] if opt.startswith("--export"))
+
+    def test_by_default_validation_scores_the_domain_the_run_wrote(self):
+        self.assertNotIn("THRESHOLD", self.exported())
+
+    def test_a_threshold_is_handed_to_validation_only_when_given(self):
+        self.assertIn("THRESHOLD=0.25", self.exported(validation_threshold=0.25))
+
+
+class L1LaunchTest(unittest.TestCase):
+    def args(self, *extra):
+        return launch.parse_args(
+            [
+                "--experiment-type",
+                "l1",
+                "--experiment",
+                "l1",
+                "--domains",
+                "gripper",
+                "--log-dir",
+                str(temp_dir(self)),
+                *extra,
+            ]
+        )
+
+    def test_l1_only_validates_once_per_domain(self):
+        (validate,) = submitted(launch.build_plan(self.args()))
+        self.assertIn("--array=0", validate)
+        self.assertFalse([opt for opt in validate if opt.startswith("--dependency")])
+        self.assertTrue([opt for opt in validate if "EXP_TYPE=l1" in opt])
+
+    def test_options_for_a_training_run_are_refused(self):
+        for extra in (
+            ["--ablation", "no-pcgrad"],
+            ["--set", "model.init_args.num_slots=3"],
+            ["--validation-threshold", "0.25"],
+        ):
+            with self.subTest(extra=extra):
+                with self.assertRaisesRegex(SystemExit, extra[0]):
+                    launch.build_plan(self.args(*extra))
+
+
 class FinishedTrainingTest(unittest.TestCase):
     """Both checkpoints are rewritten throughout a run, so only the step they reached says training finished."""
 

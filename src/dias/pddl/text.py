@@ -9,7 +9,9 @@ EQUALITY_REQUIREMENT = ":equality"
 TYPES_PATTERN = re.compile(r"\(:types(.*?)\)", re.DOTALL)
 REQUIREMENTS_PATTERN = re.compile(r"\(:requirements([^)]*)\)", re.IGNORECASE)
 COMMENT_PATTERN = re.compile(r";[^\n]*")
-# What a domain written without :equality calls the static predicate it spells `=` with.
+EQUALITY_LITERAL_PATTERN = re.compile(
+    r"\s*\(\s*not\s*\(\s*=\s[^()]*\)\s*\)|\s*\(\s*=\s[^()]*\)"
+)
 EQUALITY_PREDICATE_NAMES = frozenset({"eq", "equal"})
 
 
@@ -48,7 +50,7 @@ def extract_action_blocks(domain_text: str) -> list[str]:
 
 
 def parse_typed_list(body: str) -> list[tuple[list[str], str | None]]:
-    """A PDDL typed list (``a b - t c``) as ``(names, type)`` groups, in order. Names after the last type have none, which is ``None`` here: what that means is the caller's to say."""
+    """A PDDL typed list (``a b - t c``) as ``(names, type)`` groups, in order; names after the last type get ``None``."""
     groups: list[tuple[list[str], str | None]] = []
     pending: list[str] = []
     tokens = body.split()
@@ -82,7 +84,7 @@ def parse_typed_parameters(
 
 
 def parse_type_groups(domain_text: str) -> list[tuple[list[str], str]]:
-    """The domain's ``(:types ...)`` as ``(children, parent)`` groups, in order, a type declared without a parent being a child of ``object`` (satellite declares all four of its types that way). Kept grouped rather than flattened: callers that emit text need children and parent adjacent."""
+    """The domain's ``(:types ...)`` as ``(children, parent)`` groups, in order, a type declared without a parent being a child of ``object``. Kept grouped rather than flattened: callers that emit text need children and parent adjacent."""
     match = TYPES_PATTERN.search(domain_text)
     if match is None:
         return []
@@ -129,11 +131,15 @@ def declared_predicates(domain_text: str) -> dict[str, int]:
     }
 
 
-def equality_predicates(domain_text: str) -> list[str]:
-    """The predicates a domain spells `=` with: binary, named for equality (`eq`, `equal`) and in no action's effect.
+def is_equality_predicate(name: str, arity: int, static: bool) -> bool:
+    """PDDL's `=`, or a predicate standing in for it: binary, static and named `eq` or `equal`, as a domain without :equality has to write it."""
+    return name == "=" or (
+        name.lower() in EQUALITY_PREDICATE_NAMES and arity == 2 and static
+    )
 
-    A domain without :equality has to write parameter distinctness this way, asserting ``(eq o o)`` in each problem; L1's output does, as blocks-3 and gripper here once did. The facts are trusted to be reflexive, which ``drop_equality_facts`` checks.
-    """
+
+def equality_predicates(domain_text: str) -> list[str]:
+    """The predicates a domain declares in place of `=`."""
     effects = " ".join(
         find_balanced_expr(block, block.find(":effect"))[0]
         for block in extract_action_blocks(COMMENT_PATTERN.sub("", domain_text))
@@ -142,9 +148,11 @@ def equality_predicates(domain_text: str) -> list[str]:
     return [
         name
         for name, arity in declared_predicates(domain_text).items()
-        if name.lower() in EQUALITY_PREDICATE_NAMES
-        and arity == 2
-        and not re.search(rf"\(\s*{re.escape(name)}\s", effects, re.IGNORECASE)
+        if is_equality_predicate(
+            name,
+            arity,
+            static=not re.search(rf"\(\s*{re.escape(name)}\s", effects, re.IGNORECASE),
+        )
     ]
 
 
@@ -165,31 +173,33 @@ def write_equality_as_builtin(domain_text: str, names: list[str]) -> str:
         text,
         flags=re.IGNORECASE,
     )
-    return _require_equality(text)
+    return require_equality(text)
 
 
-def require_distinct_parameters(domain_text: str) -> str:
-    """The domain with every action requiring its parameters to be pairwise distinct, written as ``(not (= ?a ?b))``, and :equality required."""
+def force_distinct_parameters(domain_text: str) -> str:
+    """The domain with every action requiring each two of its parameters to be distinct, and saying nothing else about equality: the `=` literals it had are dropped."""
     text = domain_text
     for block in extract_action_blocks(domain_text):
         variables, _ = parse_typed_parameters(
             find_balanced_expr(block, block.find(":parameters"))[0]
         )
         distinct = [f"(not (= {a} {b}))" for a, b in combinations(variables, 2)]
-        if not distinct:
-            continue
-        start = block.find(":precondition")
-        precondition, end = find_balanced_expr(block, start)
-        rewritten = (
-            block[: block.index("(", start)]
-            + inject_extra_preconditions(precondition, distinct)
-            + block[end:]
-        )
+        rewritten = block
+        for part in (":precondition", ":effect"):
+            start = rewritten.find(part)
+            expression, end = find_balanced_expr(rewritten, start)
+            kept = EQUALITY_LITERAL_PATTERN.sub("", expression) or "()"
+            if part == ":precondition":
+                kept = inject_extra_preconditions(kept, distinct)
+            rewritten = (
+                rewritten[: rewritten.index("(", start)] + kept + rewritten[end:]
+            )
         text = text.replace(block, rewritten, 1)
-    return _require_equality(text)
+    return require_equality(text)
 
 
-def _require_equality(domain_text: str) -> str:
+def require_equality(domain_text: str) -> str:
+    """The domain with :equality among its requirements."""
     if domain_uses_equality(domain_text):
         return domain_text
     requirements = REQUIREMENTS_PATTERN.search(domain_text)
@@ -208,7 +218,7 @@ def _require_equality(domain_text: str) -> str:
 
 
 def drop_equality_facts(problem_text: str, names: list[str]) -> str:
-    """The problem without its atoms over the predicates in `names`, which `=` makes redundant once ``write_equality_as_builtin`` has run. One relating two different objects is refused: that predicate is not equality."""
+    """The problem without its atoms over the predicates in `names`. One relating two different objects is refused: that predicate is not equality."""
     if not names:
         return problem_text
     alternatives = "|".join(re.escape(name) for name in names)

@@ -1,10 +1,10 @@
 """Validate one ``(experiment, domain, seed)`` run and write its results.
 
-The compute-side validation step, invoked once per seed by ``slurm/validate.sh`` and by ``launch.py --backend local``. The experiment type picks the validator: dias / noise read a DIAS checkpoint, mlp an MLP-effects one. (L1 has no checkpoint and no sweep iterates over it; reach it through ``validate_checkpoint.py --validator l1``.)
+The compute-side validation step, invoked once per seed by ``slurm/validate.sh`` and by ``launch.py --backend local``. The experiment type picks the validator: dias / noise score a DIAS run's learned domain, mlp an MLP-effects run's, and l1 the domain L1 learned, in ``experiments/l1_pddl/``, which has no run behind it.
 
-The run is located by its deterministic id, its problems are the domain folder's ``test-{1,2,3}.pddl`` and its sampling knobs come from ``experiments/configs/validation.yaml``. Results go to ``<logs>/validation/<experiment>/<domain>/seed<seed>.json``, and to the resumed W&B run when it is reachable.
+A run is located by its deterministic id, its problems are the domain folder's ``test-{1,2,3}.pddl`` and its sampling knobs come from ``experiments/configs/validation.yaml``. Results go to ``<logs>/validation/<experiment>/<domain>/seed<seed>.json``, the learned domain they scored beside it as ``seed<seed>.pddl``, and the metrics to the resumed W&B run when it is reachable.
 
-``--threshold`` re-reads the same checkpoint at another binarization threshold and ``--results-experiment`` redirects only the output directory, which together re-validate a finished experiment without touching its JSONs; see ``experiments/launch_threshold_validation.py``.
+``--threshold`` extracts a run's learned domain anew at another binarization threshold, and ``--results-experiment`` redirects only the output directory, which together re-validate a finished experiment without touching its JSONs; see ``experiments/launch_threshold_validation.py``.
 
 The MLP-effects validator grounds its sampled states across ``--num-workers`` processes, defaulting to the CPUs the job was allocated, and ``--resume`` continues a seed from what an earlier run on the same checkpoint scored.
 """
@@ -32,6 +32,8 @@ from pipeline import (
     add_logging_arguments,
     add_path_arguments,
     allocated_cpus,
+    domain_pddl,
+    l1_domain,
     load_yaml,
     select_domains,
     validation_problems,
@@ -56,7 +58,7 @@ def validate_run(
     logs_dir: Path,
     run_id: str | None = None,
     log_wandb: bool = True,
-    threshold: float = 0.5,
+    threshold: float | None = None,
     results_experiment: str | None = None,
     num_workers: int | None = None,
     states_per_worker: int | None = None,
@@ -74,26 +76,47 @@ def validate_run(
     results_experiment = results_experiment or experiment
     val_problems = validation_problems(domain)
     out = _result_path(logs_dir, results_experiment, domain, seed)
-    checkpoint = resolve_best_checkpoint(logs_dir / "dias" / run_id / "checkpoints")
 
     validator = VALIDATORS[EXPERIMENT_VALIDATOR[experiment_type]]
     validation = validator_class(validator.name)
-    if not validator.binarizes_schema and threshold != 0.5:
-        raise SystemExit(
-            f"--threshold applies to a validator that reads a lifted schema; {validator.summary}"
-        )
+    if validator.from_checkpoint:
+        checkpoint = resolve_best_checkpoint(logs_dir / "dias" / run_id / "checkpoints")
+        learned = {
+            "model_id": run_id,
+            "logs_path": str(logs_dir.resolve()),
+            "threshold": threshold,
+        }
+    else:
+        if threshold is not None:
+            raise SystemExit(
+                f"--threshold extracts a training run's learned domain anew; {validator.summary}"
+            )
+        checkpoint = None
+        # There is no training run to mirror the metrics to.
+        log_wandb = False
+        learned = {
+            "original_domain_path": str(domain_pddl(domain)),
+            "learned_domain_path": str(l1_domain(domain)),
+        }
+    if validator.grounds_in_parallel:
+        workers = allocated_cpus() if num_workers is None else num_workers
+        logger.info("Grounding states across %d worker processes.", workers)
+        learned["num_workers"] = workers
+        if states_per_worker is not None:
+            learned["states_per_worker"] = states_per_worker
     num_samples = int(val_cfg["num_samples"])
     sample_population = int(val_cfg["sample_population"])
-    # Only a checkpoint's schema is decoded here; L1's domain is another system's output. Written into the result, since it changes which schema is scored.
-    injective = bool(val_cfg.get("injective", True)) and validator.from_checkpoint
+    force_injective = bool(val_cfg.get("force_injective", False))
 
     per_problem: dict[str, dict[str, Any]] = {}
+    scored_threshold = threshold
     if resume and out.exists():
         previous = json.loads(out.read_text())
-        refusal = _resume_refusal(previous, out, checkpoint, threshold, injective)
+        refusal = _resume_refusal(previous, out, checkpoint, threshold, force_injective)
         if refusal is not None:
             raise SystemExit(f"--resume {out}: {refusal}")
         sample_seed = previous["sample_seed"]
+        scored_threshold = previous["threshold"]
         per_problem = {
             stem: result
             for stem, result in previous["per_problem"].items()
@@ -105,16 +128,6 @@ def validate_run(
         sample_seed = resolve_sample_seed(
             None if configured_seed is None else int(configured_seed)
         )
-
-    extra_kwargs = {"threshold": threshold} if validator.binarizes_schema else {}
-    if validator.from_checkpoint:
-        extra_kwargs["injective"] = injective
-    if validator.grounds_in_parallel:
-        workers = allocated_cpus() if num_workers is None else num_workers
-        logger.info("Grounding states across %d worker processes.", workers)
-        extra_kwargs["num_workers"] = workers
-        if states_per_worker is not None:
-            extra_kwargs["states_per_worker"] = states_per_worker
 
     for problem in val_problems:
         stem = problem.stem
@@ -131,11 +144,13 @@ def validate_run(
         )
         try:
             v = validation(
-                model_id=run_id,
-                logs_path=str(logs_dir.resolve()),
                 problem_path=str(problem.resolve()),
-                **extra_kwargs,
+                force_injective=force_injective,
+                **learned,
             )
+            scored_threshold = v.threshold
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.with_suffix(".pddl").write_text(v.learned_domain_text)
             v.setup(
                 num_samples=num_samples,
                 sample_population=sample_population,
@@ -171,11 +186,11 @@ def validate_run(
                 for p in val_problems
                 if p.stem in per_problem
             },
-            threshold,
+            scored_threshold,
             sample_seed,
             expected=[p.stem for p in val_problems],
             checkpoint=checkpoint,
-            injective=injective,
+            force_injective=force_injective,
         )
 
     if log_wandb:
@@ -199,16 +214,19 @@ def _result_path(logs_dir: Path, experiment: str, domain: str, seed: int) -> Pat
 
 
 def _resume_refusal(
-    previous: dict, path: Path, checkpoint: Path, threshold: float, injective: bool
+    previous: dict,
+    path: Path,
+    checkpoint: Path | None,
+    threshold: float | None,
+    force_injective: bool,
 ) -> str | None:
     """Why the results in `path` cannot be resumed, or None if they can."""
-    if previous["threshold"] != threshold:
+    if threshold is not None and previous["threshold"] != threshold:
         return f"scored at threshold {previous['threshold']}, not {threshold}"
-    # Results written before the key existed were all decoded as learned.
-    if previous.get("injective", False) != injective:
-        return (
-            f"scored with injective {previous.get('injective', False)}, not {injective}"
-        )
+    if previous.get("force_injective") != force_injective:
+        return f"scored with force_injective {previous.get('force_injective')}, not {force_injective}"
+    if checkpoint is None:
+        return None
     if "checkpoint" not in previous:
         # Written before results recorded their checkpoint.
         if checkpoint.stat().st_mtime >= path.stat().st_mtime:
@@ -228,11 +246,11 @@ def _write_json(
     seed: int,
     run_id: str,
     per_problem: dict,
-    threshold: float = 0.5,
+    threshold: float | None = None,
     sample_seed: int | None = None,
     expected: list[str] | None = None,
     checkpoint: Path | None = None,
-    injective: bool = False,
+    force_injective: bool = False,
 ) -> None:
     out = _result_path(logs_dir, experiment, domain, seed)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -255,7 +273,7 @@ def _write_json(
         # Passing this back as validation.yaml's sample_seed reproduces these exact states.
         "sample_seed": sample_seed,
         "status": status,
-        "injective": injective,
+        "force_injective": force_injective,
         "per_problem": per_problem,
     }
     if checkpoint is not None:
@@ -314,8 +332,8 @@ def main() -> int:
     p.add_argument(
         "--threshold",
         type=float,
-        default=0.5,
-        help="Binarization threshold for slot activations and the learned precondition/effect tensors (DIAS validator only). Default 0.5.",
+        default=None,
+        help="Extract the learned domain anew at this binarization threshold, instead of scoring the one written beside the checkpoint at the run's schema_threshold (dias and mlp).",
     )
     p.add_argument(
         "--results-experiment",

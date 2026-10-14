@@ -6,6 +6,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Mapping, Sequence
 
+from dias.pddl.text import is_equality_predicate
+
 DEFAULT_STATICS = ("number", "object")
 
 # The name pymimir gives PDDL's built-in equality, which a domain with :equality declares.
@@ -203,13 +205,15 @@ def tensor_relations(
     include_equality: bool = False,
     default_statics: Sequence[str] | None = None,
 ) -> list[Mapping]:
-    """The predicates that become channels of the adjacency tensor: arity at most two, statics only when asked for, minus the ones every domain declares, and `=` only when asked for. Bindings are injective, so `=` is constant at every slot pair: true where a slot meets itself, false elsewhere."""
+    """The predicates that become channels of the adjacency tensor: arity at most two, statics only when asked for, minus the ones every domain declares, and equality only when asked for."""
     default_statics = default_statics or DEFAULT_STATICS
     keep = []
     for p in predicates:
         if p["arity"] > 2:
             continue
-        if not include_equality and p["name"] == EQUALITY:
+        if not include_equality and is_equality_predicate(
+            p["name"], p["arity"], p["static"]
+        ):
             continue
         if not include_statics and p["static"]:
             continue

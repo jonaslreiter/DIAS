@@ -1,5 +1,3 @@
-; The action schemas L1 (Balyo et al., 2024) learned for the paper's comparison, as its authors returned them, with equality written as = and the types as in domain.pddl.
-; Learned from one random walk on pfile2 (6 spanners, 4 nuts, 8 locations), not on train.pddl, which DIAS trains on.
 (define (domain spanner)
   (:requirements :typing :strips :negative-preconditions)
   (:types location locatable - object man nut spanner - locatable)

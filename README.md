@@ -67,7 +67,7 @@ Swap the second config: it carries both the domain's files and its tuned hyperpa
 dias fit --config configs/main.yaml --config pddl/hanoi/config.yaml
 ```
 
-The 13 domains are `blocks-3`, `delivery`, `driverlog`, `gripper`, `hanoi`, `logistics`, `miconic`, `n-puzzle`, `satellite`, `sokoban`, `sokoban-pull`, `spanner`, `visitall`. Each `pddl/<domain>/` holds `domain.pddl`, a training instance `train.pddl`, three held-out `test-*.pddl` of increasing size, the STRIPS+ argument positions in `strips+.yaml`, the tuned `config.yaml`, and `l1.pddl`, the action schemas the L1 baseline learned for the paper's comparison.
+The 13 domains are `blocks-3`, `delivery`, `driverlog`, `gripper`, `hanoi`, `logistics`, `miconic`, `n-puzzle`, `satellite`, `sokoban`, `sokoban-pull`, `spanner`, `visitall`. Each `pddl/<domain>/` holds `domain.pddl`, a training instance `train.pddl`, three held-out `test-*.pddl` of increasing size, the STRIPS+ argument positions in `strips+.yaml`, and the tuned `config.yaml`.
 
 `configs/main.yaml` names no domain, so a chain that names none is refused. Every model and datamodule argument is listed, with a line on what it does, by `dias fit --model.help dias.models.DIAS` and `--data.help dias.data.datamodule.PddlGraphDataModule`, and any of them can be overridden on the command line.
 
@@ -88,7 +88,7 @@ python experiments/launch.py --experiment dias-full
 python experiments/collect_results.py --experiment dias-full
 ```
 
-Two defaults have moved on since the paper: the model gets no `=` relation, and validation requires a learned schema's parameters to be distinct, both because bindings are injective. The recipes say how to restore the paper's setting.
+One default has moved on since the paper: the model gets no `=` relation, and the domain it learns requires every schema's parameters to be distinct instead, because bindings are injective. The recipes say how to restore the paper's setting.
 
 ## Repository layout
 
@@ -97,9 +97,9 @@ src/dias/
 ├── main.py           LightningCLI entry point (also `dias`)
 ├── models/           selection, preconditions, effects, encoder, objectives
 ├── data/             PDDL datamodule, transition sampling, adjacency noise
-├── schema/           DomainSchema (metadata), ActionSchema (learned output)
+├── schema/           DomainSchema (metadata), ActionSchema, the learned domain as PDDL
 ├── pddl/             PDDL text handling, untyping, the transpiler
-├── validation/       one validator per model, and the successor scoring
+├── validation/       scoring a learned domain by its successors
 └── reporting/        the W&B charts the learned schema is logged as
 
 experiments/          everything you run to reproduce the paper, start here

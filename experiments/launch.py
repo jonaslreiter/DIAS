@@ -2,7 +2,7 @@
 
 Array task id = seed, so ``--dependency=aftercorr`` pairs training task i with validation task i, and ``--seeds`` becomes a sparse spec such as ``--array=3,7-8``. Runs are identified by a deterministic ``<experiment>-<domain>-s<seed>`` (``validate_runs.run_id_for``), so the two arrays need no id handoff.
 
-Config chain: ``configs/main.yaml`` -> ``pddl/<domain>/config.yaml`` -> ``--experiment-type`` overlay -> ``--ablation`` overlay -> ``--set`` overrides. The experiment type also picks the validator and its schema-derivation threshold. ``--sweep AXIS`` submits the whole grid once per value of that axis, each into its own sub-experiment. ``--validate-only`` submits the validation array alone, over runs that already trained to ``max_steps``.
+Config chain: ``configs/main.yaml`` -> ``pddl/<domain>/config.yaml`` -> ``--experiment-type`` overlay -> ``--ablation`` overlay -> ``--set`` overrides. The experiment type also picks the validator. ``--sweep AXIS`` submits the whole grid once per value of that axis, each into its own sub-experiment. ``--validate-only`` submits the validation array alone, over runs that already trained to ``max_steps``; ``--experiment-type l1`` does nothing else, since L1's learned domains have no training run.
 
 Examples
 --------
@@ -15,6 +15,9 @@ Examples
     # An ablation, and a sweep into sub-experiments aux-sweep-aux0.01 .. -aux1.
     python experiments/launch.py --ablation no-pcgrad --experiment abl-no-pcgrad
     python experiments/launch.py --experiment aux-sweep --sweep aux-loss-alpha --num-runs 3
+
+    # The L1 baseline on every domain.
+    python experiments/launch.py --experiment-type l1 --experiment l1
 
     # Re-run only the seeds that failed, into the same experiment.
     python experiments/launch.py --experiment paper-main --domains gripper --seeds 3 7-8
@@ -49,6 +52,7 @@ from pipeline import (
     SLURM_DIR,
     SLURM_RESOURCES,
     SLURM_RESOURCES_VALIDATION,
+    VALIDATORS,
     add_domain_arguments,
     add_logging_arguments,
     add_path_arguments,
@@ -70,9 +74,6 @@ EXPERIMENT_OVERLAYS = {
     "mlp": CONFIGS_DIR / "experiment-mlp.yaml",
     "noise": CONFIGS_DIR / "experiment-noise.yaml",
 }
-# Schema-derivation threshold (Eq. 14) per experiment type; the paper raises it under noise.
-DEFAULT_VALIDATION_THRESHOLD = 0.5
-VALIDATION_THRESHOLD = {"noise": 0.75}
 # Orthogonal to --experiment-type, composed after it; all use the DIAS validator.
 ABLATION_OVERLAYS = {
     "no-slot-weights": CONFIGS_DIR / "ablation-no-slot-weights.yaml",
@@ -195,7 +196,7 @@ class LaunchPlan:
     experiment_type: str
     ablation: str | None
     validator: str
-    threshold: float
+    threshold: float | None
     domains: list[str]
     seeds: list[int]
     overlays: list[Path]
@@ -338,7 +339,28 @@ def unfinished_runs(
 def build_plan(args: argparse.Namespace) -> LaunchPlan:
     """Resolve command-line arguments into a launch, or refuse them."""
     domains = select_domains(args.domains)
-    seeds = resolve_seeds(args)
+    trains = VALIDATORS[EXPERIMENT_VALIDATOR[args.experiment_type]].from_checkpoint
+    if not trains:
+        refused = [
+            flag
+            for flag, given in (
+                ("--ablation", args.ablation is not None),
+                ("--sweep", args.sweep is not None),
+                ("--set", bool(args.overrides)),
+                ("--validation-threshold", args.validation_threshold is not None),
+            )
+            if given
+        ]
+        if refused:
+            raise SystemExit(
+                f"--experiment-type {args.experiment_type} validates a learned domain with no training run behind it, so {', '.join(refused)} has nothing to act on"
+            )
+    # One learned domain per domain: a seed only draws another sample of states.
+    seeds = (
+        resolve_seeds(args)
+        if trains or args.seeds is not None or args.num_runs is not None
+        else [0]
+    )
 
     overlays = []
     exp_overlay = EXPERIMENT_OVERLAYS.get(args.experiment_type)
@@ -347,21 +369,16 @@ def build_plan(args: argparse.Namespace) -> LaunchPlan:
     if args.ablation is not None:
         overlays.append(ABLATION_OVERLAYS[args.ablation])
 
-    threshold = (
-        args.validation_threshold
-        if args.validation_threshold is not None
-        else VALIDATION_THRESHOLD.get(
-            args.experiment_type, DEFAULT_VALIDATION_THRESHOLD
-        )
-    )
-    if not 0.0 < threshold < 1.0:
+    threshold = args.validation_threshold
+    if threshold is not None and not 0.0 < threshold < 1.0:
         raise SystemExit(
             f"--validation-threshold: expected a probability in (0,1), got {threshold:g}"
         )
 
     points, axis, axis_name, values = _sweep_points(args)
 
-    if args.validate_only and not args.allow_unfinished:
+    validate_only = args.validate_only or not trains
+    if trains and validate_only and not args.allow_unfinished:
         unfinished = unfinished_runs(points, domains, seeds, args.log_dir)
         if unfinished:
             listed = ", ".join(unfinished[:5])
@@ -385,7 +402,7 @@ def build_plan(args: argparse.Namespace) -> LaunchPlan:
         axis_name=axis_name,
         values=values,
         backend=args.backend,
-        validate_only=args.validate_only,
+        validate_only=validate_only,
         num_workers=args.num_workers,
         states_per_worker=args.states_per_worker,
         resume=args.resume,
@@ -404,13 +421,13 @@ def build_plan(args: argparse.Namespace) -> LaunchPlan:
 def describe(plan: LaunchPlan) -> None:
     """Print what is about to happen, before it happens."""
     print(
-        f"experiment : {plan.experiment}  (type={plan.experiment_type}, ablation={plan.ablation or 'none'}, validator={plan.validator}, threshold={plan.threshold:g})"
+        f"experiment : {plan.experiment}  (type={plan.experiment_type}, ablation={plan.ablation or 'none'}, validator={plan.validator}, threshold={'default' if plan.threshold is None else f'{plan.threshold:g}'})"
     )
     print(
         f"domains    : {len(plan.domains)} x {len(plan.seeds)} runs  (seeds={format_array(plan.seeds)}, backend={plan.backend})"
     )
     if plan.validate_only:
-        print("steps      : validation only, over the existing checkpoints")
+        print("steps      : validation only")
     if plan.axis is not None:
         runs = len(plan.points) * len(plan.domains) * len(plan.seeds)
         values = ", ".join(f"{v:g}" for v in plan.values)
@@ -446,8 +463,7 @@ def submit_domain(plan: LaunchPlan, point: SweepPoint, domain: str) -> None:
     if not plan.log_wandb:
         train_vars.append("NO_WANDB=1")
         val_vars.append("NO_WANDB=1")
-    # validate.sh forwards --threshold only when THRESHOLD is set.
-    if plan.threshold != DEFAULT_VALIDATION_THRESHOLD:
+    if plan.threshold is not None:
         val_vars.append(f"THRESHOLD={plan.threshold:g}")
     if plan.num_workers is not None:
         val_vars.append(f"NUM_WORKERS={plan.num_workers}")
@@ -593,11 +609,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=float,
         default=None,
         metavar="T",
-        help=f"Schema-derivation threshold used by the validation step. Default: {DEFAULT_VALIDATION_THRESHOLD:g}, except "
-        + ", ".join(
-            f"{t:g} for --experiment-type {n}" for n, t in VALIDATION_THRESHOLD.items()
-        )
-        + ".",
+        help="Extract each run's learned domain anew at this schema-derivation threshold for validation. Default: score the one written beside the checkpoint, at the run's schema_threshold.",
     )
     p.add_argument("--backend", default="slurm", choices=["slurm", "local"])
     p.add_argument(

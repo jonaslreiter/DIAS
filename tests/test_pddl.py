@@ -1,4 +1,4 @@
-"""End-to-end coverage for the L1 validator, which compares two PDDL domains directly.
+"""End-to-end coverage for the PDDL validator, which compares two PDDL domains directly.
 
 A domain validated against itself must score perfectly, pinning the whole path: untyping, merging, reflexive-atom injection, grounding and the successor comparison. Removing one precondition from the learned copy must lower the score, and spelling equality or the types another way must not change it.
 """
@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 
 from dias.pddl.untype import problem_object_names
-from dias.validation.l1 import L1Validator
+from dias.validation.pddl import PddlValidator
 from support import temp_dir
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -48,7 +48,7 @@ class L1ValidationTest(unittest.TestCase):
         learned_domain_text: str,
         original_domain_text: str | None = None,
         problem_text: str | None = None,
-        injective: bool = False,
+        force_injective: bool = False,
     ) -> dict:
         directory = temp_dir(self)
         learned = directory / "learned.pddl"
@@ -58,12 +58,8 @@ class L1ValidationTest(unittest.TestCase):
         problem = directory / "problem.pddl"
         problem.write_text(problem_text or PROBLEM.read_text())
         random.seed(SAMPLE_SEED)
-        validation = L1Validator(
-            str(original),
-            str(learned),
-            str(directory),
-            problem_path=str(problem),
-            injective=injective,
+        validation = PddlValidator(
+            str(original), str(learned), str(problem), force_injective
         )
         validation.setup(num_samples=NUM_SAMPLES, sample_population=SAMPLE_POPULATION)
         return validation.validate()
@@ -121,38 +117,35 @@ class L1ValidationTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "block"):
             self.validate(typed)
 
-    def test_injective_requires_the_learned_parameters_to_be_distinct(self):
+    def test_forcing_distinct_parameters_overrides_learned_equality(self):
         # Blocks without its distinctness, as L1 learns it: `stack` then also puts a block on itself.
         learned = re.sub(r"\s*\(not \(= \?\w+ \?\w+\)\)", "", DOMAIN.read_text())
         self.assertNotIn("(=", learned)
         self.assertGreater(self.validate(learned)["fp"], 0)
-        self.assertPerfect(self.validate(learned, injective=True))
+        self.assertPerfect(self.validate(learned, force_injective=True))
+        # A learned (= ?bm ?bt) makes stack inapplicable; forcing replaces it too.
+        contradicted = DOMAIN.read_text().replace("(not (= ?bm ?bt))", "(= ?bm ?bt)", 1)
+        self.assertLess(self.validate(contradicted)["recall"], 1.0)
+        self.assertPerfect(self.validate(contradicted, force_injective=True))
 
     def test_setup_is_required_before_validate(self):
         directory = temp_dir(self)
         learned = directory / "learned.pddl"
         learned.write_text(DOMAIN.read_text())
-        validation = L1Validator(
-            str(DOMAIN), str(learned), str(directory), problem_path=str(PROBLEM)
-        )
+        validation = PddlValidator(str(DOMAIN), str(learned), str(PROBLEM))
         with self.assertRaisesRegex(RuntimeError, "setup"):
             validation.validate()
 
 
 class CommittedL1DomainTest(unittest.TestCase):
-    def test_every_l1_domain_merges_with_its_own_and_misses_no_successor(self):
+    def test_every_domain_has_one_that_merges_and_misses_no_successor(self):
         # L1's recall is 1.0 in every domain (the paper's Table 17), while a schema the merge breaks, by an undeclared predicate or a type no problem asserts, applies nowhere and misses every successor of its action.
-        domains = [
-            domain for domain in available_domains() if l1_domain(domain).is_file()
-        ]
-        self.assertTrue(domains)
-        for domain in domains:
+        for domain in available_domains():
             with self.subTest(domain=domain):
-                validation = L1Validator(
+                validation = PddlValidator(
                     str(domain_pddl(domain)),
                     str(l1_domain(domain)),
-                    str(temp_dir(self)),
-                    problem_path=str(validation_problems(domain)[0]),
+                    str(validation_problems(domain)[0]),
                 )
                 validation.setup(
                     num_samples=NUM_SAMPLES,

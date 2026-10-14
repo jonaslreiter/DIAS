@@ -69,9 +69,13 @@ class SeedStatusTest(unittest.TestCase):
 
 class StandInValidator:
     calls: list = []
+    threshold = 0.5
+    learned_domain_text = "(define (domain learned))"
 
-    def __init__(self, model_id, logs_path, problem_path, **kwargs):
+    def __init__(self, problem_path, **kwargs):
         self.problem = Path(problem_path).stem
+        self.kwargs = kwargs
+        StandInValidator.instances.append(self)
 
     def setup(self, num_samples, sample_population, seed):
         self.seed = seed
@@ -90,6 +94,7 @@ class ResumeTest(unittest.TestCase):
         self.checkpoint.touch()
         self.result = self.logs / "validation" / "mlp" / "gripper" / "seed0.json"
         StandInValidator.calls = []
+        StandInValidator.instances = []
         patcher = mock.patch.object(
             validate_runs, "validator_class", return_value=StandInValidator
         )
@@ -119,7 +124,7 @@ class ResumeTest(unittest.TestCase):
                 {
                     "sample_seed": 3449441584,
                     "threshold": 0.5,
-                    "injective": True,
+                    "force_injective": False,
                     "per_problem": per_problem,
                     **fields,
                 }
@@ -149,24 +154,70 @@ class ResumeTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             self.validate()
 
-    def test_results_decoded_otherwise_are_refused(self):
-        """Requiring distinct parameters changes the schema scored, so the problems left must not be scored under the other reading."""
-        self.write_partial(injective=False)
-        with self.assertRaisesRegex(SystemExit, "injective"):
+    def test_results_scored_otherwise_are_refused(self):
+        """Forcing distinct parameters changes the domain scored, so the problems left must not be scored under the other reading."""
+        self.write_partial(force_injective=True)
+        with self.assertRaisesRegex(SystemExit, "force_injective"):
             self.validate()
 
-    def test_results_from_before_the_injective_key_were_decoded_as_learned(self):
+    def test_results_from_before_force_injective_are_refused(self):
         self.write_partial()
         payload = json.loads(self.result.read_text())
-        del payload["injective"]
+        del payload["force_injective"]
         self.result.write_text(json.dumps(payload))
-        with self.assertRaisesRegex(SystemExit, "injective False"):
+        with self.assertRaisesRegex(SystemExit, "force_injective None"):
             self.validate()
+
+    def test_the_scored_domain_is_kept_beside_the_results(self):
+        self.validate(resume=False)
+        self.assertEqual(
+            self.result.with_suffix(".pddl").read_text(),
+            StandInValidator.learned_domain_text,
+        )
 
     def test_without_resume_every_problem_is_scored(self):
         self.write_partial()
         self.validate(resume=False)
         self.assertEqual([call[0] for call in StandInValidator.calls], PROBLEMS)
+
+
+class L1RunTest(unittest.TestCase):
+    def setUp(self):
+        self.logs = temp_dir(self)
+        StandInValidator.calls = []
+        StandInValidator.instances = []
+        patcher = mock.patch.object(
+            validate_runs, "validator_class", return_value=StandInValidator
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def validate(self, **kwargs):
+        return validate_run(
+            "l1",
+            "gripper",
+            0,
+            "l1",
+            {"num_samples": 5, "sample_population": 10},
+            self.logs,
+            **kwargs,
+        )
+
+    def test_l1_scores_its_learned_domain_with_no_run_behind_it(self):
+        self.validate()
+        kwargs = StandInValidator.instances[0].kwargs
+        self.assertEqual(Path(kwargs["learned_domain_path"]).name, "gripper.pddl")
+        self.assertEqual(Path(kwargs["original_domain_path"]).name, "domain.pddl")
+        self.assertFalse(kwargs["force_injective"])
+        payload = json.loads(
+            (self.logs / "validation" / "l1" / "gripper" / "seed0.json").read_text()
+        )
+        self.assertEqual(payload["status"], "ok")
+        self.assertNotIn("checkpoint", payload)
+
+    def test_a_threshold_is_refused(self):
+        with self.assertRaisesRegex(SystemExit, "threshold"):
+            self.validate(threshold=0.25)
 
 
 if __name__ == "__main__":

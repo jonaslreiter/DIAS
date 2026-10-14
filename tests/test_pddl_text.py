@@ -174,17 +174,23 @@ class EqualityPredicateTest(unittest.TestCase):
     def test_nothing_to_rewrite_leaves_the_domain_alone(self):
         self.assertEqual(text.write_equality_as_builtin(DOMAIN, []), DOMAIN)
 
-    def test_distinct_parameters_are_required_pairwise(self):
-        rewritten = text.require_distinct_parameters(DOMAIN)
+    def test_forced_distinct_parameters_are_pairwise(self):
+        rewritten = text.force_distinct_parameters(DOMAIN)
         push = text.extract_action_blocks(rewritten)[0]
         for a, b in (("?p", "?c"), ("?p", "?from"), ("?c", "?to"), ("?from", "?to")):
-            self.assertIn(f"(not (= {a} {b}))", push)
-        # Already there, and kept.
+            self.assertEqual(push.count(f"(not (= {a} {b}))"), 1)
         self.assertIn("(at ?p ?from)", push)
         move = text.extract_action_blocks(rewritten)[1]
         self.assertIn("(and (not (= ?p ?q)) (clear ?q))", move)
+        self.assertEqual(text.force_distinct_parameters(rewritten), rewritten)
+
+    def test_forcing_replaces_whatever_equality_was_learned(self):
+        domain = "(define (domain d)\n  (:action a :parameters (?x ?y)\n    :precondition (and (= ?x ?x) (not(= ?y ?y)) (p ?x))\n    :effect (and (= ?x ?y) (not (p ?x)))))"
+        action = text.extract_action_blocks(text.force_distinct_parameters(domain))[0]
+        self.assertIn(":precondition (and (not (= ?x ?y)) (p ?x))", action)
+        self.assertIn(":effect (and (not (p ?x)))", action)
         self.assertTrue(
-            text.domain_uses_equality(text.require_distinct_parameters(EQUAL_DOMAIN))
+            text.domain_uses_equality(text.force_distinct_parameters(EQUAL_DOMAIN))
         )
 
     def test_reflexive_facts_are_dropped(self):

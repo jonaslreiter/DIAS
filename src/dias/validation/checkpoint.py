@@ -9,6 +9,7 @@ import torch
 
 from dias.models.dias import DIAS
 from dias.schema import DomainSchema
+from dias.schema.export import learned_domain
 
 # Sampling parameters PddlGraphDataModule no longer accepts; dropped so older checkpoints still load.
 RETIRED_HPARAMS = frozenset(
@@ -77,4 +78,17 @@ def load_run(model_id: str, logs_path: str) -> TrainedRun:
         datamodule_hparams=hparams,
         # In the order the model was trained on, which the domain file alone no longer fixes for every run.
         schema=DomainSchema.from_run(hparams, model.hparams["relation_arities"]),
+    )
+
+
+def learned_pddl(run: TrainedRun, threshold: float | None = None) -> tuple[str, float]:
+    """The run's learned domain and the threshold it was binarized at: the one written beside its checkpoint, unless a `threshold` is given or none was written, which extracts it anew."""
+    written = Path(run.checkpoint_path).with_suffix(".pddl")
+    if threshold is None and written.exists():
+        return written.read_text(), run.model.hparams.schema_threshold
+    if threshold is None:
+        threshold = run.model.hparams.schema_threshold
+    return (
+        learned_domain(run.model, run.schema, run.datamodule_hparams, threshold),
+        threshold,
     )

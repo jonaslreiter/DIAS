@@ -75,7 +75,7 @@ class PddlGraphDataModule(L.LightningDataModule):
             seed: Seed for the walk and the split. Unset follows the run's own seed.
             include_statics: Give static predicates channels of their own, so preconditions can name types.
             default_statics: Static predicates to leave out even then.
-            include_equality: Give `=` a channel too. Bindings are injective, so it is constant, and validation writes parameter distinctness itself.
+            include_equality: Learn equality (`=`, or an `eq`/`equal` standing in for it) as an ordinary relation. Off, it has no channel and the learned domain requires every schema's parameters to be distinct.
             action_arguments: Label a transition with the action's arguments, not only its name.
             strips_plus_actions: Restrict those labels to the STRIPS+ positions in strips+.yaml.
             pt_file: Load transitions from this file instead of exploring the state space.

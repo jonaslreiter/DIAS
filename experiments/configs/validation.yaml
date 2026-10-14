@@ -9,5 +9,5 @@ sample_seed: null
 # Per domain; also the default --num-runs. The paper uses 0..9.
 seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 
-# Require every learned schema's parameters to be distinct, as the model binds them (the `injective` argument of `DiasValidator` and `MlpEffectsValidator`). No domain in pddl/ has an applicable grounding that repeats an object, so this removes no successor a correct schema has; a model trained without the `=` relation (the default) cannot write that distinctness itself. false scores the schema as learned, which is how the paper's runs were scored. L1's output is scored as written whatever this says (`validate_checkpoint.py --injective` opts in).
-injective: true
+# Replace whatever a learned domain says about equality with distinct parameters in every schema (`force_injective` of the validators). A DIAS or MLP-effects run trained without the equality relation already writes exactly that, so this changes only runs that learned equality, and L1.
+force_injective: false
