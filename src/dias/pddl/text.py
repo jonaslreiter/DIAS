@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from itertools import combinations
 
 EQUALITY_REQUIREMENT = ":equality"
 TYPES_PATTERN = re.compile(r"\(:types(.*?)\)", re.DOTALL)
@@ -164,20 +165,45 @@ def write_equality_as_builtin(domain_text: str, names: list[str]) -> str:
         text,
         flags=re.IGNORECASE,
     )
-    if domain_uses_equality(text):
-        return text
-    requirements = REQUIREMENTS_PATTERN.search(text)
+    return _require_equality(text)
+
+
+def require_distinct_parameters(domain_text: str) -> str:
+    """The domain with every action requiring its parameters to be pairwise distinct, written as ``(not (= ?a ?b))``, and :equality required."""
+    text = domain_text
+    for block in extract_action_blocks(domain_text):
+        variables, _ = parse_typed_parameters(
+            find_balanced_expr(block, block.find(":parameters"))[0]
+        )
+        distinct = [f"(not (= {a} {b}))" for a, b in combinations(variables, 2)]
+        if not distinct:
+            continue
+        start = block.find(":precondition")
+        precondition, end = find_balanced_expr(block, start)
+        rewritten = (
+            block[: block.index("(", start)]
+            + inject_extra_preconditions(precondition, distinct)
+            + block[end:]
+        )
+        text = text.replace(block, rewritten, 1)
+    return _require_equality(text)
+
+
+def _require_equality(domain_text: str) -> str:
+    if domain_uses_equality(domain_text):
+        return domain_text
+    requirements = REQUIREMENTS_PATTERN.search(domain_text)
     if requirements is not None:
         return (
-            text[: requirements.end(1)]
+            domain_text[: requirements.end(1)]
             + f" {EQUALITY_REQUIREMENT}"
-            + text[requirements.end(1) :]
+            + domain_text[requirements.end(1) :]
         )
-    definition = re.search(r"\(define\s*\(domain\s+[^\s()]+\s*\)", text)
+    definition = re.search(r"\(define\s*\(domain\s+[^\s()]+\s*\)", domain_text)
     return (
-        text[: definition.end()]
+        domain_text[: definition.end()]
         + f"\n  (:requirements {EQUALITY_REQUIREMENT})"
-        + text[definition.end() :]
+        + domain_text[definition.end() :]
     )
 
 

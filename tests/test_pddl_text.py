@@ -174,6 +174,19 @@ class EqualityPredicateTest(unittest.TestCase):
     def test_nothing_to_rewrite_leaves_the_domain_alone(self):
         self.assertEqual(text.write_equality_as_builtin(DOMAIN, []), DOMAIN)
 
+    def test_distinct_parameters_are_required_pairwise(self):
+        rewritten = text.require_distinct_parameters(DOMAIN)
+        push = text.extract_action_blocks(rewritten)[0]
+        for a, b in (("?p", "?c"), ("?p", "?from"), ("?c", "?to"), ("?from", "?to")):
+            self.assertIn(f"(not (= {a} {b}))", push)
+        # Already there, and kept.
+        self.assertIn("(at ?p ?from)", push)
+        move = text.extract_action_blocks(rewritten)[1]
+        self.assertIn("(and (not (= ?p ?q)) (clear ?q))", move)
+        self.assertTrue(
+            text.domain_uses_equality(text.require_distinct_parameters(EQUAL_DOMAIN))
+        )
+
     def test_reflexive_facts_are_dropped(self):
         problem = "(define (problem p) (:domain d)\n(:objects a b - cell)\n(:init (at a) (equal a a)\n  (EQUAL b b))\n(:goal (at b)))"
         dropped = text.drop_equality_facts(problem, ["equal"])

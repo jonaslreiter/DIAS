@@ -48,6 +48,7 @@ class L1ValidationTest(unittest.TestCase):
         learned_domain_text: str,
         original_domain_text: str | None = None,
         problem_text: str | None = None,
+        injective: bool = False,
     ) -> dict:
         directory = temp_dir(self)
         learned = directory / "learned.pddl"
@@ -58,7 +59,11 @@ class L1ValidationTest(unittest.TestCase):
         problem.write_text(problem_text or PROBLEM.read_text())
         random.seed(SAMPLE_SEED)
         validation = L1Validator(
-            str(original), str(learned), str(directory), problem_path=str(problem)
+            str(original),
+            str(learned),
+            str(directory),
+            problem_path=str(problem),
+            injective=injective,
         )
         validation.setup(num_samples=NUM_SAMPLES, sample_population=SAMPLE_POPULATION)
         return validation.validate()
@@ -115,6 +120,13 @@ class L1ValidationTest(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "block"):
             self.validate(typed)
+
+    def test_injective_requires_the_learned_parameters_to_be_distinct(self):
+        # Blocks without its distinctness, as L1 learns it: `stack` then also puts a block on itself.
+        learned = re.sub(r"\s*\(not \(= \?\w+ \?\w+\)\)", "", DOMAIN.read_text())
+        self.assertNotIn("(=", learned)
+        self.assertGreater(self.validate(learned)["fp"], 0)
+        self.assertPerfect(self.validate(learned, injective=True))
 
     def test_setup_is_required_before_validate(self):
         directory = temp_dir(self)

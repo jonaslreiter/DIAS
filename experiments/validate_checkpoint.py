@@ -48,6 +48,7 @@ def _construction_kwargs(args: argparse.Namespace) -> dict:
             **common,
             "original_domain_path": str(args.original_domain.resolve()),
             "learned_domain_path": str(args.learned_domain.resolve()),
+            "injective": args.injective,
         }
     if not args.model_id:
         raise SystemExit(f"--validator {args.validator} needs --model-id")
@@ -104,8 +105,8 @@ def main() -> int:
     p.add_argument(
         "--injective",
         action=argparse.BooleanOptionalAction,
-        default=bool(defaults.get("injective", True)),
-        help="Require a learned schema's parameters to be distinct (dias and mlp). Default from validation.yaml.",
+        default=None,
+        help="Require a learned schema's parameters to be distinct. Default: validation.yaml's for dias and mlp, which bind injectively; off for l1, whose output is scored as the PDDL it is.",
     )
     p.add_argument("--num-workers", type=int, default=1, help="mlp only.")
     p.add_argument("--batch-size", type=int, default=4096, help="mlp only.")
@@ -113,6 +114,12 @@ def main() -> int:
     add_logging_arguments(p)
     args = p.parse_args()
     configure_logging(args)
+    if args.injective is None:
+        # As validate_runs.py resolves it: the configured default is for a model that binds injectively.
+        args.injective = (
+            bool(defaults.get("injective", True))
+            and VALIDATORS[args.validator].from_checkpoint
+        )
 
     validation = validator_class(args.validator)(**_construction_kwargs(args))
     validation.setup(
@@ -122,7 +129,11 @@ def main() -> int:
     )
     result = validation.validate()
     # Passing this back as --sample-seed scores the next run on these exact states.
-    result = {"sample_seed": validation.sample_seed, **result}
+    result = {
+        "sample_seed": validation.sample_seed,
+        "injective": args.injective,
+        **result,
+    }
 
     text = json.dumps(result, indent=2, default=str)
     print(text)

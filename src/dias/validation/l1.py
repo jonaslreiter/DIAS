@@ -38,8 +38,11 @@ class L1Validator:
         learned_domain_path,
         logs_path,
         problem_path=None,
+        injective=False,
     ):
+        """With `injective`, every learned action also requires its parameters to be distinct, as a DIAS checkpoint's schema is decoded. Off by default: L1's output is scored as the PDDL it is, which a planner also grounds with one object in two parameters."""
         self.logs_path = logs_path
+        self.injective = injective
 
         # Equality is `=` from here on, however each side spells it: L1 writes it as the static `eq` or `equal` its input domain had, the domains in pddl/ as `=`.
         original_domain_text = Path(original_domain_path).read_text()
@@ -54,6 +57,10 @@ class L1Validator:
         learned_domain_text = pddl_text.write_equality_as_builtin(
             learned_domain_text, pddl_text.equality_predicates(learned_domain_text)
         )
+        if injective:
+            learned_domain_text = pddl_text.require_distinct_parameters(
+                learned_domain_text
+            )
         self._check_learned_types(original_domain_text, learned_domain_text)
 
         # The merged domain drops :equality, so `=` on either side is compiled to the same reflexive predicate.
