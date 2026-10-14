@@ -20,6 +20,16 @@ class SinkhornTest(unittest.TestCase):
         )
         self.assertTrue(torch.equal(masked[:, 1], torch.zeros(1, 2)))
 
+    def test_a_masked_row_stops_the_iteration_where_its_absence_would(self):
+        """A masked row stays at -inf, so its change between iterations is NaN, which must not keep the iteration from converging: per_action_slots masks a row of every action narrower than the widest, and each further iteration is kept for the backward pass."""
+        torch.manual_seed(0)
+        logits = torch.randn(4, 5, 7)
+        row_mask = torch.tensor([False, True, False, True, False]).expand(4, 5)
+        masked = batched_sinkhorn_d1d2(logits, row_mask=row_mask)
+        absent = batched_sinkhorn_d1d2(logits[:, [0, 2, 4]])
+        # Up to round-off, since the masked call reduces over the masked rows too; left iterating to max_iter, it lands farther than that from where its absence stops.
+        torch.testing.assert_close(masked[:, [0, 2, 4]], absent, rtol=0.0, atol=1e-6)
+
 
 class ResolveNumSlotsTest(unittest.TestCase):
     def test_per_action_slots_takes_the_widest_action(self):

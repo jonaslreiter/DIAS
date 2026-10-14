@@ -245,13 +245,11 @@ def batched_sinkhorn_d1d2(
             log_row = log_row.masked_fill(row_mask, -torch.inf)
         log_col = -torch.logsumexp(correspondence + log_row.unsqueeze(-1), dim=-2)
 
-        if (
-            max(
-                (log_row - previous_row).abs().max(),
-                (log_col - previous_col).abs().max(),
-            )
-            < tol
-        ):
+        row_change = (log_row - previous_row).abs()
+        if row_mask is not None:
+            # A masked row stays at -inf, and -inf less -inf is NaN, which never falls below the tolerance.
+            row_change = row_change.masked_fill(row_mask, 0.0)
+        if max(row_change.max(), (log_col - previous_col).abs().max()) < tol:
             break
 
     return torch.exp(log_row.unsqueeze(-1) + correspondence + log_col.unsqueeze(-2))
