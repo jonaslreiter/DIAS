@@ -68,6 +68,26 @@ def _construction_kwargs(args: argparse.Namespace) -> dict:
     return kwargs
 
 
+# Command-line settings of either sampling strategy; one the chosen strategy lacks is refused.
+SAMPLING_SETTINGS = ("num_samples", "walk_length", "min_walks", "sample_population")
+
+
+def _sampling(args: argparse.Namespace, configured: dict):
+    """validation.yaml's sampling, or the defaults of the strategy `--sampling` names instead, with the settings given on the command line."""
+    from dias.validation.successors import sampling_from_record
+
+    record = dict(configured)
+    if args.sampling not in (None, record["strategy"]):
+        record = {"strategy": args.sampling}
+    for setting in SAMPLING_SETTINGS:
+        if getattr(args, setting) is not None:
+            record[setting] = getattr(args, setting)
+    try:
+        return sampling_from_record(record)
+    except ValueError as error:
+        raise SystemExit(str(error))
+
+
 def main() -> int:
     defaults = load_yaml(VALIDATION_CONFIG)
     p = argparse.ArgumentParser(
@@ -88,11 +108,17 @@ def main() -> int:
     p.add_argument("--original-domain", type=Path, default=None, help="l1 only.")
     p.add_argument("--learned-domain", type=Path, default=None, help="l1 only.")
     p.add_argument("--log-dir", type=Path, default=LOGS_DIR)
-    # From validation.yaml, so a single-problem check samples what the sweep does.
-    p.add_argument("--num-samples", type=int, default=int(defaults["num_samples"]))
+    # Unset, these are validation.yaml's, so a single-problem check samples what the sweep does.
     p.add_argument(
-        "--sample-population", type=int, default=int(defaults["sample_population"])
+        "--sampling",
+        choices=("walks", "bfs"),
+        default=None,
+        help="How states are drawn: random walks (validation.yaml's default), or bfs, the paper's draw from the first states a breadth-first search reaches. Naming the other strategy starts from its own defaults.",
     )
+    p.add_argument("--num-samples", type=int, default=None)
+    p.add_argument("--walk-length", type=int, default=None, help="walks only.")
+    p.add_argument("--min-walks", type=int, default=None, help="walks only.")
+    p.add_argument("--sample-population", type=int, default=None, help="bfs only.")
     p.add_argument(
         "--sample-seed",
         type=int,
@@ -124,16 +150,14 @@ def main() -> int:
     args = p.parse_args()
     configure_logging(args)
 
+    sampling = _sampling(args, defaults["sampling"])
     validation = validator_class(args.validator)(**_construction_kwargs(args))
-    validation.setup(
-        num_samples=args.num_samples,
-        sample_population=args.sample_population,
-        seed=args.sample_seed,
-    )
+    validation.setup(sampling, seed=args.sample_seed)
     result = validation.validate()
-    # Passing this back as --sample-seed scores the next run on these exact states.
+    # Passing this back as --sample-seed, with the same sampling, scores the next run on these exact states.
     result = {
         "sample_seed": validation.sample_seed,
+        "sampling": sampling.record(),
         "threshold": validation.threshold,
         "force_injective": args.force_injective,
         **result,

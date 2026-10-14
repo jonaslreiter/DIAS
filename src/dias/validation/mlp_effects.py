@@ -30,9 +30,10 @@ from .checkpoint import learned_pddl, load_run
 from .grounding import ground_state, init_worker, signature_from_words, successor_keys
 from .successors import (
     LEARNED_ACTION_PREFIX,
+    Sampling,
+    WalkSampling,
     combine_scores,
     resolve_sample_seed,
-    sample_reachable_states,
     score_successors,
     transfer_states,
 )
@@ -214,14 +215,12 @@ class MlpEffectsValidator:
 
     def setup(
         self,
-        num_samples: int = 250,
-        sample_population: int = 500,
+        sampling: Sampling = WalkSampling(),
         seed: int | None = None,
     ):
         self.sample_seed = resolve_sample_seed(seed)
-        original_states = sample_reachable_states(
-            self.original_problem, num_samples, sample_population, self.sample_seed
-        )
+        self.sampling = sampling
+        original_states = sampling.draw(self.original_problem, self.sample_seed)
         learned_states = transfer_states(
             original_states,
             self.learned_problem,
@@ -233,7 +232,7 @@ class MlpEffectsValidator:
     def validate(self, progress_path: str | Path | None = None) -> dict:
         """Score every sampled state: ground it in a worker, predict its successors on the GPU, compare.
 
-        With `progress_path`, each state's score is appended as it finishes, and a later run for the same checkpoint, problem and sample seed skips those states.
+        With `progress_path`, each state's score is appended as it finishes, and a later run for the same checkpoint, problem, sample seed and sampling skips those states.
         """
         if self.state_pairs is None:
             raise RuntimeError("\033[91mCall setup() before validate().\033[0m")
@@ -275,6 +274,7 @@ class MlpEffectsValidator:
                 "checkpoint_mtime": Path(self.checkpoint_path).stat().st_mtime,
                 "problem": str(Path(self.original_problem_path).resolve()),
                 "sample_seed": self.sample_seed,
+                "sampling": self.sampling.record(),
             }
             scores = _read_progress(progress_path, header)
 

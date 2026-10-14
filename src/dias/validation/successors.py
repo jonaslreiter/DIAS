@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import random
-from collections import defaultdict
-from typing import Iterable, Mapping
+from collections import Counter, defaultdict
+from itertools import islice
+from typing import ClassVar, Iterable, Mapping
 
 from tqdm import tqdm
 
-from dias.data.generate_samples import reachable_states
+from dias.data.generate_samples import random_walk, reachable_states
 from dias.pddl.states import state_fluents, transfer_state
 
 logger = logging.getLogger(__name__)
@@ -20,10 +22,88 @@ LEARNED_ACTION_PREFIX = "learned_"
 # One state's successors, expected and produced, each keyed by action name.
 SuccessorSets = tuple[Mapping[str, set], Mapping[str, set]]
 
+# A bound on the walks `sample_walk_states` adds while some action schema is short of its share, for a problem in which a schema never applies. At validation.yaml's settings no domain in pddl/ needs more than 20 (Hanoi, and Sokoban test-1).
+MAX_WALKS = 100
+
 
 def resolve_sample_seed(seed: int | None) -> int:
     """The seed to draw with, drawn itself when the caller named none. It is recorded in the result, so passing it back reproduces those exact states."""
     return random.randrange(2**32) if seed is None else seed
+
+
+def sample_walk_states(
+    problem,
+    num_samples: int,
+    walk_length: int,
+    min_walks: int,
+    seed: int,
+) -> list:
+    """Draw `num_samples` distinct states of `problem` from independent random walks, an equal share for each action schema.
+
+    Each walk is the one training samples from (`generate_samples.random_walk`), `walk_length` steps from the initial state. At least `min_walks` are taken, and more until every action schema is applicable in at least its share of the distinct states visited, as training walks until each action name has its quota; a walk caught where an action can no longer apply (a box pushed into a corner) is followed by a fresh one. Each schema's share is then drawn uniformly from the visited states in which it applies, so recall is scored on every schema, and the sample is filled up uniformly from the rest if a share runs short. The generator is seeded with `seed` and is nobody else's.
+    """
+    rng = random.Random(seed)
+    action_names = sorted(a.get_name() for a in problem.get_domain().get_actions())
+    shares = {
+        name: num_samples // len(action_names) + (i < num_samples % len(action_names))
+        for i, name in enumerate(action_names)
+    }
+
+    # State index -> (state, the action schemas applicable in it), in the order first visited.
+    visited: dict[int, tuple] = {}
+    applicable_in: Counter = Counter()
+
+    def quota_met() -> bool:
+        return len(visited) >= num_samples and all(
+            applicable_in[name] >= share for name, share in shares.items()
+        )
+
+    walks = 0
+    while walks < min_walks or not quota_met():
+        if walks == MAX_WALKS:
+            logger.warning(
+                "%d walks left the quota unmet; visited %d states, applicable in per action schema: %s.",
+                walks,
+                len(visited),
+                {name: applicable_in[name] for name in action_names},
+            )
+            break
+        for step in islice(random_walk(problem, rng), walk_length):
+            index = step.state.get_index()
+            if index not in visited:
+                names = frozenset(a.get_action().get_name() for a in step.applicable)
+                visited[index] = (step.state, names)
+                applicable_in.update(names)
+        walks += 1
+
+    if len(visited) < num_samples:
+        logger.warning(
+            "num_samples (%d) exceeds the states visited (%d), clamping.",
+            num_samples,
+            len(visited),
+        )
+    chosen: dict[int, object] = {}
+    for name in action_names:
+        candidates = [
+            index
+            for index, (_, names) in visited.items()
+            if name in names and index not in chosen
+        ]
+        for index in rng.sample(candidates, min(shares[name], len(candidates))):
+            chosen[index] = visited[index][0]
+    rest = [index for index in visited if index not in chosen]
+    for index in rng.sample(rest, min(num_samples - len(chosen), len(rest))):
+        chosen[index] = visited[index][0]
+
+    logger.info(
+        "Drew %d states from %d walks of %d steps (%d distinct states visited), seeded %d.",
+        len(chosen),
+        walks,
+        walk_length,
+        len(visited),
+        seed,
+    )
+    return list(chosen.values())
 
 
 def sample_reachable_states(
@@ -57,6 +137,71 @@ def sample_reachable_states(
         seed,
     )
     return random.Random(seed).sample(population, num_samples)
+
+
+class Sampling:
+    """How a validator draws its states from a held-out problem: one of the dataclasses below, named in validation.yaml's `sampling` block by its `strategy`."""
+
+    strategy: ClassVar[str]
+
+    def draw(self, problem, seed: int) -> list:
+        raise NotImplementedError
+
+    def record(self) -> dict:
+        """The settings as results record them and validation.yaml states them; `sampling_from_record` reads them back."""
+        return {"strategy": self.strategy, **dataclasses.asdict(self)}
+
+
+@dataclasses.dataclass(frozen=True)
+class WalkSampling(Sampling):
+    """`sample_walk_states`: training's random walk on the held-out problem, an equal share of the states for each action schema."""
+
+    strategy: ClassVar[str] = "walks"
+    num_samples: int = 500
+    walk_length: int = 2000
+    min_walks: int = 5
+
+    def draw(self, problem, seed: int) -> list:
+        return sample_walk_states(
+            problem, self.num_samples, self.walk_length, self.min_walks, seed
+        )
+
+
+@dataclasses.dataclass(frozen=True)
+class BfsSampling(Sampling):
+    """`sample_reachable_states`, the paper's draw: `num_samples` of the first `sample_population` states a breadth-first search reaches. It stays within a few actions of the initial state on the larger problems, and never makes satellite's take_image applicable, nor spanner's tighten_nut on test-2 and test-3."""
+
+    strategy: ClassVar[str] = "bfs"
+    num_samples: int = 250
+    sample_population: int = 500
+
+    def draw(self, problem, seed: int) -> list:
+        return sample_reachable_states(
+            problem, self.num_samples, self.sample_population, seed
+        )
+
+
+SAMPLINGS = {sampling.strategy: sampling for sampling in (WalkSampling, BfsSampling)}
+
+# What a result recording no sampling was drawn with: before the walks there was only the breadth-first draw, and validation.yaml never changed its settings.
+UNRECORDED_SAMPLING = BfsSampling()
+
+
+def sampling_from_record(record: Mapping) -> Sampling:
+    """The sampling a `Sampling.record()`, or validation.yaml's `sampling` block, describes; settings it leaves out take their defaults."""
+    settings = dict(record)
+    strategy = settings.pop("strategy", None)
+    if strategy not in SAMPLINGS:
+        raise ValueError(
+            f"sampling strategy {strategy!r} is none of {sorted(SAMPLINGS)}"
+        )
+    sampling = SAMPLINGS[strategy]
+    known = {field.name for field in dataclasses.fields(sampling)}
+    if set(settings) - known:
+        raise ValueError(
+            f"{strategy} sampling takes {sorted(known)}, not {sorted(set(settings) - known)}"
+        )
+    return sampling(**settings)
 
 
 def transfer_states(states: list, target_problem, source_domain, target_domain) -> list:

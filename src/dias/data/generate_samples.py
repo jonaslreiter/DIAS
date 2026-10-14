@@ -4,6 +4,7 @@ import logging
 import random
 import time
 from collections import deque
+from typing import Any, NamedTuple
 
 import torch
 
@@ -76,6 +77,34 @@ def _make_sample(state, ground_action, successor, include_statics):
     }
 
 
+class WalkStep(NamedTuple):
+    """One step of `random_walk`: the state it was taken in, that state's applicable ground actions, and the action taken with its successor. At a dead end the last two are None and the walk goes back to the initial state."""
+
+    state: Any
+    applicable: list
+    action: Any
+    successor: Any
+
+
+def random_walk(problem, rng=random):
+    """The walk training and validation both sample from: from the initial state, a uniformly random applicable ground action per step, and back to the initial state at a dead end. It never ends; the caller takes as many steps as it needs.
+
+    `rng` is anything with a `choice`; training draws from the global `random` that its seed sets, validation from a generator of its own.
+    """
+    initial = problem.get_initial_state()
+    current = initial
+    while True:
+        applicable = list(current.generate_applicable_actions())
+        if not applicable:
+            yield WalkStep(current, applicable, None, None)
+            current = initial
+            continue
+        action = rng.choice(applicable)
+        successor = action.apply(current)
+        yield WalkStep(current, applicable, action, successor)
+        current = successor
+
+
 def generate_random_walk(
     problem,
     min_total_samples: int = 0,
@@ -90,7 +119,7 @@ def generate_random_walk(
         raise ValueError("initial state has no applicable actions.")
 
     action_names = [a.get_name() for a in problem._domain.get_actions()]
-    current = initial
+    walk = random_walk(problem)
     samples: list[dict] = []
     per_action: dict[str, int] = {}
     seen: set[int] = set()
@@ -111,24 +140,20 @@ def generate_random_walk(
             sum(per_action.get(a, 0) >= min_per_action for a in action_names),
             len(action_names),
         )
-        app = list(current.generate_applicable_actions())
-        if not app:
+        step = next(walk)
+        if step.action is None:
             deadlocks += 1
-            current = initial
             continue
 
-        ground_action = random.choice(app)
-        successor = ground_action.apply(current)
-        sid = current.get_index()
+        sid = step.state.get_index()
         if (not only_unseen_states) or sid not in seen:
             seen.add(sid)
             samples.append(
-                _make_sample(current, ground_action, successor, include_statics)
+                _make_sample(step.state, step.action, step.successor, include_statics)
             )
-            name = ground_action.get_action().get_name()
+            name = step.action.get_action().get_name()
             per_action[name] = per_action.get(name, 0) + 1
 
-        current = successor
         if quota_met():
             break
 
