@@ -5,9 +5,10 @@ import warnings
 from pathlib import Path
 
 import torch
-from lightning.pytorch.callbacks import ModelCheckpoint, TQDMProgressBar
+from lightning.pytorch.callbacks import Callback, ModelCheckpoint, TQDMProgressBar
 from lightning.pytorch.cli import LightningCLI, SaveConfigCallback
 from lightning.pytorch.loggers import Logger
+from lightning.pytorch.plugins.io import CheckpointIO
 
 from dias.data.datamodule import PddlGraphDataModule  # noqa: F401  (registered for CLI)
 from dias.models.dias import DIAS  # noqa: F401  (registered for CLI)
@@ -63,44 +64,46 @@ class CLI(LightningCLI):
             data.seed = seed
 
 
-class SchemaCheckpoint(ModelCheckpoint):
-    """A checkpoint with its learned domain beside it, as PDDL under the same name."""
+LEARNED_DOMAIN = "learned_domain"
 
-    def on_train_epoch_end(self, trainer, pl_module):
-        super().on_train_epoch_end(trainer, pl_module)
-        self._match_learned_domains(trainer)
 
-    def on_validation_end(self, trainer, pl_module):
-        super().on_validation_end(trainer, pl_module)
-        self._match_learned_domains(trainer)
+class LearnedDomainCheckpoints(Callback):
+    """Every checkpoint is saved with its learned domain beside it, as PDDL under the same name, and removed with it."""
 
-    def on_train_end(self, trainer, pl_module):
-        super().on_train_end(trainer, pl_module)
-        self._match_learned_domains(trainer)
+    def setup(self, trainer, pl_module, stage):
+        if not isinstance(trainer.strategy.checkpoint_io, _LearnedDomainIO):
+            trainer.strategy.checkpoint_io = _LearnedDomainIO(
+                trainer.strategy.checkpoint_io
+            )
 
-    def _match_learned_domains(self, trainer):
-        """Write the domain of each checkpoint saved since the last call, and drop those whose checkpoint was removed."""
-        if not trainer.is_global_zero or self.dirpath is None:
-            return
-        held = {self.best_model_path, self.last_model_path, *self.best_k_models}
-        for checkpoint in map(Path, filter(None, held)):
-            domain = checkpoint.with_suffix(".pddl")
-            if checkpoint.exists() and (
-                not domain.exists()
-                or domain.stat().st_mtime < checkpoint.stat().st_mtime
-            ):
-                model, datamodule = trainer.lightning_module, trainer.datamodule
-                domain.write_text(
-                    learned_domain(
-                        model,
-                        datamodule.schema,
-                        datamodule.hparams,
-                        model.hparams.schema_threshold,
-                    )
-                )
-        for domain in Path(self.dirpath).glob("*.pddl"):
-            if not domain.with_suffix(".ckpt").exists():
-                domain.unlink()
+    def on_save_checkpoint(self, trainer, pl_module, checkpoint):
+        checkpoint[LEARNED_DOMAIN] = learned_domain(
+            pl_module,
+            trainer.datamodule.schema,
+            trainer.datamodule.hparams,
+            pl_module.hparams.schema_threshold,
+        )
+
+
+class _LearnedDomainIO(CheckpointIO):
+    def __init__(self, io: CheckpointIO):
+        self.io = io
+
+    def save_checkpoint(self, checkpoint, path, storage_options=None):
+        domain = checkpoint.pop(LEARNED_DOMAIN, None)
+        self.io.save_checkpoint(checkpoint, path, storage_options)
+        if domain is not None:
+            Path(path).with_suffix(".pddl").write_text(domain)
+
+    def load_checkpoint(self, *args, **kwargs):
+        return self.io.load_checkpoint(*args, **kwargs)
+
+    def remove_checkpoint(self, path):
+        self.io.remove_checkpoint(path)
+        Path(path).with_suffix(".pddl").unlink(missing_ok=True)
+
+    def teardown(self):
+        self.io.teardown()
 
 
 class SaveAndLogConfigCallback(SaveConfigCallback):
@@ -134,10 +137,11 @@ def main():
         # No logger: the W&B account belongs in configs/main.yaml, not the library.
         trainer_defaults={
             "callbacks": [
-                SchemaCheckpoint(filename="final-{epoch}-{step}"),
-                SchemaCheckpoint(
+                ModelCheckpoint(filename="final-{epoch}-{step}"),
+                ModelCheckpoint(
                     filename="best-{epoch}-{step}", monitor="valid/loss_adjacency"
                 ),
+                LearnedDomainCheckpoints(),
                 TQDMProgressBar(),
             ],
         },
