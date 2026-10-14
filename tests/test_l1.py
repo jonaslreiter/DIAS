@@ -11,6 +11,7 @@ from pathlib import Path
 
 from dias.pddl.untype import problem_object_names
 from dias.validation.l1 import L1Validator
+from dias.validation.successors import WalkSampling
 from support import temp_dir
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -28,7 +29,7 @@ PROBLEM = PROJECT_ROOT / "pddl" / "blocks-3" / "test-1.pddl"
 
 SAMPLE_SEED = 0
 NUM_SAMPLES = 6
-SAMPLE_POPULATION = 20
+SAMPLING = WalkSampling(num_samples=NUM_SAMPLES, walk_length=20, min_walks=2)
 
 
 def equality_as_predicate(domain_text: str, name: str) -> str:
@@ -65,7 +66,7 @@ class L1ValidationTest(unittest.TestCase):
             problem_path=str(problem),
             injective=injective,
         )
-        validation.setup(num_samples=NUM_SAMPLES, sample_population=SAMPLE_POPULATION)
+        validation.setup(SAMPLING)
         return validation.validate()
 
     def assertPerfect(self, result: dict) -> None:
@@ -154,9 +155,9 @@ class CommittedL1DomainTest(unittest.TestCase):
                     str(temp_dir(self)),
                     problem_path=str(validation_problems(domain)[0]),
                 )
+                # Walks as long as validation's: shorter ones never make satellite's take_image applicable, which would leave it unchecked.
                 validation.setup(
-                    num_samples=NUM_SAMPLES,
-                    sample_population=SAMPLE_POPULATION,
+                    WalkSampling(num_samples=NUM_SAMPLES, min_walks=1),
                     seed=SAMPLE_SEED,
                 )
                 result = validation.validate()

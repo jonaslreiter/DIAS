@@ -22,9 +22,10 @@ from .checkpoint import load_run
 from .decoding import derive_schema
 from .successors import (
     LEARNED_ACTION_PREFIX,
+    Sampling,
+    WalkSampling,
     compare_successors,
     resolve_sample_seed,
-    sample_reachable_states,
     transfer_states,
 )
 
@@ -197,14 +198,11 @@ class DiasValidator:
 
     def setup(
         self,
-        num_samples: int = 250,
-        sample_population: int = 500,
+        sampling: Sampling = WalkSampling(),
         seed: int | None = None,
     ):
         self.sample_seed = resolve_sample_seed(seed)
-        states = sample_reachable_states(
-            self.original_problem, num_samples, sample_population, self.sample_seed
-        )
+        states = sampling.draw(self.original_problem, self.sample_seed)
         self.state_set = transfer_states(
             states, self.merged_problem, self.original_domain, self.merged_domain
         )

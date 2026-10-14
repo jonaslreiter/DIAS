@@ -3,6 +3,7 @@ import unittest
 from dias.data.generate_samples import (
     generate_bfs,
     generate_random_walk,
+    random_walk,
     reachable_states,
     samples_to_tensors,
     state_to_groundings,
@@ -157,6 +158,21 @@ class SampleGenerationTest(unittest.TestCase):
         initial.actions = []
         with self.assertRaisesRegex(ValueError, "no applicable actions"):
             generate_random_walk(problem)
+
+    def test_the_walk_goes_back_to_the_initial_state_at_a_dead_end(self):
+        action = FakeAction("go", 0)
+        predicate = FakePredicate("ready", 1)
+        terminal = FakeState(1, [FakeAtom(predicate, [0])])
+        initial = FakeState(0, [FakeAtom(predicate, [0])])
+        initial.actions = [FakeGroundAction(action, [], terminal)]
+        problem = FakeProblem(
+            FakeDomain("demo", [predicate], [action]), initial, [FakeObject(0, "a")]
+        )
+        walk = random_walk(problem)
+        steps = [next(walk) for _ in range(3)]
+        self.assertEqual([step.state for step in steps], [initial, terminal, initial])
+        self.assertEqual(steps[0].successor, terminal)
+        self.assertEqual((steps[1].applicable, steps[1].action), ([], None))
 
     def test_random_walk_warns_when_quota_is_not_reached(self):
         action = FakeAction("go", 0)

@@ -11,6 +11,7 @@ import torch
 from checkpoints import TEST_PROBLEM, build_model, domain_schema, save
 from dias.validation.checkpoint import load_run
 from dias.validation.dias import DiasValidator, read_learned_schemas
+from dias.validation.successors import BfsSampling, WalkSampling
 from support import temp_dir
 
 torch.set_num_threads(1)
@@ -20,7 +21,7 @@ OFF, ON = 10.0, 10.0
 
 SAMPLE_SEED = 0
 NUM_SAMPLES = 8
-SAMPLE_POPULATION = 20
+SAMPLING = WalkSampling(num_samples=NUM_SAMPLES, walk_length=20, min_walks=2)
 
 
 def build_checkpoint(directory: Path, inequality: bool = False) -> str:
@@ -64,26 +65,22 @@ def build_checkpoint(directory: Path, inequality: bool = False) -> str:
 
 
 class ValidationCharacterizationTest(unittest.TestCase):
-    def validate(self) -> dict:
+    def validate(self, sampling=SAMPLING) -> dict:
         directory = temp_dir(self)
         model_id = build_checkpoint(directory)
         validation = DiasValidator(
             model_id, str(directory), problem_path=str(TEST_PROBLEM)
         )
-        validation.setup(
-            num_samples=NUM_SAMPLES,
-            sample_population=SAMPLE_POPULATION,
-            seed=SAMPLE_SEED,
-        )
+        validation.setup(sampling, seed=SAMPLE_SEED)
         return validation.validate()
 
     def test_planted_schema_reproduces_pinned_metrics(self):
         result = self.validate()
 
         self.assertEqual(result["total"], NUM_SAMPLES)
-        # 54 of the original successors are reached, 138 missed, and 16 are spurious: 8 states, each produced by both of the inert learned actions. Counts are attributed to the action that produced them, so those 8 count twice: two operators, two wrong predictions.
-        self.assertAlmostEqual(result["precision"], 54 / 70, places=12)
-        self.assertAlmostEqual(result["recall"], 54 / 192, places=12)
+        # 65 of the original successors are reached, 112 missed, and 16 are spurious: 8 states, each produced by both of the inert learned actions. Counts are attributed to the action that produced them, so those 8 count twice: two operators, two wrong predictions.
+        self.assertAlmostEqual(result["precision"], 65 / 81, places=12)
+        self.assertAlmostEqual(result["recall"], 65 / 177, places=12)
         # No sampled state has both successor sets agreeing exactly, which is the state-level view the attributed counts do not carry.
         self.assertEqual(result["matches"], 0)
         self.assertEqual(result["accuracy"], 0.0)
@@ -91,11 +88,28 @@ class ValidationCharacterizationTest(unittest.TestCase):
     def test_only_the_planted_action_is_recovered(self):
         stats = self.validate()["action_stats"]
 
-        self.assertEqual(stats["stack"], {"tp": 54, "fp": 0, "fn": 0, "conflicts": 0})
+        self.assertEqual(stats["stack"], {"tp": 65, "fp": 0, "fn": 0, "conflicts": 0})
         self.assertEqual(
-            stats["newtower"], {"tp": 0, "fp": 8, "fn": 28, "conflicts": 36}
+            stats["newtower"], {"tp": 0, "fp": 8, "fn": 23, "conflicts": 31}
         )
-        self.assertEqual(stats["move"], {"tp": 0, "fp": 8, "fn": 110, "conflicts": 118})
+        self.assertEqual(stats["move"], {"tp": 0, "fp": 8, "fn": 89, "conflicts": 97})
+
+    def test_the_breadth_first_draw_scores_as_it_always_has(self):
+        """The paper's draw is kept as an option, so its states, and the counts on them, are the ones it drew before the walks existed."""
+        result = self.validate(
+            BfsSampling(num_samples=NUM_SAMPLES, sample_population=20)
+        )
+
+        self.assertAlmostEqual(result["precision"], 54 / 70, places=12)
+        self.assertAlmostEqual(result["recall"], 54 / 192, places=12)
+        self.assertEqual(
+            result["action_stats"],
+            {
+                "stack": {"tp": 54, "fp": 0, "fn": 0, "conflicts": 0},
+                "newtower": {"tp": 0, "fp": 8, "fn": 28, "conflicts": 36},
+                "move": {"tp": 0, "fp": 8, "fn": 110, "conflicts": 118},
+            },
+        )
 
     def test_repeated_validation_is_deterministic(self):
         """Which states are drawn is seeded, so a result can be reproduced."""
@@ -113,11 +127,7 @@ class ValidationCharacterizationTest(unittest.TestCase):
             validation = DiasValidator(
                 model_id, str(directory), problem_path=str(TEST_PROBLEM)
             )
-            validation.setup(
-                num_samples=NUM_SAMPLES,
-                sample_population=SAMPLE_POPULATION,
-                seed=seed,
-            )
+            validation.setup(SAMPLING, seed=seed)
             return validation.sample_seed, validation.validate()
 
         drawn, result = run(None)
@@ -156,8 +166,7 @@ class InjectiveDecodingTest(unittest.TestCase):
             injective=injective,
         )
         validation.setup(
-            num_samples=NUM_SAMPLES,
-            sample_population=SAMPLE_POPULATION,
+            SAMPLING,
             seed=SAMPLE_SEED,
         )
         return validation.validate()["action_stats"]["stack"]
@@ -167,7 +176,7 @@ class InjectiveDecodingTest(unittest.TestCase):
         self.assertGreater(self.score_stack(injective=False)["fp"], 0)
         self.assertEqual(
             self.score_stack(injective=True),
-            {"tp": 54, "fp": 0, "fn": 0, "conflicts": 0},
+            {"tp": 65, "fp": 0, "fn": 0, "conflicts": 0},
         )
 
 

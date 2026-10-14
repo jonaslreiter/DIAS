@@ -21,14 +21,18 @@ from dias.validation.grounding import (
     successor_keys,
 )
 from dias.validation.mlp_effects import MlpEffectsValidator
-from dias.validation.successors import combine_scores, score_successors
+from dias.validation.successors import (
+    WalkSampling,
+    combine_scores,
+    score_successors,
+)
 from support import temp_dir
 
 torch.set_num_threads(1)
 
 SAMPLE_SEED = 0
 NUM_SAMPLES = 6
-SAMPLE_POPULATION = 20
+SAMPLING = WalkSampling(num_samples=NUM_SAMPLES, walk_length=20, min_walks=2)
 
 
 class MlpEffectsTest(unittest.TestCase):
@@ -45,8 +49,7 @@ class MlpEffectsTest(unittest.TestCase):
             **{"batch_size": 256, **kwargs},
         )
         validation.setup(
-            num_samples=NUM_SAMPLES,
-            sample_population=SAMPLE_POPULATION,
+            SAMPLING,
             seed=seed,
         )
         return validation.validate(progress_path)
@@ -124,8 +127,7 @@ class MlpEffectsTest(unittest.TestCase):
             injective=injective,
         )
         validation.setup(
-            num_samples=NUM_SAMPLES,
-            sample_population=SAMPLE_POPULATION,
+            SAMPLING,
             seed=SAMPLE_SEED,
         )
         return [

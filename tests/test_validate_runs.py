@@ -73,12 +73,15 @@ class StandInValidator:
     def __init__(self, model_id, logs_path, problem_path, **kwargs):
         self.problem = Path(problem_path).stem
 
-    def setup(self, num_samples, sample_population, seed):
+    def setup(self, sampling, seed):
         self.seed = seed
 
     def validate(self, progress_path=None):
         StandInValidator.calls.append((self.problem, self.seed))
         return scored(tp=50)
+
+
+SAMPLING = {"strategy": "walks", "num_samples": 5, "walk_length": 10, "min_walks": 2}
 
 
 class ResumeTest(unittest.TestCase):
@@ -96,13 +99,13 @@ class ResumeTest(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def validate(self, resume=True):
+    def validate(self, resume=True, sampling=SAMPLING):
         return validate_run(
             "mlp",
             "gripper",
             0,
             "mlp",
-            {"num_samples": 5, "sample_population": 10},
+            {"sampling": sampling},
             self.logs,
             log_wandb=False,
             num_workers=1,
@@ -120,6 +123,7 @@ class ResumeTest(unittest.TestCase):
                     "sample_seed": 3449441584,
                     "threshold": 0.5,
                     "injective": True,
+                    "sampling": SAMPLING,
                     "per_problem": per_problem,
                     **fields,
                 }
@@ -162,6 +166,27 @@ class ResumeTest(unittest.TestCase):
         self.result.write_text(json.dumps(payload))
         with self.assertRaisesRegex(SystemExit, "injective False"):
             self.validate()
+
+    def test_results_sampled_otherwise_are_refused(self):
+        """The problems left must draw their states as the scored ones did, or a seed's three numbers would come from two samplings."""
+        self.write_partial(sampling={**SAMPLING, "walk_length": 20})
+        with self.assertRaisesRegex(SystemExit, "sampled"):
+            self.validate()
+
+    def test_results_from_before_the_sampling_key_were_sampled_breadth_first(self):
+        """As the paper drew them, so they resume under that draw and under nothing else."""
+        self.write_partial()
+        payload = json.loads(self.result.read_text())
+        del payload["sampling"]
+        self.result.write_text(json.dumps(payload))
+        with self.assertRaisesRegex(SystemExit, "bfs"):
+            self.validate()
+        self.validate(sampling={"strategy": "bfs"})
+        self.assertEqual(StandInValidator.calls, [("test-3", 3449441584)])
+
+    def test_the_result_records_its_sampling(self):
+        self.validate(resume=False)
+        self.assertEqual(json.loads(self.result.read_text())["sampling"], SAMPLING)
 
     def test_without_resume_every_problem_is_scored(self):
         self.write_partial()

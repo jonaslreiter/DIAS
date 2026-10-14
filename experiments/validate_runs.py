@@ -68,7 +68,7 @@ def validate_run(
     """
     # Imported here, not at module scope: submitting jobs must not need torch or pymimir.
     from dias.validation.checkpoint import resolve_best_checkpoint
-    from dias.validation.successors import resolve_sample_seed
+    from dias.validation.successors import resolve_sample_seed, sampling_from_record
 
     run_id = run_id or run_id_for(experiment, domain, seed)
     results_experiment = results_experiment or experiment
@@ -82,15 +82,17 @@ def validate_run(
         raise SystemExit(
             f"--threshold applies to a validator that reads a lifted schema; {validator.summary}"
         )
-    num_samples = int(val_cfg["num_samples"])
-    sample_population = int(val_cfg["sample_population"])
+    # Written into the result, since a resumed run must draw its remaining problems' states the same way.
+    sampling = sampling_from_record(val_cfg["sampling"])
     # Only a checkpoint's schema is decoded here; L1's domain is another system's output. Written into the result, since it changes which schema is scored.
     injective = bool(val_cfg.get("injective", True)) and validator.from_checkpoint
 
     per_problem: dict[str, dict[str, Any]] = {}
     if resume and out.exists():
         previous = json.loads(out.read_text())
-        refusal = _resume_refusal(previous, out, checkpoint, threshold, injective)
+        refusal = _resume_refusal(
+            previous, out, checkpoint, threshold, injective, sampling
+        )
         if refusal is not None:
             raise SystemExit(f"--resume {out}: {refusal}")
         sample_seed = previous["sample_seed"]
@@ -122,12 +124,11 @@ def validate_run(
             logger.info("%s is already scored.", stem)
             continue
         logger.info(
-            "Validating %s seed %d on %s (%d states of at most %d reachable).",
+            "Validating %s seed %d on %s, sampling %s.",
             domain,
             seed,
             stem,
-            num_samples,
-            sample_population,
+            sampling.record(),
         )
         try:
             v = validation(
@@ -136,11 +137,7 @@ def validate_run(
                 problem_path=str(problem.resolve()),
                 **extra_kwargs,
             )
-            v.setup(
-                num_samples=num_samples,
-                sample_population=sample_population,
-                seed=sample_seed,
-            )
+            v.setup(sampling, seed=sample_seed)
             if validator.grounds_in_parallel:
                 result = v.validate(out.with_name(f"seed{seed}.{stem}.states.jsonl"))
             else:
@@ -176,6 +173,7 @@ def validate_run(
             expected=[p.stem for p in val_problems],
             checkpoint=checkpoint,
             injective=injective,
+            sampling=sampling.record(),
         )
 
     if log_wandb:
@@ -199,9 +197,16 @@ def _result_path(logs_dir: Path, experiment: str, domain: str, seed: int) -> Pat
 
 
 def _resume_refusal(
-    previous: dict, path: Path, checkpoint: Path, threshold: float, injective: bool
+    previous: dict,
+    path: Path,
+    checkpoint: Path,
+    threshold: float,
+    injective: bool,
+    sampling,
 ) -> str | None:
     """Why the results in `path` cannot be resumed, or None if they can."""
+    from dias.validation.successors import UNRECORDED_SAMPLING, sampling_from_record
+
     if previous["threshold"] != threshold:
         return f"scored at threshold {previous['threshold']}, not {threshold}"
     # Results written before the key existed were all decoded as learned.
@@ -209,6 +214,10 @@ def _resume_refusal(
         return (
             f"scored with injective {previous.get('injective', False)}, not {injective}"
         )
+    # Results written before the key existed drew their states breadth first.
+    previous_sampling = previous.get("sampling", UNRECORDED_SAMPLING.record())
+    if sampling_from_record(previous_sampling) != sampling:
+        return f"states sampled as {previous_sampling}, not {sampling.record()}"
     if "checkpoint" not in previous:
         # Written before results recorded their checkpoint.
         if checkpoint.stat().st_mtime >= path.stat().st_mtime:
@@ -233,6 +242,7 @@ def _write_json(
     expected: list[str] | None = None,
     checkpoint: Path | None = None,
     injective: bool = False,
+    sampling: dict | None = None,
 ) -> None:
     out = _result_path(logs_dir, experiment, domain, seed)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -256,6 +266,7 @@ def _write_json(
         "sample_seed": sample_seed,
         "status": status,
         "injective": injective,
+        "sampling": sampling,
         "per_problem": per_problem,
     }
     if checkpoint is not None:
