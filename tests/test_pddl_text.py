@@ -113,10 +113,13 @@ class EqualityTest(unittest.TestCase):
             text.domain_uses_equality("(define (domain d) (:requirements :strips))")
         )
 
-    def test_rewrites_equality_atoms_as_a_predicate(self):
-        self.assertEqual(
-            text.replace_equality_with_predicate("(and (= ?a ?b) (p ?a))", "eq"),
-            "(and (eq ?a ?b) (p ?a))",
+    def test_requiring_it_adds_it_once(self):
+        domain = "(define (domain d) (:requirements :strips))"
+        required = text.require_equality(domain)
+        self.assertTrue(text.domain_uses_equality(required))
+        self.assertEqual(text.require_equality(required), required)
+        self.assertIn(
+            "(:requirements :equality)", text.require_equality("(define (domain d))")
         )
 
 
@@ -132,76 +135,53 @@ class DeclaredPredicatesTest(unittest.TestCase):
 
 
 EQUAL_DOMAIN = """(define (domain d)
-  (:requirements :strips :typing)
+  (:requirements :strips :typing :equality)
   (:types cell)
   (:predicates
     (at ?x - cell)
-    (equal ?x - object ?y - object)
-    (eq ?x)
+    (Eq ?x - object ?y - object)
+    (equal ?x)
   )
   (:action move
     :parameters (?from - cell ?to - cell)
-    :precondition (and (at ?from) (not (equal ?from ?to)) (EQUAL ?to ?to))
+    :precondition (and (at ?from) (not (EQ ?from ?to)) (= ?to ?to))
     :effect (and (at ?to) (not (at ?from))))
 )
 """
 
 
 class EqualityPredicateTest(unittest.TestCase):
-    def test_finds_a_binary_static_predicate_named_for_equality(self):
-        # `eq` here is unary, so it cannot be equality.
-        self.assertEqual(text.equality_predicates(EQUAL_DOMAIN), ["equal"])
-        self.assertEqual(text.equality_predicates(DOMAIN), [])
+    def test_equality_is_eq_or_equal_when_binary(self):
+        self.assertTrue(text.is_equality_predicate("=", 2))
+        self.assertTrue(text.is_equality_predicate("Equal", 2))
+        self.assertFalse(text.is_equality_predicate("eq", 1))
+        # `equal` here is unary, so it cannot be equality.
+        self.assertEqual(text.equality_predicates(EQUAL_DOMAIN), ["Eq"])
 
-    def test_a_predicate_an_action_changes_is_not_equality(self):
-        changed = EQUAL_DOMAIN.replace("(at ?to) (not", "(at ?to) (equal ?to ?to) (not")
-        self.assertEqual(text.equality_predicates(changed), [])
-
-    def test_written_as_builtin(self):
-        rewritten = text.write_equality_as_builtin(EQUAL_DOMAIN, ["equal"])
-        self.assertIn("(not (= ?from ?to))", rewritten)
-        self.assertIn("(= ?to ?to)", rewritten)
-        self.assertNotIn("(equal", rewritten.lower())
-        self.assertIn("(eq ?x)", rewritten)
-        self.assertTrue(text.domain_uses_equality(rewritten))
-        self.assertEqual(text.declared_predicates(rewritten), {"at": 1, "eq": 1})
-
-    def test_written_as_builtin_without_requirements(self):
-        domain = EQUAL_DOMAIN.replace("(:requirements :strips :typing)", "")
-        rewritten = text.write_equality_as_builtin(domain, ["equal"])
-        self.assertIn("(:requirements :equality)", rewritten)
-
-    def test_nothing_to_rewrite_leaves_the_domain_alone(self):
-        self.assertEqual(text.write_equality_as_builtin(DOMAIN, []), DOMAIN)
+    def test_every_spelling_becomes_the_predicate_equal(self):
+        rewritten = text.equality_as_predicate(EQUAL_DOMAIN)
+        self.assertIn("(not (equal ?from ?to))", rewritten)
+        self.assertIn("(equal ?to ?to)", rewritten)
+        self.assertNotIn("(eq ", rewritten.lower())
+        self.assertNotIn("(= ", rewritten)
+        self.assertFalse(text.domain_uses_equality(rewritten))
+        self.assertEqual(text.declared_predicates(rewritten), {"at": 1, "equal": 2})
 
     def test_forced_distinct_parameters_are_pairwise(self):
-        rewritten = text.force_distinct_parameters(DOMAIN)
+        rewritten = text.force_distinct_parameters(text.equality_as_predicate(DOMAIN))
         push = text.extract_action_blocks(rewritten)[0]
         for a, b in (("?p", "?c"), ("?p", "?from"), ("?c", "?to"), ("?from", "?to")):
-            self.assertEqual(push.count(f"(not (= {a} {b}))"), 1)
+            self.assertEqual(push.count(f"(not (equal {a} {b}))"), 1)
         self.assertIn("(at ?p ?from)", push)
         move = text.extract_action_blocks(rewritten)[1]
-        self.assertIn("(and (not (= ?p ?q)) (clear ?q))", move)
+        self.assertIn("(and (not (equal ?p ?q)) (clear ?q))", move)
         self.assertEqual(text.force_distinct_parameters(rewritten), rewritten)
 
     def test_forcing_replaces_whatever_equality_was_learned(self):
-        domain = "(define (domain d)\n  (:action a :parameters (?x ?y)\n    :precondition (and (= ?x ?x) (not(= ?y ?y)) (p ?x))\n    :effect (and (= ?x ?y) (not (p ?x)))))"
+        domain = "(define (domain d)\n  (:action a :parameters (?x ?y)\n    :precondition (and (equal ?x ?x) (not(equal ?y ?y)) (p ?x))\n    :effect (and (equal ?x ?y) (not (p ?x)))))"
         action = text.extract_action_blocks(text.force_distinct_parameters(domain))[0]
-        self.assertIn(":precondition (and (not (= ?x ?y)) (p ?x))", action)
+        self.assertIn(":precondition (and (not (equal ?x ?y)) (p ?x))", action)
         self.assertIn(":effect (and (not (p ?x)))", action)
-        self.assertTrue(
-            text.domain_uses_equality(text.force_distinct_parameters(EQUAL_DOMAIN))
-        )
-
-    def test_reflexive_facts_are_dropped(self):
-        problem = "(define (problem p) (:domain d)\n(:objects a b - cell)\n(:init (at a) (equal a a)\n  (EQUAL b b))\n(:goal (at b)))"
-        dropped = text.drop_equality_facts(problem, ["equal"])
-        self.assertNotIn("(equal", dropped.lower())
-        self.assertIn("(:init (at a))", dropped)
-
-    def test_a_fact_between_two_objects_is_refused(self):
-        with self.assertRaisesRegex(ValueError, "not equality"):
-            text.drop_equality_facts("(:init (equal a b))", ["equal"])
 
 
 class InjectPreconditionsTest(unittest.TestCase):

@@ -211,9 +211,7 @@ def tensor_relations(
     for p in predicates:
         if p["arity"] > 2:
             continue
-        if not include_equality and is_equality_predicate(
-            p["name"], p["arity"], p["static"]
-        ):
+        if not include_equality and is_equality_predicate(p["name"], p["arity"]):
             continue
         if not include_statics and p["static"]:
             continue

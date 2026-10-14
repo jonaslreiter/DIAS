@@ -23,7 +23,7 @@ from .domain import (
 def read_learned_schemas(
     model, schema: DomainSchema, datamodule_hparams: Mapping, threshold: float
 ) -> PDDLTranspiler:
-    """The model's lifted schemas as learned, binarized at `threshold`. A model with state-dependent effects has preconditions only, and every active slot as a parameter."""
+    """The model's lifted schemas as learned, binarized at `threshold`, equality written as `equal`. A model with state-dependent effects has preconditions only, and every active slot as a parameter."""
     logits = model.schema_logits()
     strips_plus = datamodule_hparams.get("strips_plus_actions", False)
     add, delete, positive, negative, active_slots = derive_schema(
@@ -51,7 +51,14 @@ def read_learned_schemas(
         delete_effects=delete,
         positive_preconditions=positive,
         negative_preconditions=negative,
-        predicate_names=list(schema.relation_names),
+        predicate_names=[
+            (
+                pddl_text.EQUALITY_PREDICATE
+                if pddl_text.is_equality_predicate(name, arity)
+                else name
+            )
+            for name, arity in zip(schema.relation_names, schema.relation_arities)
+        ],
         predicate_arities=list(schema.relation_arities),
         action_names=list(schema.action_names),
     )
@@ -65,7 +72,7 @@ def read_learned_schemas(
 def learned_domain(
     model, schema: DomainSchema, datamodule_hparams: Mapping, threshold: float
 ) -> str:
-    """The learned schemas as an untyped PDDL domain over the original's predicates. Unless the model learned equality, every schema requires its parameters to be distinct."""
+    """The learned schemas as an untyped PDDL domain over the original's predicates. Unless the model learned equality, every schema requires its parameters to be distinct, as `=`."""
     learned_equality = datamodule_hparams.get(
         "include_equality", EQUALITY_BEFORE_ARGUMENT
     )

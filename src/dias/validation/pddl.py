@@ -10,10 +10,10 @@ import pymimir
 
 from dias.pddl import text as pddl_text
 from dias.pddl.untype import (
-    EQUALITY_PREDICATE,
     extract_domain_header,
     strip_problem_types,
     untype_action,
+    with_equality_facts,
 )
 
 from .artifacts import PddlWorkspace
@@ -44,31 +44,19 @@ class PddlValidator:
         force_injective=False,
     ):
         self.learned_domain_text = Path(learned_domain_path).read_text()
-        original_domain_text = Path(original_domain_path).read_text()
-        original_equalities = pddl_text.equality_predicates(original_domain_text)
-        original_domain_text = pddl_text.write_equality_as_builtin(
-            original_domain_text, original_equalities
+        original_domain_text = pddl_text.equality_as_predicate(
+            Path(original_domain_path).read_text()
         )
-        problem_text = pddl_text.drop_equality_facts(
-            Path(problem_path).read_text(), original_equalities
-        )
-        learned_domain_text = pddl_text.write_equality_as_builtin(
-            self.learned_domain_text,
-            pddl_text.equality_predicates(self.learned_domain_text),
-        )
+        learned_domain_text = pddl_text.equality_as_predicate(self.learned_domain_text)
         if force_injective:
             learned_domain_text = pddl_text.force_distinct_parameters(
                 learned_domain_text
             )
+        problem_text = with_equality_facts(Path(problem_path).read_text())
         self._check_learned_types(original_domain_text, learned_domain_text)
 
-        has_equality = pddl_text.domain_uses_equality(
-            original_domain_text
-        ) or pddl_text.domain_uses_equality(learned_domain_text)
-        equality_predicate_name = EQUALITY_PREDICATE if has_equality else None
-
         original_actions_text = "\n\n".join(
-            untype_action(action_block, equality_predicate_name=equality_predicate_name)
+            untype_action(action_block)
             for action_block in pddl_text.extract_action_blocks(original_domain_text)
         )
         learned_actions_text = "\n\n".join(
@@ -76,17 +64,13 @@ class PddlValidator:
                 action_block,
                 name_prefix=LEARNED_ACTION_PREFIX,
                 ignored_types=UNINFORMATIVE_TYPES,
-                equality_predicate_name=equality_predicate_name,
             )
             for action_block in pddl_text.extract_action_blocks(learned_domain_text)
         )
         header = self._patch_missing_predicates(
-            extract_domain_header(
-                original_domain_text, keep_equality_requirement=False
-            ),
+            extract_domain_header(original_domain_text),
             original_actions_text + "\n\n" + learned_actions_text,
             original_domain_text,
-            has_equality=has_equality,
         )
 
         self.workspace = PddlWorkspace()
@@ -103,11 +87,7 @@ class PddlValidator:
             Path(
                 self.workspace.write(
                     "merged-problem.pddl",
-                    strip_problem_types(
-                        problem_text,
-                        original_domain_text,
-                        equality_predicate_name=equality_predicate_name,
-                    ),
+                    strip_problem_types(problem_text, original_domain_text),
                 )
             ),
         )
@@ -151,18 +131,13 @@ class PddlValidator:
             )
 
     def _patch_missing_predicates(
-        self,
-        header: str,
-        actions_text: str,
-        original_domain_text: str = "",
-        has_equality: bool = False,
+        self, header: str, actions_text: str, original_domain_text: str
     ) -> str:
-        """Declare every predicate the merged domain uses but does not define: those its actions use, `eq` for `=`, and the types, which became unary atoms."""
+        """Declare every predicate the merged domain uses but does not define: those its actions use, and the types, which became unary atoms."""
         defined_words = {
             m.group(1).lower() for m in re.finditer(r"\(\s*([^\s()]+)", header)
         }
-        # `eq` is absent on purpose: here it is a user predicate, not a keyword.
-        keywords = {"and", "or", "not", "imply", "when", "forall", "exists", "=", "-"}
+        keywords = {"and", "or", "not", "imply", "when", "forall", "exists", "-"}
 
         missing_preds: dict[str, int] = {}
 
@@ -173,11 +148,6 @@ class PddlValidator:
             if name not in keywords and name not in defined_words:
                 arity = len([w for w in match.group(2).split() if w.startswith("?")])
                 missing_preds.setdefault(name, arity)
-
-        if has_equality:
-            eq_name = EQUALITY_PREDICATE.lower()
-            if eq_name not in defined_words and eq_name not in missing_preds:
-                missing_preds[eq_name] = 2
 
         for children, parent in pddl_text.parse_type_groups(original_domain_text):
             for name in (*children, parent):

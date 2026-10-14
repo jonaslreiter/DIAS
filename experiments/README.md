@@ -51,7 +51,7 @@ python experiments/launch.py --experiment l1 --experiment-type l1        # the L
 
 Every checkpoint a run saves has its learned domain beside it, binarized at `model.init_args.schema_threshold` (0.5; 0.75 in the noise overlay, as in the paper), and validation scores that domain. `--validation-threshold T` extracts it anew at `T` instead; a checkpoint from before these domains were written is extracted at validation either way.
 
-One default differs from how the paper's numbers were produced: the model gets no equality relation (`data.init_args.include_equality`), so its learned domain requires every schema's parameters to be distinct instead, which costs a correct schema nothing, since bindings are injective and no domain here has an action applicable to one object twice. For the paper's setting, add `--set data.init_args.include_equality=true`, which learns `=` like any other binary predicate and writes nothing for it; the paper's own noise checkpoints also need `--validation-threshold 0.75`. `force_injective` in `experiments/configs/validation.yaml` (off) replaces whatever a learned domain says about equality with distinct parameters, which changes nothing for a run without the relation, and so is how a run that learned equality, or L1, is scored as if it bound injectively.
+One default differs from how the paper's numbers were produced: the model gets no equality relation (`data.init_args.include_equality`), so its learned domain requires every schema's parameters to be distinct instead, which costs a correct schema nothing, since bindings are injective and no domain here has an action applicable to one object twice. For the paper's setting, add `--set data.init_args.include_equality=true`, which learns equality like any other binary predicate and writes it as the predicate `equal`, nothing assumed; the paper's own noise checkpoints also need `--validation-threshold 0.75`. `force_injective` in `experiments/configs/validation.yaml` (off) replaces whatever a learned domain says about equality with distinct parameters, which changes nothing for a run without the relation, and so is how a run that learned equality, or L1, is scored as if it bound injectively.
 
 `--validate-only` submits the validation array alone, for when training survived but validation did not. Runs that stopped short of `max_steps` are refused before anything is submitted, unless `--allow-unfinished`.
 
@@ -221,7 +221,7 @@ python experiments/validate_checkpoint.py --validator mlp --model-id <run-id> --
 python experiments/validate_checkpoint.py --validator l1 --original-domain pddl/satellite/domain.pddl --learned-domain experiments/l1_pddl/satellite.pddl --problem pddl/satellite/test-1.pddl
 ```
 
-Its sampling defaults and `force_injective` come from `experiments/configs/validation.yaml`, so it scores the way the sweep does, and all three validators return the same payload. `--threshold` extracts a run's learned domain anew, and `l1` accepts any learned PDDL domain, typed or not, with equality written as `=` or as a static `eq` or `equal`.
+Its sampling defaults and `force_injective` come from `experiments/configs/validation.yaml`, so it scores the way the sweep does, and all three validators return the same payload. `--threshold` extracts a run's learned domain anew, and `l1` accepts any learned PDDL domain, typed or not, with equality written as `=`, `eq` or `equal`.
 
 ## Reproducibility
 

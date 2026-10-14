@@ -73,8 +73,7 @@ class TensorRelationsTest(unittest.TestCase):
         equality = [
             {"name": "=", "arity": 2, "static": True},
             {"name": "Equal", "arity": 2, "static": True},
-            # Changed by some action, so an ordinary predicate whatever its name.
-            {"name": "eq", "arity": 2, "static": False},
+            {"name": "eq", "arity": 1, "static": True},
         ]
         names = lambda **kwargs: [
             p["name"]

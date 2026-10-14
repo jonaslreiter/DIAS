@@ -18,10 +18,10 @@ from tqdm import tqdm
 
 from dias.pddl import text as pddl_text
 from dias.pddl.untype import (
-    EQUALITY_PREDICATE,
     extract_domain_header,
     strip_problem_types,
     untype_action,
+    with_equality_facts,
 )
 from dias.schema.action import ActionSchema, LiftedAtom
 
@@ -41,14 +41,14 @@ UNREACHABLE_GUARD = "dummy_guard"
 
 
 def _unreachable_action(predicates: list[tuple[str, int]]) -> ActionSchema:
-    """An action that never applies, with an effect on every predicate but `eq`: with every learned effect empty, pymimir would otherwise take them all for static."""
+    """An action that never applies, with an effect on every predicate but `equal`: with every learned effect empty, pymimir would otherwise take them all for static."""
     return ActionSchema(
         name="dummy_action_unreachable",
         preconditions=[LiftedAtom(UNREACHABLE_GUARD, 0, [], True)],
         effects=[
             LiftedAtom(name, arity, list(range(arity)), True)
             for name, arity in predicates
-            if name != EQUALITY_PREDICATE
+            if name != pddl_text.EQUALITY_PREDICATE
         ],
     )
 
@@ -106,10 +106,7 @@ class MlpEffectsValidator:
             )
 
         self.learned_domain_text, self.threshold = learned_pddl(run, threshold)
-        learned_domain_text = pddl_text.write_equality_as_builtin(
-            self.learned_domain_text,
-            pddl_text.equality_predicates(self.learned_domain_text),
-        )
+        learned_domain_text = pddl_text.equality_as_predicate(self.learned_domain_text)
         if force_injective:
             learned_domain_text = pddl_text.force_distinct_parameters(
                 learned_domain_text
@@ -117,10 +114,6 @@ class MlpEffectsValidator:
 
         original_domain_path = run.domain_path
         original_domain_text = Path(original_domain_path).read_text()
-        has_equality = pddl_text.domain_uses_equality(
-            original_domain_text
-        ) or pddl_text.domain_uses_equality(learned_domain_text)
-        equality_predicate_name = EQUALITY_PREDICATE if has_equality else None
 
         relation_names = list(self.schema.relation_names)
         relation_arities = list(self.schema.relation_arities)
@@ -149,26 +142,28 @@ class MlpEffectsValidator:
             for name in self.action_names
         ]
         actions = [
-            untype_action(
-                blocks[name],
-                name_prefix=LEARNED_ACTION_PREFIX,
-                equality_predicate_name=equality_predicate_name,
-            )
+            untype_action(blocks[name], name_prefix=LEARNED_ACTION_PREFIX)
             for name in self.action_names
         ]
 
         predicates = [
-            (EQUALITY_PREDICATE if name == "=" else name, arity)
+            (
+                (
+                    pddl_text.EQUALITY_PREDICATE
+                    if pddl_text.is_equality_predicate(name, arity)
+                    else name
+                ),
+                arity,
+            )
             for name, arity in zip(relation_names, relation_arities)
         ]
-        if has_equality and (EQUALITY_PREDICATE, 2) not in predicates:
-            predicates.append((EQUALITY_PREDICATE, 2))
+        if (pddl_text.EQUALITY_PREDICATE, 2) not in predicates:
+            predicates.append((pddl_text.EQUALITY_PREDICATE, 2))
         predicates.append((UNREACHABLE_GUARD, 0))
         header = extract_domain_header(
-            original_domain_text,
+            pddl_text.equality_as_predicate(original_domain_text),
             predicate_names=[name for name, _ in predicates],
             predicate_arities=[arity for _, arity in predicates],
-            keep_equality_requirement=False,
         )
 
         self.workspace = PddlWorkspace()
@@ -180,9 +175,8 @@ class MlpEffectsValidator:
         self.learned_problem_filename = self.workspace.write(
             "learned-problem.pddl",
             strip_problem_types(
-                Path(problem_path).read_text(),
+                with_equality_facts(Path(problem_path).read_text()),
                 original_domain_text,
-                equality_predicate_name=equality_predicate_name,
             ),
         )
 

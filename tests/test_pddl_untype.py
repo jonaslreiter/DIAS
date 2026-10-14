@@ -10,6 +10,7 @@ from dias.pddl.untype import (
     problem_object_names,
     strip_problem_types,
     untype_action,
+    with_equality_facts,
 )
 
 DOMAIN = """(define (domain demo)
@@ -35,17 +36,12 @@ PROBLEM = """(define (problem p) (:domain demo)
 
 
 class StripProblemTypesTest(unittest.TestCase):
-    def test_injects_the_type_hierarchy_and_reflexive_atoms(self):
-        text = strip_problem_types(
-            PROBLEM,
-            DOMAIN,
-            equality_predicate_name="=",
-        )
+    def test_injects_the_type_hierarchy(self):
+        text = strip_problem_types(PROBLEM, DOMAIN)
         self.assertIn("(:objects c-1)", text)
         # The whole ancestor chain, not just the declared type.
         self.assertIn("(child c-1)", text)
         self.assertIn("(parent c-1)", text)
-        self.assertIn("(= c-1 c-1)", text)
 
     def test_object_names_containing_a_hyphen_survive(self):
         self.assertNotIn("- child", strip_problem_types(PROBLEM, DOMAIN))
@@ -80,16 +76,11 @@ class ExtractDomainHeaderTest(unittest.TestCase):
         self.assertNotIn("- child", header)
         self.assertNotIn("(:action", header)
 
-    def test_equality_can_be_dropped_from_the_requirements(self):
-        header = extract_domain_header(DOMAIN, keep_equality_requirement=False)
-        self.assertIn("(:requirements :negative-preconditions)", header)
-
     def test_rebuilt_predicates_cover_relations_and_types(self):
         header = extract_domain_header(
             DOMAIN,
             predicate_names=["=", "ready", "linked"],
             predicate_arities=[2, 1, 2],
-            keep_equality_requirement=False,
         )
         self.assertIn("(ready ?x)", header)
         self.assertIn("(linked ?x0 ?x1)", header)
@@ -114,16 +105,12 @@ class ExtractDomainHeaderTest(unittest.TestCase):
 class UntypeActionTest(unittest.TestCase):
     ACTION = "(:action push\n  :parameters (?p - player ?c - crate)\n  :precondition (and (at ?p) (= ?p ?c))\n  :effect (at ?c))"
 
-    def test_types_become_preconditions_and_equality_is_rewritten(self):
-        text = untype_action(self.ACTION, equality_predicate_name="eq")
+    def test_types_become_preconditions(self):
+        text = untype_action(self.ACTION)
         self.assertIn(":parameters (?p ?c)", text)
         self.assertIn("(player ?p)", text)
         self.assertIn("(crate ?c)", text)
-        self.assertIn("(eq ?p ?c)", text)
-        self.assertNotIn("(= ", text)
-
-    def test_equality_is_left_alone_without_a_predicate_name(self):
-        self.assertIn("(= ?p ?c)", untype_action(self.ACTION))
+        self.assertIn("(= ?p ?c)", text)
 
     def test_prefix_and_ignored_types(self):
         text = untype_action(
@@ -138,6 +125,21 @@ class UntypeActionTest(unittest.TestCase):
     def test_a_malformed_block_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "missing parameters"):
             untype_action("(:action broken :parameters (?x))")
+
+
+class EqualityFactsTest(unittest.TestCase):
+    def test_every_object_equals_itself_in_place_of_the_facts_it_had(self):
+        problem = PROBLEM.replace("(:init)", "(:init (eq c-1 c-1))").replace(
+            "c-1 - child", "c-1 c-2 - child"
+        )
+        text = with_equality_facts(problem)
+        self.assertIn("(equal c-1 c-1)", text)
+        self.assertIn("(equal c-2 c-2)", text)
+        self.assertNotIn("(eq ", text)
+
+    def test_a_fact_between_two_objects_is_refused(self):
+        with self.assertRaisesRegex(ValueError, "not equality"):
+            with_equality_facts(PROBLEM.replace("(:init)", "(:init (Equal c-1 c-2))"))
 
 
 class ProblemObjectsTest(unittest.TestCase):

@@ -3,7 +3,7 @@
 # The atom counts are per state, and both states of a transition are corrupted, so 1.0 / 1.0 is the paper's 4 flips per transition; its Table 2 runs 0.25, 0.5, 1.0 and 2.0 for 1, 2, 4 and 8 flips.
 model:
   init_args:
-    # The paper raises the schema-derivation threshold (Eq. 14) under noise.
+    # The paper raises the schema-derivation threshold under noise.
     schema_threshold: 0.75
     # Under noise the exact precondition product is too brittle to train against, so tau decays as in main.yaml but bottoms out above 0.
     precondition_tau:

@@ -32,7 +32,6 @@ from collections import Counter
 from pathlib import Path
 
 from dias.pddl import text as pddl_text
-from dias.pddl.untype import EQUALITY_PREDICATE
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # for `import validate_runs`
 from pipeline import (  # noqa: E402
@@ -49,8 +48,7 @@ from validate_runs import run_id_for  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-# Equality reaches the schemas under two spellings: the built-in "=", and the ordinary predicate a domain declares in its place.
-EQUALITY_NAMES = frozenset({"=", EQUALITY_PREDICATE})
+EQUALITY_NAMES = frozenset({"=", *pddl_text.EQUALITY_PREDICATE_NAMES})
 
 # Atoms are counted per (class, polarity), because the two reported groupings cut across the pair differently.
 KINDS = ("eq", "stat1", "stat2", "flu")

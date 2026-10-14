@@ -9,6 +9,7 @@ import sys
 import unittest
 from pathlib import Path
 
+from dias.pddl.text import equality_as_predicate
 from dias.pddl.untype import problem_object_names
 from dias.validation.pddl import PddlValidator
 from support import temp_dir
@@ -31,7 +32,7 @@ NUM_SAMPLES = 6
 SAMPLE_POPULATION = 20
 
 
-def equality_as_predicate(domain_text: str, name: str) -> str:
+def equality_spelt_as(domain_text: str, name: str) -> str:
     """The domain as a planner without :equality wants it, and as L1 returns it: `=` written as a static predicate called `name`."""
     text = re.sub(r"\(\s*=\s+", f"({name} ", domain_text).replace(" :equality", "")
     return text.replace("(:predicates", f"(:predicates ({name} ?x ?y)", 1)
@@ -90,11 +91,11 @@ class L1ValidationTest(unittest.TestCase):
         for name in ("eq", "equal"):
             with self.subTest(name=name):
                 self.assertPerfect(
-                    self.validate(equality_as_predicate(DOMAIN.read_text(), name))
+                    self.validate(equality_spelt_as(DOMAIN.read_text(), name))
                 )
 
     def test_so_may_the_original_with_or_without_its_facts(self):
-        original = equality_as_predicate(DOMAIN.read_text(), "equal")
+        original = equality_spelt_as(DOMAIN.read_text(), "equal")
         for problem in (
             PROBLEM.read_text(),
             with_reflexive_facts(PROBLEM.read_text(), "equal"),
@@ -128,6 +129,16 @@ class L1ValidationTest(unittest.TestCase):
         self.assertLess(self.validate(contradicted)["recall"], 1.0)
         self.assertPerfect(self.validate(contradicted, force_injective=True))
 
+    def test_a_learned_effect_on_equality_is_scored(self):
+        # A model that learned equality may change it, which only a predicate can say.
+        learned = equality_as_predicate(DOMAIN.read_text()).replace(
+            "(on ?bm ?bt))", "(on ?bm ?bt) (equal ?bm ?bt))", 1
+        )
+        stats = self.validate(learned)["action_stats"]
+        self.assertGreater(stats["stack"]["fp"], 0)
+        for action in ("newtower", "move"):
+            self.assertEqual((stats[action]["fp"], stats[action]["fn"]), (0, 0))
+
     def test_setup_is_required_before_validate(self):
         directory = temp_dir(self)
         learned = directory / "learned.pddl"
@@ -139,7 +150,7 @@ class L1ValidationTest(unittest.TestCase):
 
 class CommittedL1DomainTest(unittest.TestCase):
     def test_every_domain_has_one_that_merges_and_misses_no_successor(self):
-        # L1's recall is 1.0 in every domain (the paper's Table 17), while a schema the merge breaks, by an undeclared predicate or a type no problem asserts, applies nowhere and misses every successor of its action.
+        # L1's recall is 1.0 in every domain, while a schema the merge breaks, by an undeclared predicate or a type no problem asserts, applies nowhere and misses every successor of its action.
         for domain in available_domains():
             with self.subTest(domain=domain):
                 validation = PddlValidator(

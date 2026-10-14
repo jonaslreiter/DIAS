@@ -9,10 +9,12 @@ EQUALITY_REQUIREMENT = ":equality"
 TYPES_PATTERN = re.compile(r"\(:types(.*?)\)", re.DOTALL)
 REQUIREMENTS_PATTERN = re.compile(r"\(:requirements([^)]*)\)", re.IGNORECASE)
 COMMENT_PATTERN = re.compile(r";[^\n]*")
+# Equality written as an ordinary predicate, which can be declared, asserted in a problem and changed by an effect.
+EQUALITY_PREDICATE = "equal"
+EQUALITY_PREDICATE_NAMES = frozenset({"eq", EQUALITY_PREDICATE})
 EQUALITY_LITERAL_PATTERN = re.compile(
-    r"\s*\(\s*not\s*\(\s*=\s[^()]*\)\s*\)|\s*\(\s*=\s[^()]*\)"
+    rf"\s*\(\s*not\s*\(\s*{EQUALITY_PREDICATE}\s[^()]*\)\s*\)|\s*\(\s*{EQUALITY_PREDICATE}\s[^()]*\)"
 )
-EQUALITY_PREDICATE_NAMES = frozenset({"eq", "equal"})
 
 
 def find_balanced_expr(text: str, start_idx: int) -> tuple[str, int]:
@@ -109,15 +111,6 @@ def domain_uses_equality(domain_text: str) -> bool:
     return bool(match and EQUALITY_REQUIREMENT in match.group(1).lower())
 
 
-def replace_equality_with_predicate(expr: str, predicate_name: str) -> str:
-    """Rewrite ``(= ?a ?b)`` as an ordinary predicate, which untyped PDDL needs."""
-    return re.sub(
-        r"\(\s*=\s+([^\s()]+)\s+([^\s()]+)\s*\)",
-        rf"({predicate_name} \1 \2)",
-        expr,
-    )
-
-
 def declared_predicates(domain_text: str) -> dict[str, int]:
     """Each predicate the domain's ``(:predicates ...)`` declares, with its arity, as written."""
     text = COMMENT_PATTERN.sub("", domain_text)
@@ -131,59 +124,54 @@ def declared_predicates(domain_text: str) -> dict[str, int]:
     }
 
 
-def is_equality_predicate(name: str, arity: int, static: bool) -> bool:
-    """PDDL's `=`, or a predicate standing in for it: binary, static and named `eq` or `equal`, as a domain without :equality has to write it."""
-    return name == "=" or (
-        name.lower() in EQUALITY_PREDICATE_NAMES and arity == 2 and static
-    )
+def is_equality_predicate(name: str, arity: int) -> bool:
+    """PDDL's `=`, or a binary predicate named `eq` or `equal`, which a domain without :equality writes it as."""
+    return name == "=" or (name.lower() in EQUALITY_PREDICATE_NAMES and arity == 2)
 
 
 def equality_predicates(domain_text: str) -> list[str]:
     """The predicates a domain declares in place of `=`."""
-    effects = " ".join(
-        find_balanced_expr(block, block.find(":effect"))[0]
-        for block in extract_action_blocks(COMMENT_PATTERN.sub("", domain_text))
-        if ":effect" in block
-    )
     return [
         name
         for name, arity in declared_predicates(domain_text).items()
-        if is_equality_predicate(
-            name,
-            arity,
-            static=not re.search(rf"\(\s*{re.escape(name)}\s", effects, re.IGNORECASE),
-        )
+        if is_equality_predicate(name, arity)
     ]
 
 
-def write_equality_as_builtin(domain_text: str, names: list[str]) -> str:
-    """The domain with the predicates in `names` written as `=`: their atoms rewritten, their declarations dropped, and :equality required."""
-    if not names:
-        return domain_text
-    alternatives = "|".join(re.escape(name) for name in names)
+def equality_as_predicate(domain_text: str) -> str:
+    """The domain with equality, however it spells it, written as the declared predicate `equal`."""
+    declared = equality_predicates(domain_text)
     start = domain_text.find("(:predicates")
     block, end = find_balanced_expr(domain_text, start)
-    block = re.sub(
-        rf"\s*\(\s*(?:{alternatives})\s[^()]*\)", "", block, flags=re.IGNORECASE
-    )
+    for name in declared:
+        block = re.sub(
+            rf"\s*\(\s*{re.escape(name)}\s[^()]*\)", "", block, flags=re.IGNORECASE
+        )
+    block = block[:-1].rstrip() + f"\n    ({EQUALITY_PREDICATE} ?x ?y)\n  )"
     text = domain_text[:start] + block + domain_text[end:]
+    names = "|".join(re.escape(name) for name in ["=", *declared])
     text = re.sub(
-        rf"\(\s*(?:{alternatives})\s+([^\s()]+)\s+([^\s()]+)\s*\)",
-        r"(= \1 \2)",
+        rf"\(\s*(?:{names})\s+([^\s()]+)\s+([^\s()]+)\s*\)",
+        rf"({EQUALITY_PREDICATE} \1 \2)",
         text,
         flags=re.IGNORECASE,
     )
-    return require_equality(text)
+    return re.sub(
+        r"(\(:requirements[^)]*?)\s*:equality", r"\1", text, flags=re.IGNORECASE
+    )
 
 
 def force_distinct_parameters(domain_text: str) -> str:
-    """The domain with every action requiring each two of its parameters to be distinct, and saying nothing else about equality: the `=` literals it had are dropped."""
+    """The domain, with equality written as `equal`, with every action requiring each two of its parameters to be distinct and saying nothing else about equality: the `equal` literals it had are dropped."""
     text = domain_text
     for block in extract_action_blocks(domain_text):
         variables, _ = parse_typed_parameters(
             find_balanced_expr(block, block.find(":parameters"))[0]
         )
-        distinct = [f"(not (= {a} {b}))" for a, b in combinations(variables, 2)]
+        distinct = [
+            f"(not ({EQUALITY_PREDICATE} {a} {b}))"
+            for a, b in combinations(variables, 2)
+        ]
         rewritten = block
         for part in (":precondition", ":effect"):
             start = rewritten.find(part)
@@ -195,7 +183,7 @@ def force_distinct_parameters(domain_text: str) -> str:
                 rewritten[: rewritten.index("(", start)] + kept + rewritten[end:]
             )
         text = text.replace(block, rewritten, 1)
-    return require_equality(text)
+    return text
 
 
 def require_equality(domain_text: str) -> str:
@@ -215,22 +203,6 @@ def require_equality(domain_text: str) -> str:
         + f"\n  (:requirements {EQUALITY_REQUIREMENT})"
         + domain_text[definition.end() :]
     )
-
-
-def drop_equality_facts(problem_text: str, names: list[str]) -> str:
-    """The problem without its atoms over the predicates in `names`. One relating two different objects is refused: that predicate is not equality."""
-    if not names:
-        return problem_text
-    alternatives = "|".join(re.escape(name) for name in names)
-    pattern = re.compile(
-        rf"\s*\(\s*(?:{alternatives})\s+([^\s()]+)\s+([^\s()]+)\s*\)", re.IGNORECASE
-    )
-    for match in pattern.finditer(problem_text):
-        if match.group(1).lower() != match.group(2).lower():
-            raise ValueError(
-                f"{match.group(0).strip()} relates two different objects, so the predicate is not equality"
-            )
-    return pattern.sub("", problem_text)
 
 
 def inject_extra_preconditions(precondition_expr: str, extras: list[str]) -> str:

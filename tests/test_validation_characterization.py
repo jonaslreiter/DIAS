@@ -139,8 +139,10 @@ class LearnedDomainTest(unittest.TestCase):
         self.assertIn("(not (= ?x0 ?x1))", self.stack(legacy=False))
 
     def test_a_run_that_learned_equality_writes_only_what_it_learned(self):
-        self.assertNotIn("(= ", self.stack(legacy=True))
-        self.assertEqual(self.stack(legacy=True, inequality=True).count("(= "), 1)
+        self.assertNotIn("equal", self.stack(legacy=True))
+        learned = self.stack(legacy=True, inequality=True)
+        self.assertIn("(not (equal ?x0 ?x1))", learned)
+        self.assertNotIn("(= ", learned)
 
     def score_stack(self, legacy: bool, force_injective: bool = False) -> dict:
         directory = temp_dir(self)

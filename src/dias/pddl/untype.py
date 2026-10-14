@@ -1,4 +1,4 @@
-"""Rewriting typed PDDL as untyped PDDL, which is what validating an untyped learned schema against a typed domain needs: the type hierarchy becomes unary static predicates in ``:init``, and ``(= ?x ?y)`` an ordinary predicate."""
+"""Rewriting typed PDDL as untyped PDDL, which is what validating an untyped learned schema against a typed domain needs: the type hierarchy becomes unary static predicates in ``:init``."""
 
 from __future__ import annotations
 
@@ -6,19 +6,12 @@ import re
 
 from . import text as pddl_text
 
-# The predicate an untyped domain uses in place of the built-in `=`.
-EQUALITY_PREDICATE = "eq"
-
 
 def strip_problem_types(
     problem_text: str,
     domain_text: str | None = None,
-    equality_predicate_name: str | None = None,
 ) -> str:
-    """Remove the type annotations from a problem's ``:objects``.
-
-    With *domain_text*, type-derived unary atoms (``(cell c_0_0)``) go into ``:init`` so the untyped domain can use them as static preconditions. With *equality_predicate_name*, that predicate gets ``(name o o)`` per object, which is how ``(= ?x ?y)`` survives.
-    """
+    """Remove the type annotations from a problem's ``:objects``. With *domain_text*, type-derived unary atoms (``(cell c_0_0)``) go into ``:init`` so the untyped domain can use them as static preconditions."""
     type_atoms: list[str] = []
 
     if domain_text is not None:
@@ -34,14 +27,27 @@ def strip_problem_types(
     # Only a standalone dash, so object names like "p1-0" stay intact.
     text = re.sub(r"\s+-\s+[^\s()]+", "", problem_text)
 
-    objects = problem_object_names(problem_text) if equality_predicate_name else []
-    reflexive_atoms = [f"({equality_predicate_name} {obj} {obj})" for obj in objects]
+    return _extend_init(text, type_atoms) if type_atoms else text
 
-    for atoms in (type_atoms, reflexive_atoms):
-        if atoms:
-            text = _extend_init(text, atoms)
 
-    return text
+def with_equality_facts(problem_text: str) -> str:
+    """The problem asserting ``(equal o o)`` for every object, which a domain written with ``equality_as_predicate`` needs, in place of any equality facts it had. One relating two different objects is refused: its predicate was not equality."""
+    pattern = re.compile(
+        rf"\s*\(\s*(?:{'|'.join(pddl_text.EQUALITY_PREDICATE_NAMES)})\s+([^\s()]+)\s+([^\s()]+)\s*\)",
+        re.IGNORECASE,
+    )
+    for match in pattern.finditer(problem_text):
+        if match.group(1).lower() != match.group(2).lower():
+            raise ValueError(
+                f"{match.group(0).strip()} relates two different objects, so it is not equality"
+            )
+    return _extend_init(
+        pattern.sub("", problem_text),
+        [
+            f"({pddl_text.EQUALITY_PREDICATE} {obj} {obj})"
+            for obj in problem_object_names(problem_text)
+        ],
+    )
 
 
 def _extend_init(text: str, atoms: list[str]) -> str:
@@ -58,11 +64,10 @@ def extract_domain_header(
     domain_text: str,
     predicate_names: list[str] | None = None,
     predicate_arities: list[int] | None = None,
-    keep_equality_requirement: bool = True,
 ) -> str:
     """Return everything before the first ``:action``, untyped.
 
-    ``:requirements`` gains ``:negative-preconditions``, and keeps ``:equality`` only if the original declared it, so pymimir does not materialise reflexive ``(= x x)`` atoms. Given *predicate_names* and *predicate_arities*, ``:predicates`` is rebuilt so the generated domain is self-contained.
+    ``:requirements`` gains ``:negative-preconditions``, and keeps ``:equality`` only if the original declared it. Given *predicate_names* and *predicate_arities*, ``:predicates`` is rebuilt so the generated domain is self-contained.
     """
     action_start = domain_text.find("(:action")
     if action_start == -1:
@@ -74,7 +79,7 @@ def extract_domain_header(
     orig_reqs_match = re.search(r"\(:requirements([^)]*)\)", domain_text)
     needs_equality = bool(orig_reqs_match and ":equality" in orig_reqs_match.group(1))
     reqs = ":negative-preconditions"
-    if needs_equality and keep_equality_requirement:
+    if needs_equality:
         reqs += " :equality"
     header = re.sub(r"\(:requirements[^)]*\)\s*", "", header)
     m_def = re.search(r"\(define\s*\(domain\s+\S+\s*\)", header)
@@ -145,7 +150,6 @@ def problem_object_names(problem_text: str) -> list[str]:
 def untype_action(
     action_block: str,
     name_prefix: str = "",
-    equality_predicate_name: str | None = None,
     ignored_types: frozenset[str] = frozenset(),
 ) -> str:
     """Rewrite one ``(:action ...)`` block without types: each typed parameter becomes a unary precondition, except the uninformative ones in *ignored_types*."""
@@ -172,13 +176,6 @@ def untype_action(
         if type_name.lower() not in ignored_types
     ]
 
-    if equality_predicate_name is not None:
-        pre_expr = pddl_text.replace_equality_with_predicate(
-            pre_expr, equality_predicate_name
-        )
-        eff_expr = pddl_text.replace_equality_with_predicate(
-            eff_expr, equality_predicate_name
-        )
     pre_expr = pddl_text.inject_extra_preconditions(pre_expr, type_preconditions)
 
     return f"(:action {action_name}\n  :parameters ({' '.join(params)})\n  :precondition {pre_expr}\n  :effect {eff_expr}\n)"
