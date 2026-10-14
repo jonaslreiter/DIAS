@@ -35,6 +35,7 @@ from dias.pddl import text as pddl_text
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # for `import validate_runs`
 from pipeline import (  # noqa: E402
+    CHECKPOINTS,
     LOGS_DIR,
     VALIDATION_CONFIG,
     add_domain_arguments,
@@ -232,13 +233,13 @@ def pymimir_statics(domain: str) -> set[str]:
 
 
 def learned_counts(
-    domain: str, run_id: str, log_dir: Path, threshold: float
+    domain: str, run_id: str, log_dir: Path, threshold: float, checkpoint: str
 ) -> Counter:
     """One run's precondition atoms, classified. Raises FileNotFoundError if the run has no checkpoint."""
     from dias.schema.export import read_learned_schemas
     from dias.validation.checkpoint import load_run
 
-    run = load_run(run_id, str(log_dir))
+    run = load_run(run_id, str(log_dir), checkpoint)
     # As learned: the distinctness a learned domain writes would count as learned equalities.
     transpiler = read_learned_schemas(
         run.model, run.schema, run.datamodule_hparams, threshold
@@ -280,7 +281,9 @@ def count_domain(
     for seed in seeds:
         run_id = run_id_for(args.experiment, domain, seed)
         try:
-            pooled += learned_counts(domain, run_id, args.log_dir, args.threshold)
+            pooled += learned_counts(
+                domain, run_id, args.log_dir, args.threshold, args.checkpoint
+            )
         except FileNotFoundError as error:
             logger.warning("%s: %s", run_id, error)
             continue
@@ -363,7 +366,7 @@ def markdown_table(results: dict, grouping: dict) -> list[str]:
 
 
 def write_markdown(
-    path: Path, results: dict, experiment: str, threshold: float
+    path: Path, results: dict, experiment: str, threshold: float, checkpoint: str
 ) -> None:
     lines = [
         f"# Learned vs. ground-truth precondition categories (`{experiment}`)",
@@ -373,7 +376,7 @@ def write_markdown(
         "## How the numbers were produced",
         "",
         f"- `python experiments/precondition_categories.py --experiment {experiment} --markdown {path}`.",
-        f"- Learned schemas were read from `logs/dias/{experiment}-<domain>-s<seed>/checkpoints/final-epoch*.ckpt` through `dias.schema.export.read_learned_schemas`, the function a run's learned domain is written with: `load_run`, then `DIAS.schema_logits()`, then `derive_schema(threshold={threshold:g})`, then `PDDLTranspiler`.",
+        f"- Learned schemas were read from `logs/dias/{experiment}-<domain>-s<seed>/checkpoints/{checkpoint}-epoch*.ckpt` through `dias.schema.export.read_learned_schemas`, the function a run's learned domain is written with: `load_run`, then `DIAS.schema_logits()`, then `derive_schema(threshold={threshold:g})`, then `PDDLTranspiler`.",
         "- Ground-truth schemas were parsed from the `:precondition` conjunction of `pddl/<domain>/domain.pddl`.",
         "- Distinct lifted atoms after de-duplication; `(not (p ...))` counts as one atom; type-derived unary predicates are excluded from the ground-truth counts, since a `?t - truck` in `:parameters` is not a precondition.",
         "- A static predicate is one that occurs in no action's effect, which is also what `pymimir`'s `Predicate.is_static()` reports and so the flag DIAS is given. `pymimir` additionally marks static the unary predicates it materialises out of a `:types` declaration, and `include_statics` defaults to true, so DIAS does get a channel for `(truck ?x)` and its kind while a ground-truth schema states that guard in `:parameters` instead. That asymmetry is what the `stat1` column measures.",
@@ -419,6 +422,12 @@ def main() -> int:
         help="Binarization threshold handed to derive_schema (default: 0.5, schema_threshold's default; the noise overlay uses 0.75).",
     )
     p.add_argument(
+        "--checkpoint",
+        default="final",
+        choices=CHECKPOINTS,
+        help="Which of each run's checkpoints to read: final, the model as training left it, or best, the one with the lowest validation loss. Default: final.",
+    )
+    p.add_argument(
         "--markdown",
         type=Path,
         default=None,
@@ -442,7 +451,9 @@ def main() -> int:
     print_table(results, args.experiment, FIVE_WAY, "five classes")
     print_table(results, args.experiment, FOUR_WAY, "four classes, as the paper quotes")
     if args.markdown:
-        write_markdown(args.markdown, results, args.experiment, args.threshold)
+        write_markdown(
+            args.markdown, results, args.experiment, args.threshold, args.checkpoint
+        )
     return 0
 
 

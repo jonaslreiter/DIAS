@@ -203,7 +203,7 @@ A static predicate is one that occurs in no action's effect, which is also what 
 
 Learned columns are per-seed means and ground-truth columns count each action's schema once, which is the unit the two are comparable on. Atoms are counted after de-duplication, as distinct lifted atoms, with `(not (p ...))` as one atom, and type-derived unary predicates left out of the ground-truth counts, since a `?t - truck` in `:parameters` is not a precondition. DIAS does get a channel for those (pymimir materialises them, and `include_statics` defaults to true), which is what the `stat1` column measures.
 
-Schemas are read through `dias.schema.export.read_learned_schemas`, the function a run's learned domain is written with, so the atoms counted here are the ones validation scores, less the parameter distinctness that domain writes when the run did not learn equality (counted, it would read as learned equalities). `--threshold` defaults to 0.5; a noise experiment wants `--threshold 0.75`.
+Schemas are read through `dias.schema.export.read_learned_schemas`, the function a run's learned domain is written with, so the atoms counted here are the ones validation scores, less the parameter distinctness that domain writes when the run did not learn equality (counted, it would read as learned equalities). `--threshold` defaults to 0.5; a noise experiment wants `--threshold 0.75`. It reads each run's final checkpoint, or with `--checkpoint best` the one validation would score under that option.
 
 ## Instance-size scaling
 
