@@ -1,6 +1,8 @@
 # Per-domain Slurm resources for the TRAINING array, consumed by experiments/launch.py. A domain inherits the `defaults` block for every field it does not set; `{}` takes all of them. Which sbatch flag each field becomes is `pipeline.sbatch_resource_opts`, and `sbatch_extra` is a list passed verbatim.
 #
 # Validation-array resources are configured separately in experiments/configs/slurm-resources-validation.yaml.
+#
+# Some seeds train far slower than others of the same domain: the step rate falls over the run, to 0.15 steps per second on one MLP-effects hanoi seed that took 18.6 hours where the domain's median is 2. The times leave room for that, since a run that times out starts over.
 
 defaults:
   time: "04:00:00"
@@ -10,7 +12,7 @@ defaults:
 
 blocks-3:
   gres: "shard:12"
-  time: "24:00:00"
+  time: "36:00:00"
 delivery:
   gres: "shard:6"
 driverlog:
@@ -20,12 +22,12 @@ gripper:
   time: "12:00:00"
 hanoi:
   gres: "shard:12"
-  time: "24:00:00"
+  time: "48:00:00"
 logistics:
   time: "08:00:00"
 miconic:
   gres: "shard:12"
-  time: "24:00:00"
+  time: "36:00:00"
 n-puzzle: {}
 satellite:
   time: "12:00:00"
@@ -35,6 +37,7 @@ sokoban:
   mem: "32G"
   gres: "shard:6"
 sokoban-pull:
+  time: "12:00:00"
   gres: "shard:6"
 spanner:
   time: "06:00:00"
