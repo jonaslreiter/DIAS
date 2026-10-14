@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import multiprocessing as _mp
 import re
 import sys
 from collections import defaultdict
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
+from concurrent.futures.process import BrokenProcessPool
 from itertools import islice
 from pathlib import Path
 
@@ -39,6 +41,11 @@ from .successors import (
 )
 
 UNREACHABLE_GUARD = "dummy_guard"
+
+logger = logging.getLogger(__name__)
+
+# Consecutive grounding pools that may break before returning a state until validation gives up.
+BARREN_POOLS = 3
 
 
 def _unreachable_action(predicates: list[tuple[str, int]]) -> ActionSchema:
@@ -322,17 +329,48 @@ class MlpEffectsValidator:
         if sys.version_info >= (3, 11):
             options["max_tasks_per_child"] = self.states_per_worker
         queue = iter(todo)
-        with ProcessPoolExecutor(**options) as pool:
-            running = {
-                pool.submit(ground_state, payloads[index]): index
-                for index in islice(queue, self.num_workers)
-            }
-            while running:
-                done, _ = wait(running, return_when=FIRST_COMPLETED)
-                for future in done:
-                    yield running.pop(future), future.result()
-                    for index in islice(queue, 1):
+        # States handed to a pool that broke before it returned them.
+        unfinished: list = []
+        barren = 0
+        while True:
+            outstanding = dict.fromkeys(unfinished)
+            returned = 0
+            try:
+                with ProcessPoolExecutor(**options) as pool:
+                    running = {}
+
+                    def submit(index):
+                        outstanding[index] = None
                         running[pool.submit(ground_state, payloads[index])] = index
+
+                    for index in unfinished:
+                        submit(index)
+                    for index in islice(
+                        queue, max(0, self.num_workers - len(unfinished))
+                    ):
+                        submit(index)
+                    while running:
+                        done, _ = wait(running, return_when=FIRST_COMPLETED)
+                        for future in done:
+                            index = running.pop(future)
+                            grounding = future.result()
+                            del outstanding[index]
+                            returned += 1
+                            yield index, grounding
+                            for index in islice(queue, 1):
+                                submit(index)
+                return
+            except BrokenProcessPool:
+                # A worker that exits after its max_tasks_per_child can be taken for one that died, which breaks the pool. Pools that break again and again before returning a single state have a state killing their workers, by memory or a crash, and retrying it would not end.
+                barren = 0 if returned else barren + 1
+                if barren == BARREN_POOLS:
+                    raise
+                unfinished = list(outstanding)
+                logger.warning(
+                    "The grounding pool broke after %d states; %d it held go to a new one.",
+                    returned,
+                    len(unfinished),
+                )
 
     def _predict(self, adjacency, actions, slot_objects, keys, channels) -> dict:
         """The successor signatures the model predicts for one state's groundings, keyed by action name."""

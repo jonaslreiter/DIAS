@@ -7,6 +7,8 @@ import json
 import os
 import types
 import unittest
+from concurrent.futures.process import BrokenProcessPool
+from unittest import mock
 
 # On CPU: the assertions are about bookkeeping, and a shared GPU makes this flaky.
 os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
@@ -14,6 +16,7 @@ os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
 import numpy as np
 import torch
 
+import flaky_grounding
 from checkpoints import TEST_PROBLEM, build_model, save
 from dias.validation.grounding import (
     flip_signature,
@@ -91,6 +94,24 @@ class MlpEffectsTest(unittest.TestCase):
     def test_worker_processes_do_not_change_the_result(self):
         """Workers rebuild every state from its atoms, so a mistake there shows up as different counts rather than an error."""
         self.assertEqual(self.validate(num_workers=1), self.validate(num_workers=2))
+
+    def test_a_worker_that_dies_costs_only_a_new_pool(self):
+        """A worker that exits after its `states_per_worker` can be taken for one that died, which breaks the whole pool; the states it held are handed to a new one."""
+        marker = self.directory / "died"
+        with mock.patch.dict(os.environ, {"DIAS_TEST_DIE_ONCE": str(marker)}):
+            with mock.patch(
+                "dias.validation.mlp_effects.ground_state", flaky_grounding.dies_once
+            ):
+                recovered = self.validate(num_workers=2, states_per_worker=1)
+        self.assertTrue(marker.exists())
+        self.assertEqual(recovered, self.validate(num_workers=1))
+
+    def test_a_state_that_kills_every_worker_is_given_up_on(self):
+        with mock.patch(
+            "dias.validation.mlp_effects.ground_state", flaky_grounding.always_dies
+        ):
+            with self.assertRaises(BrokenProcessPool):
+                self.validate(num_workers=2)
 
     def test_batching_does_not_change_the_result(self):
         self.assertEqual(self.validate(batch_size=8), self.validate(batch_size=256))
