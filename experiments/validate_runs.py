@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))  # for `import pipeline
 
 from pipeline import configure_logging  # noqa: E402
 from pipeline import (
+    CHECKPOINTS,
     EXPERIMENT_TYPES,
     EXPERIMENT_VALIDATOR,
     VALIDATORS,
@@ -63,13 +64,14 @@ def validate_run(
     num_workers: int | None = None,
     states_per_worker: int | None = None,
     resume: bool = False,
+    checkpoint: str = "final",
 ) -> dict:
     """Validate a single run over its held-out problems; write and return the results.
 
     The checkpoint is always found via *experiment*; *results_experiment* only picks the directory the JSON goes to. With *resume*, problems an earlier run on the same checkpoint scored are kept, and the rest use its sample seed.
     """
     # Imported here, not at module scope: submitting jobs must not need torch or pymimir.
-    from dias.validation.checkpoint import resolve_best_checkpoint
+    from dias.validation.checkpoint import resolve_checkpoint
     from dias.validation.successors import resolve_sample_seed
 
     run_id = run_id or run_id_for(experiment, domain, seed)
@@ -80,18 +82,21 @@ def validate_run(
     validator = VALIDATORS[EXPERIMENT_VALIDATOR[experiment_type]]
     validation = validator_class(validator.name)
     if validator.from_checkpoint:
-        checkpoint = resolve_best_checkpoint(logs_dir / "dias" / run_id / "checkpoints")
+        checkpoint_path = resolve_checkpoint(
+            logs_dir / "dias" / run_id / "checkpoints", checkpoint
+        )
         learned = {
             "model_id": run_id,
             "logs_path": str(logs_dir.resolve()),
             "threshold": threshold,
+            "checkpoint": checkpoint,
         }
     else:
-        if threshold is not None:
+        if threshold is not None or checkpoint != "final":
             raise SystemExit(
-                f"--threshold extracts a training run's learned domain anew; {validator.summary}"
+                f"--threshold and --checkpoint pick a training run's learned domain; {validator.summary}"
             )
-        checkpoint = None
+        checkpoint_path = None
         # There is no training run to mirror the metrics to.
         log_wandb = False
         learned = {
@@ -112,7 +117,9 @@ def validate_run(
     scored_threshold = threshold
     if resume and out.exists():
         previous = json.loads(out.read_text())
-        refusal = _resume_refusal(previous, out, checkpoint, threshold, force_injective)
+        refusal = _resume_refusal(
+            previous, out, checkpoint_path, threshold, force_injective
+        )
         if refusal is not None:
             raise SystemExit(f"--resume {out}: {refusal}")
         sample_seed = previous["sample_seed"]
@@ -189,7 +196,7 @@ def validate_run(
             scored_threshold,
             sample_seed,
             expected=[p.stem for p in val_problems],
-            checkpoint=checkpoint,
+            checkpoint=checkpoint_path,
             force_injective=force_injective,
         )
 
@@ -336,6 +343,12 @@ def main() -> int:
         help="Extract the learned domain anew at this binarization threshold, instead of scoring the one written beside the checkpoint at the run's schema_threshold (dias and mlp).",
     )
     p.add_argument(
+        "--checkpoint",
+        default="final",
+        choices=CHECKPOINTS,
+        help="Which of a run's checkpoints to score: final, the model as training left it, or best, the one with the lowest validation loss. Default: final.",
+    )
+    p.add_argument(
         "--results-experiment",
         default=None,
         help="Write results under logs/validation/<this>/ instead of <experiment>/. The checkpoint is still located via --experiment, so a re-validation at another --threshold leaves the original JSONs alone.",
@@ -379,6 +392,7 @@ def main() -> int:
         num_workers=args.num_workers,
         states_per_worker=args.states_per_worker,
         resume=args.resume,
+        checkpoint=args.checkpoint,
     )
     failed = all("error" in v for v in per_problem.values()) if per_problem else True
     return 1 if failed else 0

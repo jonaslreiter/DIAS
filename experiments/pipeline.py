@@ -147,6 +147,9 @@ VALIDATORS: dict[str, Validator] = {
     ),
 }
 
+# The checkpoints main.py saves, by name: the model as training left it, and the one with the lowest validation loss. Validation reads the first unless told otherwise.
+CHECKPOINTS = ("final", "best")
+
 # Noise is a training-side setting, so its runs are still DIAS models.
 EXPERIMENT_VALIDATOR = {"dias": "dias", "noise": "dias", "mlp": "mlp", "l1": "l1"}
 EXPERIMENT_TYPES = tuple(EXPERIMENT_VALIDATOR)

@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))  # for `import pipeline
 
 from pipeline import configure_logging  # noqa: E402
 from pipeline import (
+    CHECKPOINTS,
     LOGS_DIR,
     VALIDATION_CONFIG,
     VALIDATORS,
@@ -44,9 +45,9 @@ def _construction_kwargs(args: argparse.Namespace) -> dict:
             raise SystemExit(
                 f"--validator {args.validator} scores a learned PDDL domain: pass --original-domain and --learned-domain"
             )
-        if args.threshold is not None:
+        if args.threshold is not None or args.checkpoint != "final":
             raise SystemExit(
-                f"--threshold extracts a training run's learned domain anew; {validator.summary}"
+                f"--threshold and --checkpoint pick a training run's learned domain; {validator.summary}"
             )
         return {
             **common,
@@ -60,6 +61,7 @@ def _construction_kwargs(args: argparse.Namespace) -> dict:
         "model_id": args.model_id,
         "logs_path": str(args.log_dir.resolve()),
         "threshold": args.threshold,
+        "checkpoint": args.checkpoint,
     }
     if validator.grounds_in_parallel:
         kwargs |= {"num_workers": args.num_workers, "batch_size": args.batch_size}
@@ -102,6 +104,12 @@ def main() -> int:
         type=float,
         default=None,
         help="Extract the run's learned domain anew at this binarization threshold, instead of scoring the one written beside its checkpoint (dias and mlp).",
+    )
+    p.add_argument(
+        "--checkpoint",
+        default="final",
+        choices=CHECKPOINTS,
+        help="Which of the run's checkpoints to score: final, the model as training left it, or best, the one with the lowest validation loss (dias and mlp).",
     )
     p.add_argument(
         "--force-injective",

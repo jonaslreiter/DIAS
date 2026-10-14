@@ -90,7 +90,7 @@ class ResumeTest(unittest.TestCase):
         self.logs = temp_dir(self)
         checkpoints = self.logs / "dias" / "mlp-gripper-s0" / "checkpoints"
         checkpoints.mkdir(parents=True)
-        self.checkpoint = checkpoints / "best-epoch=0-step=10.ckpt"
+        self.checkpoint = checkpoints / "final-epoch=0-step=10.ckpt"
         self.checkpoint.touch()
         self.result = self.logs / "validation" / "mlp" / "gripper" / "seed0.json"
         StandInValidator.calls = []
@@ -101,7 +101,7 @@ class ResumeTest(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def validate(self, resume=True):
+    def validate(self, resume=True, checkpoint="final"):
         return validate_run(
             "mlp",
             "gripper",
@@ -112,6 +112,7 @@ class ResumeTest(unittest.TestCase):
             log_wandb=False,
             num_workers=1,
             resume=resume,
+            checkpoint=checkpoint,
         )
 
     def write_partial(self, **fields):
@@ -168,6 +169,13 @@ class ResumeTest(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "force_injective None"):
             self.validate()
 
+    def test_the_best_checkpoint_is_scored_when_asked(self):
+        best = self.checkpoint.with_name("best-epoch=0-step=5.ckpt")
+        best.touch()
+        self.validate(resume=False, checkpoint="best")
+        self.assertEqual(StandInValidator.instances[0].kwargs["checkpoint"], "best")
+        self.assertEqual(json.loads(self.result.read_text())["checkpoint"], str(best))
+
     def test_the_scored_domain_is_kept_beside_the_results(self):
         self.validate(resume=False)
         self.assertEqual(
@@ -215,9 +223,11 @@ class L1RunTest(unittest.TestCase):
         self.assertEqual(payload["status"], "ok")
         self.assertNotIn("checkpoint", payload)
 
-    def test_a_threshold_is_refused(self):
+    def test_a_threshold_or_checkpoint_is_refused(self):
         with self.assertRaisesRegex(SystemExit, "threshold"):
             self.validate(threshold=0.25)
+        with self.assertRaisesRegex(SystemExit, "checkpoint"):
+            self.validate(checkpoint="best")
 
 
 if __name__ == "__main__":

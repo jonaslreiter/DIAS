@@ -15,8 +15,9 @@ class DiasValidator(PddlValidator):
         problem_path,
         threshold=None,
         force_injective=False,
+        checkpoint="final",
     ):
-        run = load_run(model_id, logs_path)
+        run = load_run(model_id, logs_path, checkpoint)
         text, threshold = learned_pddl(run, threshold)
         self.learned = PddlWorkspace()
         super().__init__(

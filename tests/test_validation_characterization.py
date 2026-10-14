@@ -10,7 +10,7 @@ import torch
 
 from checkpoints import TEST_PROBLEM, build_model, domain_schema, save
 from dias.schema.export import learned_domain
-from dias.validation.checkpoint import load_run, resolve_best_checkpoint
+from dias.validation.checkpoint import load_run, resolve_checkpoint
 from dias.validation.dias import DiasValidator
 from support import temp_dir
 
@@ -174,7 +174,7 @@ class LearnedDomainTest(unittest.TestCase):
         model_id = build_checkpoint(directory)
         run = load_run(model_id, str(directory))
         text = learned_domain(run.model, run.schema, run.datamodule_hparams, 0.5)
-        written = resolve_best_checkpoint(
+        written = resolve_checkpoint(
             directory / "dias" / model_id / "checkpoints"
         ).with_suffix(".pddl")
         written.write_text(text.replace("(clear ?x0) ", "", 1))

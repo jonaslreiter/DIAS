@@ -99,6 +99,6 @@ def save(
     }
     # Stamped as Lightning would, so it is not mistaken for an older layout.
     model.on_save_checkpoint(checkpoint)
-    torch.save(checkpoint, checkpoints / "best-epoch=1-step=10.ckpt")
+    torch.save(checkpoint, checkpoints / "final-epoch=1-step=10.ckpt")
     model.teardown("build")
     return model_id

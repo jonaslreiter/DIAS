@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))  # for `import pipeline
 
 from pipeline import configure_logging  # noqa: E402
 from pipeline import (
+    CHECKPOINTS,
     EXPERIMENT_VALIDATOR,
     PROJECT_ROOT,
     SLURM_DIR,
@@ -57,7 +58,11 @@ def _checkpoint_dir(logs_dir: Path, run_id: str) -> Path:
 
 
 def _missing_checkpoints(
-    experiment: str, domains: list[str], seeds: list[int], logs_dir: Path
+    experiment: str,
+    domains: list[str],
+    seeds: list[int],
+    logs_dir: Path,
+    checkpoint: str,
 ) -> list[str]:
     """Run ids of the (domain, seed) pairs that have no trained checkpoint."""
     from validate_runs import run_id_for
@@ -66,7 +71,9 @@ def _missing_checkpoints(
     for domain in domains:
         for seed in seeds:
             run_id = run_id_for(experiment, domain, seed)
-            if not list(_checkpoint_dir(logs_dir, run_id).glob("best-epoch*.ckpt")):
+            if not list(
+                _checkpoint_dir(logs_dir, run_id).glob(f"{checkpoint}-epoch*.ckpt")
+            ):
                 missing.append(run_id)
     return missing
 
@@ -89,6 +96,7 @@ def _submit_slurm(
             f"EXPERIMENT={experiment}",
             f"RESULTS_EXPERIMENT={results_experiment}",
             f"THRESHOLD={threshold:g}",
+            f"CHECKPOINT={args.checkpoint}",
             "NO_WANDB=1",
             f"DOMAIN={domain}",
             f"EXP_TYPE={args.experiment_type}",
@@ -136,6 +144,7 @@ def _run_local(
             logs_dir=logs_dir,
             log_wandb=False,
             threshold=threshold,
+            checkpoint=args.checkpoint,
             results_experiment=results_experiment,
         )
 
@@ -170,6 +179,12 @@ def main() -> int:
         help="The source experiment's type, which picks the validator.",
     )
     add_domain_arguments(p)
+    p.add_argument(
+        "--checkpoint",
+        default="final",
+        choices=CHECKPOINTS,
+        help="Which of each run's checkpoints to re-validate: final, the model as training left it, or best, the one with the lowest validation loss. Default: final.",
+    )
     p.add_argument("--backend", default="slurm", choices=["slurm", "local"])
     # Applied to every array, over slurm-resources-validation.yaml: the sweep is several times the usual volume, so smaller CPU-friendly asks are usually worth it.
     p.add_argument(
@@ -210,12 +225,14 @@ def main() -> int:
                 f"--thresholds: expected a probability in (0,1), got {t:g}"
             )
 
-    missing = _missing_checkpoints(args.experiment, domains, seeds, args.log_dir)
+    missing = _missing_checkpoints(
+        args.experiment, domains, seeds, args.log_dir, args.checkpoint
+    )
     if missing:
         head = ", ".join(missing[:5]) + (" ..." if len(missing) > 5 else "")
         if not args.allow_missing:
             raise SystemExit(
-                f"{len(missing)} of {len(domains) * len(seeds)} runs have no best-epoch*.ckpt under {args.log_dir}/dias/: {head}\nRe-validation needs trained checkpoints; pass --allow-missing to submit anyway (those tasks will fail)."
+                f"{len(missing)} of {len(domains) * len(seeds)} runs have no {args.checkpoint}-epoch*.ckpt under {args.log_dir}/dias/: {head}\nRe-validation needs trained checkpoints; pass --allow-missing to submit anyway (those tasks will fail)."
             )
         print(f"[warn] {len(missing)} runs have no checkpoint: {head}")
 

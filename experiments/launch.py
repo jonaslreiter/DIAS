@@ -45,6 +45,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))  # for `import pipeline
 
 from pipeline import configure_logging  # noqa: E402
 from pipeline import (
+    CHECKPOINTS,
     CONFIGS_DIR,
     EXPERIMENT_TYPES,
     EXPERIMENT_VALIDATOR,
@@ -197,6 +198,7 @@ class LaunchPlan:
     ablation: str | None
     validator: str
     threshold: float | None
+    checkpoint: str
     domains: list[str]
     seeds: list[int]
     overlays: list[Path]
@@ -348,6 +350,7 @@ def build_plan(args: argparse.Namespace) -> LaunchPlan:
                 ("--sweep", args.sweep is not None),
                 ("--set", bool(args.overrides)),
                 ("--validation-threshold", args.validation_threshold is not None),
+                ("--validation-checkpoint", args.validation_checkpoint != "final"),
             )
             if given
         ]
@@ -394,6 +397,7 @@ def build_plan(args: argparse.Namespace) -> LaunchPlan:
         ablation=args.ablation,
         validator=EXPERIMENT_VALIDATOR[args.experiment_type],
         threshold=threshold,
+        checkpoint=args.validation_checkpoint,
         domains=domains,
         seeds=seeds,
         overlays=overlays,
@@ -465,6 +469,8 @@ def submit_domain(plan: LaunchPlan, point: SweepPoint, domain: str) -> None:
         val_vars.append("NO_WANDB=1")
     if plan.threshold is not None:
         val_vars.append(f"THRESHOLD={plan.threshold:g}")
+    if plan.checkpoint != "final":
+        val_vars.append(f"CHECKPOINT={plan.checkpoint}")
     if plan.num_workers is not None:
         val_vars.append(f"NUM_WORKERS={plan.num_workers}")
     if plan.states_per_worker is not None:
@@ -548,6 +554,7 @@ def run_domain(plan: LaunchPlan, point: SweepPoint, domain: str) -> None:
             run_id=run_id,
             log_wandb=plan.log_wandb,
             threshold=plan.threshold,
+            checkpoint=plan.checkpoint,
             num_workers=plan.num_workers,
             states_per_worker=plan.states_per_worker,
             resume=plan.resume,
@@ -610,6 +617,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         metavar="T",
         help="Extract each run's learned domain anew at this schema-derivation threshold for validation. Default: score the one written beside the checkpoint, at the run's schema_threshold.",
+    )
+    p.add_argument(
+        "--validation-checkpoint",
+        default="final",
+        choices=CHECKPOINTS,
+        help="Which of each run's checkpoints validation scores: final, the model as training left it, or best, the one with the lowest validation loss. Default: final.",
     )
     p.add_argument("--backend", default="slurm", choices=["slurm", "local"])
     p.add_argument(

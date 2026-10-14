@@ -87,6 +87,7 @@ class MlpEffectsValidator:
         problem_path,
         threshold=None,
         force_injective=False,
+        checkpoint="final",
         batch_size: int = 65536,
         num_workers: int = 1,
         states_per_worker: int = 4,
@@ -95,7 +96,7 @@ class MlpEffectsValidator:
         self.num_workers = num_workers
         self.states_per_worker = states_per_worker
 
-        run = load_run(model_id, logs_path)
+        run = load_run(model_id, logs_path, checkpoint)
         self.checkpoint_path = str(run.checkpoint_path)
         self.schema = run.schema
         self.model = run.model

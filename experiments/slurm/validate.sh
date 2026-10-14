@@ -25,6 +25,9 @@ EXTRA=()
 if [[ -n "${THRESHOLD:-}" ]]; then
   EXTRA+=(--threshold "$THRESHOLD")
 fi
+if [[ -n "${CHECKPOINT:-}" ]]; then
+  EXTRA+=(--checkpoint "$CHECKPOINT")
+fi
 if [[ -n "${RESULTS_EXPERIMENT:-}" ]]; then
   EXTRA+=(--results-experiment "$RESULTS_EXPERIMENT")
 fi

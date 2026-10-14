@@ -373,7 +373,7 @@ def write_markdown(
         "## How the numbers were produced",
         "",
         f"- `python experiments/precondition_categories.py --experiment {experiment} --markdown {path}`.",
-        f"- Learned schemas were read from `logs/dias/{experiment}-<domain>-s<seed>/checkpoints/best-epoch*.ckpt` through `dias.schema.export.read_learned_schemas`, the function a run's learned domain is written with: `load_run`, then `DIAS.schema_logits()`, then `derive_schema(threshold={threshold:g})`, then `PDDLTranspiler`.",
+        f"- Learned schemas were read from `logs/dias/{experiment}-<domain>-s<seed>/checkpoints/final-epoch*.ckpt` through `dias.schema.export.read_learned_schemas`, the function a run's learned domain is written with: `load_run`, then `DIAS.schema_logits()`, then `derive_schema(threshold={threshold:g})`, then `PDDLTranspiler`.",
         "- Ground-truth schemas were parsed from the `:precondition` conjunction of `pddl/<domain>/domain.pddl`.",
         "- Distinct lifted atoms after de-duplication; `(not (p ...))` counts as one atom; type-derived unary predicates are excluded from the ground-truth counts, since a `?t - truck` in `:parameters` is not a precondition.",
         "- A static predicate is one that occurs in no action's effect, which is also what `pymimir`'s `Predicate.is_static()` reports and so the flag DIAS is given. `pymimir` additionally marks static the unary predicates it materialises out of a `:types` declaration, and `include_statics` defaults to true, so DIAS does get a channel for `(truck ?x)` and its kind while a ground-truth schema states that guard in `:parameters` instead. That asymmetry is what the `stat1` column measures.",

@@ -104,6 +104,10 @@ class ValidationThresholdTest(unittest.TestCase):
     def test_a_threshold_is_handed_to_validation_only_when_given(self):
         self.assertIn("THRESHOLD=0.25", self.exported(validation_threshold=0.25))
 
+    def test_validation_scores_the_final_checkpoint_unless_asked_for_the_best(self):
+        self.assertNotIn("CHECKPOINT", self.exported())
+        self.assertIn("CHECKPOINT=best", self.exported(validation_checkpoint="best"))
+
 
 class L1LaunchTest(unittest.TestCase):
     def args(self, *extra):
@@ -132,6 +136,7 @@ class L1LaunchTest(unittest.TestCase):
             ["--ablation", "no-pcgrad"],
             ["--set", "model.init_args.num_slots=3"],
             ["--validation-threshold", "0.25"],
+            ["--validation-checkpoint", "best"],
         ):
             with self.subTest(extra=extra):
                 with self.assertRaisesRegex(SystemExit, extra[0]):
