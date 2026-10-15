@@ -2,15 +2,14 @@
 #
 # The DIAS and L1 validators run on CPU only and the MLP-effects one falls back to CPU, so this requests no GPU and targets the CPU partitions through `sbatch_extra`, which overrides the GPU partition declared in experiments/slurm/validate.sh.
 
-# A learned schema whose slots outnumber the action's parameters grounds its extra ones over every object of the held-out problem, as blocks-3's do: trained on five blocks, all five slots stay active, and each of test-3's 500 states takes 6 to 15 seconds on its forty blocks, and up to six minutes for a run trained on noisy input, whose schemas the noise overlay reads at 0.75 with fewer preconditions. Most domains take 30 to 45 minutes on the 500 walk states. Scoring a learned domain is one pymimir process, which on the suite's first 130 validations used at most one core (a median of 0.03) and 5.5 GB: more CPUs only count against the per-user CPU limit that training also draws on.
+# A learned schema whose slots outnumber the action's parameters grounds its extra ones over every object of the held-out problem, as blocks-3's do: trained on five blocks, all five slots stay active, and each of test-3's 500 states takes 6 to 15 seconds on its forty blocks, and up to six minutes for a run trained on noisy input, whose schemas the noise overlay reads at 0.75 with fewer preconditions. Most domains take 30 to 45 minutes on the 500 walk states, but noisy input makes it unpredictable: sokoban and sokoban-pull runs at 4 and 8 flips per transition were on course for a day or more on test-3's 81 cells. A validation that runs out of time starts its current problem over, and a long limit costs these 2-CPU tasks nothing on the CPU partitions, so every domain gets four days. Scoring a learned domain is one pymimir process, which on the suite's first 130 validations used at most one core (a median of 0.03) and 5.5 GB: more CPUs only count against the per-user CPU limit that training also draws on.
 
 defaults:
-  time: "04:00:00"
+  time: "4-00:00:00"
   mem: "16G"
   cpus: "2"
 
-blocks-3:
-  time: "4-00:00:00"
+blocks-3: {}
 delivery: {}
 driverlog: {}
 gripper: {}
