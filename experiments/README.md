@@ -55,7 +55,7 @@ Three defaults differ from how the paper's numbers were produced. The model gets
 
 `--validate-only` submits the validation array alone, for when training survived but validation did not. Runs that stopped short of `max_steps` are refused before anything is submitted, unless `--allow-unfinished`.
 
-The MLP-effects validator is far the most expensive one, and its cost follows how permissive the learned preconditions are. Its Slurm resources come from a file of its own, `experiments/configs/slurm-resources-validation-mlp.yaml`. It grounds states across the CPUs the job was allocated and predicts on the GPU; memory bounds the worker count, since a grounding worker holds its ground actions until it is replaced after `--states-per-worker` states (over 20 GB on driverlog test-3 for a bad schema). `--resume` continues a seed from the problems and states an earlier run on the same checkpoint scored.
+The MLP-effects validator is far the most expensive one, and its cost follows how permissive the learned preconditions are. Its Slurm resources come from a file of its own, `experiments/configs/slurm-resources-validation-mlp.yaml`. It grounds states across the CPUs the job was allocated and predicts on the GPU; memory bounds the worker count, since a grounding worker holds its ground actions until it is replaced after `--states-per-worker` states (over 20 GB on driverlog test-3 for a bad schema). `--resume` continues a seed from the problems and states an earlier run on the same checkpoint scored; every validator records its states as it scores them, so a learned domain that grounds slowly on a large problem, as noisy runs do, finishes over several jobs without losing more than the state in progress.
 
 Useful narrowings:
 

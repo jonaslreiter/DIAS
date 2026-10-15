@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import multiprocessing as _mp
 import re
@@ -34,7 +33,9 @@ from .successors import (
     LEARNED_ACTION_PREFIX,
     Sampling,
     WalkSampling,
+    append_progress,
     combine_scores,
+    read_progress,
     resolve_sample_seed,
     score_successors,
     transfer_states,
@@ -68,23 +69,6 @@ def _xor_reduce(words: torch.Tensor) -> torch.Tensor:
     while words.shape[1] > 1:
         words = words[:, 0::2] ^ words[:, 1::2]
     return words[:, 0]
-
-
-def _read_progress(path: Path, header: dict) -> dict[int, dict]:
-    """The state scores an interrupted run with this `header` left in `path`, rewritten to hold just those."""
-    lines = path.read_text().splitlines() if path.exists() else []
-    scores: dict[int, dict] = {}
-    if lines and lines[0] == json.dumps(header):
-        for line in lines[1:]:
-            try:
-                record = json.loads(line)
-            except json.JSONDecodeError:
-                break
-            scores[record["state"]] = record["score"]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    records = [header] + [{"state": i, "score": s} for i, s in scores.items()]
-    path.write_text("".join(json.dumps(r) + "\n" for r in records))
-    return scores
 
 
 class MlpEffectsValidator:
@@ -283,7 +267,7 @@ class MlpEffectsValidator:
                 "sample_seed": self.sample_seed,
                 "sampling": self.sampling.record(),
             }
-            scores = _read_progress(progress_path, header)
+            scores = read_progress(progress_path, header)
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(device)
@@ -305,10 +289,7 @@ class MlpEffectsValidator:
                 )
                 scores[index] = score_successors([(expected, produced)])
                 if progress_path is not None:
-                    with progress_path.open("a") as progress:
-                        progress.write(
-                            json.dumps({"state": index, "score": scores[index]}) + "\n"
-                        )
+                    append_progress(progress_path, index, scores[index])
                 bar.update()
 
         return combine_scores(scores[i] for i in range(len(payloads)))

@@ -6,7 +6,7 @@ A run is located by its deterministic id, its problems are the domain folder's `
 
 ``--threshold`` extracts a run's learned domain anew at another binarization threshold, and ``--results-experiment`` redirects only the output directory, which together re-validate a finished experiment without touching its JSONs; see ``experiments/launch_threshold_validation.py``.
 
-The MLP-effects validator grounds its sampled states across ``--num-workers`` processes, defaulting to the CPUs the job was allocated, and ``--resume`` continues a seed from what an earlier run on the same checkpoint scored.
+The MLP-effects validator grounds its sampled states across ``--num-workers`` processes, defaulting to the CPUs the job was allocated. Every validator records each state's score as it finishes, and ``--resume`` continues a seed from the problems and states an earlier run on the same checkpoint scored.
 """
 
 from __future__ import annotations
@@ -158,10 +158,7 @@ def validate_run(
             out.parent.mkdir(parents=True, exist_ok=True)
             out.with_suffix(".pddl").write_text(v.learned_domain_text)
             v.setup(sampling, seed=sample_seed)
-            if validator.grounds_in_parallel:
-                result = v.validate(out.with_name(f"seed{seed}.{stem}.states.jsonl"))
-            else:
-                result = v.validate()
+            result = v.validate(out.with_name(f"seed{seed}.{stem}.states.jsonl"))
         except Exception as e:  # noqa: BLE001 - one bad problem shouldn't sink the rest
             logger.exception("Validation of %s failed.", stem)
             per_problem[stem] = {"error": str(e)}

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 import logging
 import random
 from collections import Counter, defaultdict
 from itertools import islice
+from pathlib import Path
 from typing import ClassVar, Iterable, Mapping
 
 from tqdm import tqdm
@@ -271,26 +273,42 @@ def combine_scores(scores: Iterable[dict]) -> dict:
     return _summary(states, matches, action_tp, action_fp, action_fn)
 
 
-def compare_successors(states: list, learned_action_prefix: str) -> dict:
-    """Score a merged domain's learned actions against its original ones. Every state carries both sets, so this needs no planning: apply all of them and compare state indices."""
+def successor_sets(state, learned_action_prefix: str) -> SuccessorSets:
+    """One state of a merged domain, which carries the learned actions beside the original ones: apply all of them and sort the successors' state indices by which kind of action reached them."""
     prefix_length = len(learned_action_prefix)
+    expected: dict[str, set] = defaultdict(set)
+    produced: dict[str, set] = defaultdict(set)
+    for action in state.generate_applicable_actions():
+        successor = action.apply(state).get_index()
+        name = action.get_action().get_name()
+        if name.startswith(learned_action_prefix):
+            produced[name[prefix_length:]].add(successor)
+        else:
+            expected[name].add(successor)
+    return expected, produced
 
-    def sets_for(state) -> SuccessorSets:
-        expected: dict[str, set] = defaultdict(set)
-        produced: dict[str, set] = defaultdict(set)
-        for action in state.generate_applicable_actions():
-            successor = action.apply(state).get_index()
-            name = action.get_action().get_name()
-            if name.startswith(learned_action_prefix):
-                produced[name[prefix_length:]].add(successor)
-            else:
-                expected[name].add(successor)
-        return expected, produced
 
-    return score_successors(
-        sets_for(state)
-        for state in tqdm(states, total=len(states), desc="Validating states")
-    )
+def read_progress(path: Path, header: dict) -> dict[int, dict]:
+    """The state scores an interrupted run with this `header` left in `path`, rewritten to hold just those; a file with another header is started over."""
+    lines = path.read_text().splitlines() if path.exists() else []
+    scores: dict[int, dict] = {}
+    if lines and lines[0] == json.dumps(header):
+        for line in lines[1:]:
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                break
+            scores[record["state"]] = record["score"]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    records = [header] + [{"state": i, "score": s} for i, s in scores.items()]
+    path.write_text("".join(json.dumps(r) + "\n" for r in records))
+    return scores
+
+
+def append_progress(path: Path, index: int, score: dict) -> None:
+    """Record one state's score as soon as it is known, so a killed run keeps it."""
+    with path.open("a") as progress:
+        progress.write(json.dumps({"state": index, "score": score}) + "\n")
 
 
 def _summary(

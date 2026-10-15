@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 from pathlib import Path
 
 import pymimir
+from tqdm import tqdm
 
 from dias.pddl import text as pddl_text
 from dias.pddl.untype import (
@@ -21,8 +23,12 @@ from .successors import (
     LEARNED_ACTION_PREFIX,
     Sampling,
     WalkSampling,
-    compare_successors,
+    append_progress,
+    combine_scores,
+    read_progress,
     resolve_sample_seed,
+    score_successors,
+    successor_sets,
     transfer_states,
 )
 
@@ -74,23 +80,29 @@ class PddlValidator:
             original_domain_text,
         )
 
+        merged_domain_text = (
+            f"{header}\n\n{original_actions_text}\n\n{learned_actions_text}\n)\n"
+        )
+        merged_problem_text = strip_problem_types(problem_text, original_domain_text)
+        # Everything a state's score depends on besides the state itself, so recorded progress is reused for exactly this comparison.
+        self.scored_digest = hashlib.sha256(
+            "\0".join(
+                [
+                    original_domain_text,
+                    problem_text,
+                    merged_domain_text,
+                    merged_problem_text,
+                ]
+            ).encode()
+        ).hexdigest()
+
         self.workspace = PddlWorkspace()
         self.merged_domain = pymimir.Domain(
-            Path(
-                self.workspace.write(
-                    "merged-domain.pddl",
-                    f"{header}\n\n{original_actions_text}\n\n{learned_actions_text}\n)\n",
-                )
-            )
+            Path(self.workspace.write("merged-domain.pddl", merged_domain_text))
         )
         self.merged_problem = pymimir.Problem(
             self.merged_domain,
-            Path(
-                self.workspace.write(
-                    "merged-problem.pddl",
-                    strip_problem_types(problem_text, original_domain_text),
-                )
-            ),
+            Path(self.workspace.write("merged-problem.pddl", merged_problem_text)),
         )
         self.original_domain = pymimir.Domain(
             Path(self.workspace.write("original-domain.pddl", original_domain_text))
@@ -179,12 +191,38 @@ class PddlValidator:
         seed: int | None = None,
     ):
         self.sample_seed = resolve_sample_seed(seed)
+        self.sampling = sampling
         states = sampling.draw(self.original_problem, self.sample_seed)
         self.state_set = transfer_states(
             states, self.merged_problem, self.original_domain, self.merged_domain
         )
 
-    def validate(self):
+    def validate(self, progress_path: str | Path | None = None) -> dict:
+        """Score every sampled state.
+
+        With `progress_path`, each state's score is appended as it finishes, and a later run comparing the same domains on the same problem, sample seed and sampling skips those states.
+        """
         if self.state_set is None:
             raise RuntimeError("Call setup() before validate().")
-        return compare_successors(self.state_set, LEARNED_ACTION_PREFIX)
+        scores: dict[int, dict] = {}
+        if progress_path is not None:
+            progress_path = Path(progress_path)
+            header = {
+                "scored": self.scored_digest,
+                "sample_seed": self.sample_seed,
+                "sampling": self.sampling.record(),
+            }
+            scores = read_progress(progress_path, header)
+        todo = [i for i in range(len(self.state_set)) if i not in scores]
+        for index in tqdm(
+            todo,
+            total=len(self.state_set),
+            initial=len(scores),
+            desc="Validating states",
+        ):
+            scores[index] = score_successors(
+                [successor_sets(self.state_set[index], LEARNED_ACTION_PREFIX)]
+            )
+            if progress_path is not None:
+                append_progress(progress_path, index, scores[index])
+        return combine_scores(scores[i] for i in range(len(self.state_set)))

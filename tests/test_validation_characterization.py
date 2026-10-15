@@ -3,6 +3,7 @@
 Rather than train a model, this plants a schema by hand: blocks-3's `stack` written into the checkpoint exactly, its inequality left to decoding as for any run without the `=` relation, and the other two actions left inert. The expected result then follows independently of the numbers, so the assertion is sensitive in both directions: `stack` recovered perfectly, everything the others would reach a false negative.
 """
 
+import json
 import unittest
 from pathlib import Path
 
@@ -76,6 +77,48 @@ class ValidationCharacterizationTest(unittest.TestCase):
         )
         validation.setup(sampling, seed=SAMPLE_SEED)
         return validation.validate()
+
+    def validate_with_progress(self, directory, model_id, progress) -> dict:
+        validation = DiasValidator(
+            model_id, str(directory), problem_path=str(TEST_PROBLEM)
+        )
+        validation.setup(SAMPLING, seed=SAMPLE_SEED)
+        return validation.validate(progress)
+
+    def test_a_resumed_validation_scores_only_the_states_left(self):
+        """Each state's score is recorded as it finishes, so a validation killed partway continues where it stopped and adds up to the uninterrupted result."""
+        directory = temp_dir(self)
+        model_id = build_checkpoint(directory)
+        progress = directory / "seed0.test-1.states.jsonl"
+        uninterrupted = self.validate_with_progress(directory, model_id, progress)
+        self.assertEqual(uninterrupted, self.validate())
+
+        # Three states scored before a kill tore the fourth line.
+        header, *states = progress.read_text().splitlines()
+        progress.write_text("\n".join([header, *states[:3], '{"state": 5, "sco']))
+        self.assertEqual(
+            self.validate_with_progress(directory, model_id, progress), uninterrupted
+        )
+        self.assertEqual(len(progress.read_text().splitlines()), NUM_SAMPLES + 1)
+
+    def test_progress_from_another_comparison_is_not_reused(self):
+        directory = temp_dir(self)
+        model_id = build_checkpoint(directory)
+        progress = directory / "seed0.test-1.states.jsonl"
+        self.validate_with_progress(directory, model_id, progress)
+        header, *states = progress.read_text().splitlines()
+        stale = json.loads(header) | {"scored": "another domain"}
+        bogus = {"total": 1, "matches": 1, "action_stats": {}}
+        progress.write_text(
+            "\n".join(
+                [json.dumps(stale)]
+                + [json.dumps({"state": i, "score": bogus}) for i in range(NUM_SAMPLES)]
+            )
+        )
+        self.assertEqual(
+            self.validate_with_progress(directory, model_id, progress), self.validate()
+        )
+        self.assertEqual(progress.read_text().splitlines()[0], header)
 
     def test_planted_schema_reproduces_pinned_metrics(self):
         result = self.validate()
