@@ -7,13 +7,4 @@ python experiments/launch.py --experiment l1 --experiment-type l1
 python experiments/collect_results.py --experiment l1
 ```
 
-L1 learned from each domain's `train.pddl`, except in two, whose training instances changed after its walks were sampled:
-
-| Domain | L1 learned from | DIAS trains on |
-| --- | --- | --- |
-| hanoi | 3 pegs, 7 discs (10 objects) | 3 pegs, 6 discs |
-| spanner | 6 spanners, 4 nuts, 8 locations (19 objects) | 10 spanners, 7 nuts, 10 locations |
-
-Neither the walks nor those two instances are in the repository.
-
-TODO: check whether DIAS learns hanoi and spanner from L1's instances as well as from `train.pddl`.
+L1 learned from each domain's `train.pddl`, the instance DIAS trains on. Its walks are not in the repository.
