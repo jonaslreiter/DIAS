@@ -48,6 +48,7 @@ class DIAS(L.LightningModule):
         use_precondition_loss: bool = True,
         precondition_loss: Literal["restrict", "reject"] = "restrict",
         rejection_samples: int = 16,
+        use_applicability_loss: bool = False,
         use_effect_loss: bool = True,
         use_pcgrad: bool = True,
         encoder_hidden_dims: list[int] | None = None,
@@ -76,6 +77,7 @@ class DIAS(L.LightningModule):
             use_precondition_loss: Include the precondition auxiliary term.
             precondition_loss: Which precondition term: restrict asks every precondition cell to require or forbid its atom (the paper's); reject asks the preconditions to reject as many random ground actions of the batch's states as they can.
             rejection_samples: Random ground actions the rejection loss scores per batch state and action.
+            use_applicability_loss: Ask the preconditions to hold at the bound objects of every observed transition, including those that changed nothing, as a term of the primary loss.
             use_effect_loss: Include the minimal-effects auxiliary term.
             use_pcgrad: Project the auxiliary gradient rather than adding a weighted sum.
             encoder_hidden_dims: Widths of the relational convolutions.
@@ -134,6 +136,7 @@ class DIAS(L.LightningModule):
             use_effect_loss=use_effect_loss,
             use_precondition_loss=use_precondition_loss,
             precondition_loss=precondition_loss,
+            use_applicability_loss=use_applicability_loss,
         )
         self.gradients = gradient_combiner(
             use_pcgrad=use_pcgrad,
@@ -172,6 +175,10 @@ class DIAS(L.LightningModule):
             aux_loss_alpha,
             type(self.gradients).__name__,
         )
+        if use_applicability_loss:
+            logger.info(
+                "The primary loss asks every observed transition's preconditions to hold."
+            )
 
     def on_save_checkpoint(self, checkpoint: dict) -> None:
         checkpoint[VERSION_KEY] = CHECKPOINT_VERSION
@@ -295,7 +302,7 @@ class DIAS(L.LightningModule):
 
         losses = self.step(batch)
         self.gradients.backward(
-            losses.adjacency, losses.auxiliary, self.trainable_parameters()
+            losses.primary, losses.auxiliary, self.trainable_parameters()
         )
         optimizer.step()
 

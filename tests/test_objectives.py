@@ -136,6 +136,34 @@ class DiasObjectiveTest(unittest.TestCase):
         # 16 adjacency cells, plus 12 schema cells per sample per term.
         adjacency = torch.full((2, 2, 2, 2), 0.5)
         self.assertEqual(objective._normalizer(adjacency), 16 + 12 * 2 * 2)
+        # Plus one applicability per sample when that term is on.
+        applicable = self.objective(use_applicability_loss=True)
+        self.assertEqual(applicable._normalizer(adjacency), 16 + 12 * 2 * 2 + 2)
+
+    def test_the_primary_loss_is_the_adjacency_loss_by_default(self):
+        losses = self.losses(torch.full((1, 2, 2, 2), 0.5), torch.zeros(1, 2, 2, 2))
+        self.assertIsNone(losses.applicability)
+        self.assertIs(losses.primary, losses.adjacency)
+        self.assertNotIn("loss_applicability", losses.logged(1.0))
+
+    def test_the_applicability_term_joins_the_primary_loss(self):
+        """One cross-entropy per transition, of its precondition satisfaction against one, on the adjacency term's scale."""
+        adjacency = torch.full((1, 2, 2, 2), 0.5)
+        target = torch.zeros(1, 2, 2, 2)
+        objective = self.objective(use_applicability_loss=True)
+        losses = self.losses(adjacency, target, objective)
+        normalizer = objective._normalizer(adjacency)
+        # The hand-built prediction's preconditions hold to 0.25.
+        torch.testing.assert_close(
+            losses.applicability, -torch.log(torch.tensor(0.25)) / normalizer
+        )
+        torch.testing.assert_close(
+            losses.primary, losses.adjacency + losses.applicability
+        )
+        torch.testing.assert_close(
+            losses.total(0.5), losses.primary + 0.5 * losses.auxiliary
+        )
+        self.assertIn("loss_applicability", losses.logged(1.0))
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ import torch
 from torch_geometric.data import Batch, Data
 
 from dias.models.dias import DIAS
+from dias.models.outputs import IGNORE, NEGATE
 from dias.schedules import Exponential
 from dias.schema.decoding import derive_schema
 
@@ -168,6 +169,33 @@ class DIASModelTest(unittest.TestCase):
         self.assertGreater(
             model.predictor.preconditions.logits.grad.abs().sum().item(), 0.0
         )
+
+    def test_only_the_applicability_term_refutes_a_literal_a_transition_that_changed_nothing_violates(
+        self,
+    ):
+        """Where the action changes nothing, failing preconditions explain the transition as well as holding ones, so `L_adj` has nothing to say about a literal the state violates."""
+        batch = (*make_batch(changed=False), torch.tensor([0]))
+        gradients = {}
+        for use_applicability_loss in (False, True):
+            model = self.make_model(
+                force_action_args=True, use_applicability_loss=use_applicability_loss
+            )
+            with torch.no_grad():
+                model.predictor.effects.logits.zero_()
+                model.predictor.effects.logits[..., IGNORE] = 20.0
+                model.predictor.preconditions.logits.zero_()
+                model.predictor.preconditions.logits[..., IGNORE] = 20.0
+                # Forbids the unary atom the state has at object 0, which the first argument binds.
+                model.predictor.preconditions.logits[0, 0, 0, 0] = torch.tensor(
+                    [0.0, 0.0, 2.0]
+                )
+            model.step(batch).primary.backward()
+            gradients[use_applicability_loss] = (
+                model.predictor.preconditions.logits.grad[0, 0, 0, 0, NEGATE].item()
+            )
+        self.assertAlmostEqual(gradients[False], 0.0, places=6)
+        # Descent lowers the forbidding logit.
+        self.assertGreater(gradients[True], 1e-4)
 
     def test_the_restrictive_loss_samples_no_ground_actions(self):
         model = self.make_model()
