@@ -17,6 +17,9 @@
 eval "$DIAS_ENV_SETUP"
 set -euo pipefail
 
+# A job past its memory allocation is ended rather than swapped out without bound; see memory_guard.sh.
+source "${DIAS_ROOT}/experiments/slurm/memory_guard.sh"
+
 # Same allocator setting as experiments/slurm/train.sh, so the reserved-memory numbers this study reports are the ones real training would see.
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 

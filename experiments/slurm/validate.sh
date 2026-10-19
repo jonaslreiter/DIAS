@@ -17,6 +17,9 @@
 eval "$DIAS_ENV_SETUP"
 set -euo pipefail
 
+# A job past its memory allocation is ended rather than swapped out without bound; see memory_guard.sh.
+source "${DIAS_ROOT}/experiments/slurm/memory_guard.sh"
+
 SEED=${SLURM_ARRAY_TASK_ID:-0}
 echo "validate  domain=$DOMAIN  seed=$SEED  type=$EXP_TYPE"
 
