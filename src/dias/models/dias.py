@@ -49,6 +49,7 @@ class DIAS(L.LightningModule):
         precondition_loss: Literal["restrict", "reject"] = "restrict",
         rejection_samples: int = 16,
         use_applicability_loss: bool = True,
+        observation_noise: float = 0.0,
         use_effect_loss: bool = True,
         use_pcgrad: bool = True,
         encoder_hidden_dims: list[int] | None = None,
@@ -78,6 +79,7 @@ class DIAS(L.LightningModule):
             precondition_loss: Which precondition term: restrict asks every precondition cell to require or forbid its atom (the paper's); reject asks the preconditions to reject as many random ground actions of the batch's states as they can.
             rejection_samples: Random ground actions the rejection loss scores per batch state and action.
             use_applicability_loss: Ask the preconditions to hold at the bound objects of every observed transition, including those that changed nothing, as a term of the primary loss.
+            observation_noise: Probability with which the adjacency loss takes each observed atom to be flipped, which bounds what one corrupted atom can cost. 0 trusts every atom.
             use_effect_loss: Include the minimal-effects auxiliary term.
             use_pcgrad: Project the auxiliary gradient rather than adding a weighted sum.
             encoder_hidden_dims: Widths of the relational convolutions.
@@ -137,6 +139,7 @@ class DIAS(L.LightningModule):
             use_precondition_loss=use_precondition_loss,
             precondition_loss=precondition_loss,
             use_applicability_loss=use_applicability_loss,
+            observation_noise=observation_noise,
         )
         self.gradients = gradient_combiner(
             use_pcgrad=use_pcgrad,

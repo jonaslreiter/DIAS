@@ -70,6 +70,8 @@ class DiasObjective:
     `L_pre` comes in two forms. `restrict`, the paper's, asks every precondition cell to require or forbid its atom. `reject` asks the preconditions to reject as many uniformly sampled ground actions of the batch's states as they can (see `rejection.py`), and needs their satisfaction passed in as `admitted`.
 
     With `use_applicability_loss`, the primary loss also asks the preconditions to hold at the bound objects of every observed transition, since every observed action was applicable. `L_adj` alone says so only where the action changed something: where its add effects already held, failing preconditions explain the transition as well as holding ones, and `L_pre` then pushes in a literal no observation refutes, such as satellite's calibrate forbidding the `calibrated` it adds.
+
+    With `observation_noise` above zero, `L_adj` scores the observed successor as the predicted one seen through a channel that flips each atom with that probability. A cell the prediction confidently contradicts then costs at most ``-log(observation_noise)``, with a bounded gradient, so one corrupted atom, in the successor or in the state the prediction copies, cannot outweigh the transitions that agree. Where the prediction is right, the loss barely changes.
     """
 
     # Clamp off 0 and 1: the cross-entropy gradient is unbounded at both ends.
@@ -83,10 +85,15 @@ class DiasObjective:
         use_precondition_loss: bool = True,
         precondition_loss: str = "restrict",
         use_applicability_loss: bool = False,
+        observation_noise: float = 0.0,
     ):
         if precondition_loss not in PRECONDITION_LOSSES:
             raise ValueError(
                 f"precondition_loss must be one of {PRECONDITION_LOSSES}, not {precondition_loss!r}"
+            )
+        if not 0.0 <= observation_noise < 0.5:
+            raise ValueError(
+                f"observation_noise must lie in [0, 0.5), not {observation_noise!r}"
             )
         # One schema cell per slot tuple a relation of that arity ranges over.
         self.schema_cells = int(sum(num_slots**arity for arity in relation_arities))
@@ -94,6 +101,7 @@ class DiasObjective:
         self.use_precondition_loss = use_precondition_loss
         self.precondition_loss = precondition_loss
         self.use_applicability_loss = use_applicability_loss
+        self.observation_noise = observation_noise
 
     @property
     def rejects(self) -> bool:
@@ -113,7 +121,9 @@ class DiasObjective:
             normalizer = self._normalizer(predicted)
             adjacency = (
                 F.binary_cross_entropy(
-                    predicted.float().clamp(self.EPSILON, 1 - self.EPSILON),
+                    self.observed(predicted.float()).clamp(
+                        self.EPSILON, 1 - self.EPSILON
+                    ),
                     target.float(),
                     reduction="sum",
                 )
@@ -140,6 +150,12 @@ class DiasObjective:
             ),
             applicability=applicability,
         )
+
+    def observed(self, predicted: torch.Tensor) -> torch.Tensor:
+        """How likely each atom is to be observed true, when it is the predicted atom flipped with probability `observation_noise`. The identity at zero."""
+        if self.observation_noise == 0.0:
+            return predicted
+        return self.observation_noise + (1 - 2 * self.observation_noise) * predicted
 
     def _auxiliary(
         self,

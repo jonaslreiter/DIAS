@@ -101,6 +101,7 @@ CURRENT_HPARAMS = {
     "precondition_loss": "restrict",
     "rejection_samples": 16,
     "use_applicability_loss": False,
+    "observation_noise": 0.0,
     "schema_threshold": 0.5,
 }
 

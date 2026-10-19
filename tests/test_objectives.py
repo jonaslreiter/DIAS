@@ -3,6 +3,7 @@
 The golden fixture pins these end to end, but only for the default flags. The ablations, and what each term is counting, are checked here.
 """
 
+import math
 import unittest
 
 import torch
@@ -164,6 +165,30 @@ class DiasObjectiveTest(unittest.TestCase):
             losses.total(0.5), losses.primary + 0.5 * losses.auxiliary
         )
         self.assertIn("loss_applicability", losses.logged(1.0))
+
+    def test_without_observation_noise_the_loss_is_the_plain_cross_entropy(self):
+        adjacency = torch.tensor([[[[0.9, 0.2], [0.0, 1.0]], [[0.3, 0.7], [0.5, 0.0]]]])
+        target = torch.tensor([[[[1.0, 0.0], [1.0, 1.0]], [[0.0, 1.0], [1.0, 0.0]]]])
+        plain = self.losses(adjacency, target)
+        explicit = self.losses(adjacency, target, self.objective(observation_noise=0.0))
+        self.assertTrue(torch.equal(plain.adjacency, explicit.adjacency))
+
+    def test_observation_noise_bounds_what_a_contradicted_cell_costs(self):
+        """A cell observed true against a certain prediction of false costs -log(noise), not the clamp's -log(1e-7); the agreeing cells cost -log(1 - noise) each."""
+        adjacency = torch.zeros(1, 2, 2, 2)
+        target = torch.zeros(1, 2, 2, 2)
+        target[0, 0, 0, 0] = 1.0
+        objective = self.objective(observation_noise=0.01)
+        losses = self.losses(adjacency, target, objective)
+        normalizer = objective._normalizer(adjacency)
+        expected = (-math.log(0.01) - 7 * math.log(0.99)) / normalizer
+        self.assertAlmostEqual(losses.adjacency.item(), expected, places=6)
+        self.assertEqual(losses.hamming_distance.item(), 1)
+
+    def test_observation_noise_must_leave_the_observation_informative(self):
+        for noise in (-0.1, 0.5, 1.0):
+            with self.assertRaises(ValueError):
+                self.objective(observation_noise=noise)
 
 
 if __name__ == "__main__":
