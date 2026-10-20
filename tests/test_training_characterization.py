@@ -46,6 +46,8 @@ MODEL_DEFAULTS = dict(
     object_dim=8,
     # Pinned, not left to the class default, which would move the trajectory with it.
     aux_loss_alpha=1.0,
+    # The fixture predates the applicability term's default, so it is pinned off for the same reason.
+    use_applicability_loss=False,
     learning_rate=0.01,
     num_slots=NUM_SLOTS,
     action_arities=[2, 2],

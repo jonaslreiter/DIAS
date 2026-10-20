@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 
-CHECKPOINT_VERSION = 1
+CHECKPOINT_VERSION = 2
 VERSION_KEY = "dias_checkpoint_version"
 # An absent stamp: written before the stamp existed.
 UNVERSIONED = 0
@@ -127,14 +127,23 @@ def _from_unversioned(checkpoint: dict) -> None:
             hparams.pop(key, None)
 
 
+def _from_version_1(checkpoint: dict) -> None:
+    """Version 2 turned the applicability term on by default. A checkpoint that does not store the switch trained without it, so that is what it reads as."""
+    hparams = checkpoint.get("hyper_parameters")
+    if hparams is not None:
+        hparams.setdefault("use_applicability_loss", False)
+
+
 def migrate(checkpoint: dict) -> dict:
-    """Bring `checkpoint` up to the current version, in place."""
+    """Bring `checkpoint` up to the current version, in place, one rule per version it is behind."""
     version = checkpoint.get(VERSION_KEY, UNVERSIONED)
     if version > CHECKPOINT_VERSION:
         raise ValueError(
             f"This checkpoint was written by a newer version of dias (format {version}, this one reads {CHECKPOINT_VERSION})."
         )
-    if version < CHECKPOINT_VERSION:
+    if version < 1:
         _from_unversioned(checkpoint)
+    if version < 2:
+        _from_version_1(checkpoint)
     checkpoint[VERSION_KEY] = CHECKPOINT_VERSION
     return checkpoint

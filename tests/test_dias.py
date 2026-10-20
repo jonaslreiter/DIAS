@@ -133,6 +133,7 @@ class DIASModelTest(unittest.TestCase):
             {
                 "loss",
                 "loss_adjacency",
+                "loss_applicability",
                 "loss_aux",
                 "hamming_distance",
                 "precondition_satisfaction",

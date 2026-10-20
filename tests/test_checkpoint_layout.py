@@ -225,6 +225,40 @@ class CheckpointLayoutTest(unittest.TestCase):
             reloaded = DIAS.load_from_checkpoint(path, map_location="cpu")
         self.assertEqual(dict(reloaded.hparams), dict(model.hparams))
 
+    def write_version_1_checkpoint(self, **hparams) -> Path:
+        """A checkpoint stamped 1, holding the current model's hyper-parameters with `hparams` laid over them (None removes one)."""
+        model = DIAS(**constructor_args())
+        stored = dict(model.hparams)
+        for key, value in hparams.items():
+            if value is None:
+                stored.pop(key)
+            else:
+                stored[key] = value
+        path = temp_dir(self) / "version-1.ckpt"
+        torch.save(
+            {
+                "state_dict": model.state_dict(),
+                "hyper_parameters": stored,
+                "pytorch-lightning_version": "2.6.1",
+                VERSION_KEY: 1,
+            },
+            path,
+        )
+        return path
+
+    def test_a_version_1_checkpoint_without_the_applicability_switch_trained_without_it(
+        self,
+    ):
+        """Version 1 predates the term's default, so a run that does not say trained without it."""
+        path = self.write_version_1_checkpoint(use_applicability_loss=None)
+        model = DIAS.load_from_checkpoint(path, map_location="cpu")
+        self.assertIs(model.hparams.use_applicability_loss, False)
+
+    def test_a_version_1_checkpoint_keeps_the_applicability_switch_it_stored(self):
+        path = self.write_version_1_checkpoint(use_applicability_loss=True)
+        model = DIAS.load_from_checkpoint(path, map_location="cpu")
+        self.assertIs(model.hparams.use_applicability_loss, True)
+
     def test_an_unversioned_offset_becomes_the_schedules_floor(self):
         """The noise runs' tau trajectory has to survive the fold exactly."""
         directory = temp_dir(self)
