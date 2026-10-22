@@ -419,7 +419,7 @@ def main() -> int:
         "--threshold",
         type=float,
         default=0.5,
-        help="Binarization threshold handed to derive_schema (default: 0.5, schema_threshold's default; the noise overlay uses 0.75).",
+        help="Binarization threshold handed to derive_schema (default: 0.5, schema_threshold's default, noise runs included; the paper's noise runs used 0.75).",
     )
     p.add_argument(
         "--checkpoint",

@@ -158,13 +158,23 @@ class PrecedenceTest(unittest.TestCase):
         config = parse(MAIN, A_DOMAIN, ROOT / "configs/experiment-mlp.yaml")
         self.assertTrue(config.model.init_args.state_dependent_effects)
 
-    def test_the_noise_overlay_raises_the_per_action_floors(self):
-        # A floor raises the smallest minimum without shrinking the domains that sample more.
-        config = parse(MAIN, A_DOMAIN, ROOT / "configs/experiment-noise.yaml")
-        self.assertEqual(config.data.init_args.min_per_action_train_floor, 200)
-        self.assertEqual(config.data.init_args.min_per_action_valid_floor, 100)
-        self.assertEqual(config.data.init_args.min_per_action_train, 200)
-        self.assertEqual(config.model.init_args.precondition_tau.floor, 0.1)
+    def test_the_noise_overlay_changes_two_things_beside_the_noise(self):
+        # Observation noise and the batch size; the tau schedule, the threshold and the sampling bounds stay as on clean data.
+        clean = parse(MAIN, A_DOMAIN)
+        noisy = parse(MAIN, A_DOMAIN, ROOT / "configs/experiment-noise.yaml")
+        self.assertEqual(noisy.model.init_args.observation_noise, 0.1)
+        self.assertEqual(noisy.data.init_args.batch_size, 50)
+        self.assertIsNotNone(noisy.data.init_args.noise)
+        for section, key in (
+            ("model", "precondition_tau"),
+            ("model", "schema_threshold"),
+            ("data", "min_per_action_train"),
+            ("data", "min_per_action_train_floor"),
+            ("data", "min_per_action_valid_floor"),
+        ):
+            self.assertEqual(
+                noisy[section].init_args[key], clean[section].init_args[key], key
+            )
 
     def test_a_command_line_override_beats_every_file(self):
         # How a sweep point reaches a run: appended last, one dotted key, and setting one field of the schedule leaves the others alone.
@@ -176,7 +186,7 @@ class PrecedenceTest(unittest.TestCase):
         )
         schedule = config.model.init_args.precondition_tau
         self.assertEqual(schedule.every, 100)
-        self.assertEqual(schedule.floor, 0.1)
+        self.assertEqual(schedule.floor, 0.0)
         self.assertEqual(schedule.start, 1.0)
 
 

@@ -1,18 +1,10 @@
-# The paper's noise experiments (App. A.4.2): input noise, plus the training adjustments it needs. Composed last, so the *_floor knobs raise a domain's per-action minimum without lowering the domains that already sample more.
+# Noise experiments: input noise plus two training adjustments, the same for every domain. Everything else is the clean setup, the tau schedule, the derivation threshold and the sampling bounds included.
 #
-# The atom counts are per state, and both states of a transition are corrupted, so 1.0 / 1.0 is the paper's 4 flips per transition; its Table 2 runs 0.25, 0.5, 1.0 and 2.0 for 1, 2, 4 and 8 flips.
+# The atom counts are per state, and both states of a transition are corrupted, so 1.0 / 1.0 is 4 flips per transition, and 1, 2, 4 and 8 flips are budgets of 0.25, 0.5, 1.0 and 2.0.
 model:
   init_args:
-    # The paper raises the schema-derivation threshold under noise.
-    schema_threshold: 0.75
-    # Under noise the exact precondition product is too brittle to train against, so tau decays as in main.yaml but bottoms out above 0.
-    precondition_tau:
-      class_path: dias.schedules.Exponential
-      init_args:
-        start: 1.0
-        floor: 0.1
-        factor: 0.1
-        every: 500
+    # A corrupted atom cannot be predicted, and the plain cross-entropy lets one cost without bound; read as flipped with this probability, each costs at most -log(0.1), which lets tau anneal to the exact precondition product as on clean data.
+    observation_noise: 0.1
 
 data:
   init_args:
@@ -21,6 +13,5 @@ data:
       init_args:
         removed_atoms: 1.0
         added_atoms: 1.0
-    min_per_action_train_floor: 200
-    min_per_action_valid_floor: 100
+    # Smaller batches, as the paper's noise runs had, to limit the effect of PCGrad's projection.
     batch_size: 50
