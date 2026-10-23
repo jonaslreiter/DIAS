@@ -48,7 +48,7 @@ class DIAS(L.LightningModule):
         use_precondition_loss: bool = True,
         precondition_loss: Literal["restrict", "reject"] = "restrict",
         rejection_samples: int = 16,
-        use_applicability_loss: bool = True,
+        use_applicability_loss: bool = False,
         observation_noise: float = 0.0,
         use_effect_loss: bool = True,
         use_pcgrad: bool = True,
