@@ -1,6 +1,6 @@
 import io
 import logging
-from typing import Literal, Mapping
+from typing import Mapping
 
 import lightning as L
 import torch
@@ -13,10 +13,9 @@ from .checkpoints import CHECKPOINT_VERSION, UNVERSIONED, VERSION_KEY, migrate
 from .edges import EdgeTypeLayout
 from .encoder import DEFAULT_HIDDEN_DIMS, RelationalEncoder
 from .objectives import DiasObjective, Losses
-from .outputs import Channels, SchemaLogits
+from .outputs import SchemaLogits
 from .pcgrad import gradient_combiner
 from .prediction import SuccessorPredictor
-from .rejection import admitted_fraction
 from .selection import resolve_num_slots
 
 logger = logging.getLogger(__name__)
@@ -46,8 +45,6 @@ class DIAS(L.LightningModule):
         state_dependent_effects: bool = False,
         use_slot_weights: bool = True,
         use_precondition_loss: bool = True,
-        precondition_loss: Literal["restrict", "reject"] = "restrict",
-        rejection_samples: int = 16,
         use_applicability_loss: bool = False,
         observation_noise: float = 0.0,
         use_effect_loss: bool = True,
@@ -75,9 +72,7 @@ class DIAS(L.LightningModule):
             pcgrad_norm_cap: Cap the projected auxiliary gradient at the primary one's norm.
             state_dependent_effects: Predict effects from the state with an MLP instead of learning one lifted tensor per action.
             use_slot_weights: Learn which slots an action uses, which is its recovered arity.
-            use_precondition_loss: Include the precondition auxiliary term.
-            precondition_loss: Which precondition term: restrict asks every precondition cell to require or forbid its atom (the paper's); reject asks the preconditions to reject as many random ground actions of the batch's states as they can.
-            rejection_samples: Random ground actions the rejection loss scores per batch state and action.
+            use_precondition_loss: Include the restrictive-precondition auxiliary term.
             use_applicability_loss: Ask the preconditions to hold at the bound objects of every observed transition, including those that changed nothing, as a term of the primary loss.
             observation_noise: Probability with which the adjacency loss takes each observed atom to be flipped, which bounds what one corrupted atom can cost. 0 trusts every atom.
             use_effect_loss: Include the minimal-effects auxiliary term.
@@ -104,7 +99,6 @@ class DIAS(L.LightningModule):
         self.force_action_args = force_action_args
         self.learning_rate = learning_rate
         self.aux_loss_alpha = aux_loss_alpha
-        self.rejection_samples = rejection_samples
 
         self.edges = EdgeTypeLayout(
             num_relations=self.num_relations,
@@ -137,7 +131,6 @@ class DIAS(L.LightningModule):
             num_slots=self.num_slots,
             use_effect_loss=use_effect_loss,
             use_precondition_loss=use_precondition_loss,
-            precondition_loss=precondition_loss,
             use_applicability_loss=use_applicability_loss,
             observation_noise=observation_noise,
         )
@@ -155,7 +148,7 @@ class DIAS(L.LightningModule):
             name
             for name, active in (
                 ("effects", use_effect_loss),
-                (f"preconditions ({precondition_loss})", use_precondition_loss),
+                ("preconditions", use_precondition_loss),
             )
             if active
         ]
@@ -264,34 +257,11 @@ class DIAS(L.LightningModule):
     def step(self, batch) -> Losses:
         batch_state, batch_next_state, *_ = batch
         prediction = self.forward(batch_state, batch_next_state)
-        successor = self.dense(batch_next_state)
         return self.objective(
             prediction,
-            successor,
+            self.dense(batch_next_state),
             self.predictor.selector.slot_weights(batch_state.y_action),
-            admitted=self.admitted(batch_state, prediction.input_adjacency, successor),
         )
-
-    def admitted(
-        self, batch_state, state: torch.Tensor, successor: torch.Tensor
-    ) -> torch.Tensor | None:
-        """What the rejection loss scores, ``(2B, A)``: for every state of the batch, successors included, and every action, the fraction of random ground actions the preconditions admit. None when the objective does not use it.
-
-        Every action is scored on every state, not only on those it was taken in: a state where an action is inapplicable is where its preconditions have the most to reject.
-        """
-        if not self.objective.rejects:
-            return None
-        weights = self.predictor.selector.action_slot_weights(
-            batch_state.y_action, batch_state.y_action_args
-        )
-        with torch.amp.autocast(device_type=state.device.type, enabled=False):
-            return admitted_fraction(
-                torch.cat([state, successor]).float(),
-                Channels.from_logits(self.predictor.preconditions.action_logits()),
-                weights.float(),
-                samples=self.rejection_samples,
-                tau=self.precondition_tau(self.global_step),
-            )
 
     def on_train_batch_start(self, batch, batch_idx):
         self.log("schedule/precondition_tau", self.precondition_tau(self.global_step))

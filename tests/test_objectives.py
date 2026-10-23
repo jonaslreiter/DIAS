@@ -96,40 +96,6 @@ class DiasObjectiveTest(unittest.TestCase):
         )
         self.assertGreater(inactive.auxiliary.item(), active.auxiliary.item())
 
-    def test_the_rejection_loss_replaces_the_restrictive_term(self):
-        """Scored as the admitted fraction times the schema cells the restrictive term would have covered, so the normalizer and alpha keep their meaning."""
-        adjacency = torch.full((1, 2, 2, 2), 0.5)
-        target = torch.zeros(1, 2, 2, 2)
-        objective = self.objective(use_effect_loss=False, precondition_loss="reject")
-        admitted = torch.tensor([[0.25], [0.75]])
-        losses = objective(
-            prediction(adjacency), target, torch.ones(1, NUM_SLOTS), admitted
-        )
-        normalizer = objective._normalizer(adjacency)
-        torch.testing.assert_close(
-            losses.auxiliary, torch.tensor(0.5 * 12 / normalizer)
-        )
-        self.assertEqual(losses.precondition_admitted.item(), 0.5)
-        self.assertIn("precondition_admitted", losses.logged(1.0))
-
-        with self.assertRaisesRegex(ValueError, "needs `admitted`"):
-            objective(prediction(adjacency), target, torch.ones(1, NUM_SLOTS))
-        with self.assertRaisesRegex(ValueError, "precondition_loss must be one of"):
-            self.objective(precondition_loss="literals")
-
-    def test_only_the_rejection_loss_asks_for_sampled_ground_actions(self):
-        self.assertFalse(self.objective().rejects)
-        self.assertTrue(self.objective(precondition_loss="reject").rejects)
-        self.assertFalse(
-            self.objective(
-                precondition_loss="reject", use_precondition_loss=False
-            ).rejects
-        )
-        restrictive = self.losses(
-            torch.full((1, 2, 2, 2), 0.5), torch.zeros(1, 2, 2, 2)
-        )
-        self.assertNotIn("precondition_admitted", restrictive.logged(1.0))
-
     def test_the_normalizer_counts_the_schema_once_per_auxiliary_term(self):
         # 3**1 + 3**2 slot tuples, for the effects and the preconditions.
         objective = self.objective()
