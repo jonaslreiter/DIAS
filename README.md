@@ -88,7 +88,7 @@ python experiments/launch.py --experiment dias-full
 python experiments/collect_results.py --experiment dias-full
 ```
 
-Some defaults have moved on since the paper: the model gets no `=` relation, and the domain it learns requires every schema's parameters to be distinct instead, because bindings are injective; and hanoi and spanner train on the instances the L1 comparison learned from. The recipes say how to restore the paper's setting.
+Some defaults have moved on since the paper: the model gets no `=` relation, and the domain it learns requires every schema's parameters to be distinct instead, because bindings are injective; hanoi and spanner train on the instances the L1 comparison learned from; noisy runs bound what a corrupted atom can cost instead of flooring τ and raising the threshold; and validation scores each run's final checkpoint on states drawn from random walks rather than a breadth-first search. The recipes say how to restore the paper's setting.
 
 ## Repository layout
 
