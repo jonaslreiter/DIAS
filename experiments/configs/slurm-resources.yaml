@@ -28,6 +28,8 @@ miconic:
 n-puzzle: {}
 satellite:
   gres: "shard:10"
+satellite-recal:
+  gres: "shard:10"
 sokoban:
   mem: "32G"
   gres: "shard:6"

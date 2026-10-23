@@ -59,6 +59,7 @@ from pipeline import (
     domain_config,
     domain_pddl,
     format_array,
+    l1_domains,
     load_yaml,
     prepare_slurm_logs,
     resolve_resources,
@@ -357,6 +358,14 @@ def build_plan(args: argparse.Namespace) -> LaunchPlan:
         if refused:
             raise SystemExit(
                 f"--experiment-type {args.experiment_type} validates a learned domain with no training run behind it, so {', '.join(refused)} has nothing to act on"
+            )
+        learned = l1_domains()
+        unlearned = [domain for domain in domains if domain not in learned]
+        if args.domains is None:
+            domains = learned
+        elif unlearned:
+            raise SystemExit(
+                f"L1 learned no domain for {', '.join(unlearned)}; experiments/l1_pddl/ holds {', '.join(learned)}"
             )
     # One learned domain per domain: a seed only draws another sample of states.
     seeds = (

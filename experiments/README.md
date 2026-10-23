@@ -47,7 +47,7 @@ python experiments/launch.py --experiment noise --experiment-type noise  # noisy
 python experiments/launch.py --experiment l1 --experiment-type l1        # the L1 baseline
 ```
 
-`--experiment-type` picks the training overlay and the validator. Defaults are all 13 domains × the 10 seeds in `experiments/configs/validation.yaml`. L1 trains nothing: it validates the domains in `l1_pddl/`, once per domain.
+`--experiment-type` picks the training overlay and the validator. Defaults are all 14 domains × the 10 seeds in `experiments/configs/validation.yaml`. L1 trains nothing: it validates the domains in `l1_pddl/`, once per domain, which are every domain but `satellite-recal`.
 
 Every checkpoint a run saves has its learned domain beside it, binarized at `model.init_args.schema_threshold` (0.5, noise runs included), and validation scores that domain. `--validation-threshold T` extracts it anew at `T` instead; a checkpoint from before these domains were written is extracted at validation either way.
 

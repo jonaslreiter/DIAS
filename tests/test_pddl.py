@@ -19,9 +19,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "experiments"))
 
 from pipeline import (  # noqa: E402
-    available_domains,
     domain_pddl,
     l1_domain,
+    l1_domains,
     validation_problems,
 )
 
@@ -150,9 +150,9 @@ class L1ValidationTest(unittest.TestCase):
 
 
 class CommittedL1DomainTest(unittest.TestCase):
-    def test_every_domain_has_one_that_merges_and_misses_no_successor(self):
+    def test_every_one_merges_and_misses_no_successor(self):
         # L1's recall is 1.0 in every domain, while a schema the merge breaks, by an undeclared predicate or a type no problem asserts, applies nowhere and misses every successor of its action.
-        for domain in available_domains():
+        for domain in l1_domains():
             with self.subTest(domain=domain):
                 validation = PddlValidator(
                     str(domain_pddl(domain)),

@@ -20,6 +20,7 @@ logistics:
 miconic: {}
 n-puzzle: {}
 satellite: {}
+satellite-recal: {}
 sokoban: {}
 sokoban-pull: {}
 spanner:

@@ -172,6 +172,11 @@ def l1_domain(domain: str) -> Path:
     return L1_PDDL_DIR / f"{domain}.pddl"
 
 
+def l1_domains() -> list[str]:
+    """The domains L1 learned one for, in name order: every domain but those added after the comparison."""
+    return [domain for domain in available_domains() if l1_domain(domain).is_file()]
+
+
 def validator_class(name: str):
     """The validator class one entry names, imported on demand."""
     from importlib import import_module

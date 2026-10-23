@@ -67,7 +67,7 @@ Swap the second config: it carries both the domain's files and its tuned hyperpa
 dias fit --config configs/main.yaml --config pddl/hanoi/config.yaml
 ```
 
-The 13 domains are `blocks-3`, `delivery`, `driverlog`, `gripper`, `hanoi`, `logistics`, `miconic`, `n-puzzle`, `satellite`, `sokoban`, `sokoban-pull`, `spanner`, `visitall`. Each `pddl/<domain>/` holds `domain.pddl`, a training instance `train.pddl`, three held-out `test-*.pddl` of increasing size, the STRIPS+ argument positions in `strips+.yaml`, and the tuned `config.yaml`.
+The 14 domains are `blocks-3`, `delivery`, `driverlog`, `gripper`, `hanoi`, `logistics`, `miconic`, `n-puzzle`, `satellite`, `satellite-recal`, `sokoban`, `sokoban-pull`, `spanner`, `visitall`; `satellite-recal` is satellite with every transition changing something, which the paper did not have. Each `pddl/<domain>/` holds `domain.pddl`, a training instance `train.pddl`, three held-out `test-*.pddl` of increasing size, the STRIPS+ argument positions in `strips+.yaml`, and the tuned `config.yaml`.
 
 `configs/main.yaml` names no domain, so a chain that names none is refused. Every model and datamodule argument is listed, with a line on what it does, by `dias fit --model.help dias.models.DIAS` and `--data.help dias.data.datamodule.PddlGraphDataModule`, and any of them can be overridden on the command line.
 
@@ -104,7 +104,7 @@ src/dias/
 
 experiments/          everything you run to reproduce the paper, start here
 configs/              main.yaml and the `dias fit` overlays beside it
-pddl/                 the 13 domains, one folder each
+pddl/                 the 14 domains, one folder each
 tests/                one module per package module, named after it
 ```
 

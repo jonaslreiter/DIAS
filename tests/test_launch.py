@@ -134,15 +134,14 @@ class ValidationResourcesTest(unittest.TestCase):
 
 
 class L1LaunchTest(unittest.TestCase):
-    def args(self, *extra):
+    def args(self, *extra, domains=("gripper",)):
         return launch.parse_args(
             [
                 "--experiment-type",
                 "l1",
                 "--experiment",
                 "l1",
-                "--domains",
-                "gripper",
+                *(["--domains", *domains] if domains else []),
                 "--log-dir",
                 str(temp_dir(self)),
                 *extra,
@@ -154,6 +153,16 @@ class L1LaunchTest(unittest.TestCase):
         self.assertIn("--array=0", validate)
         self.assertFalse([opt for opt in validate if opt.startswith("--dependency")])
         self.assertTrue([opt for opt in validate if "EXP_TYPE=l1" in opt])
+
+    def test_without_domains_it_validates_every_domain_l1_learned(self):
+        # satellite-recal came after the comparison, so L1 never learned it.
+        plan = launch.build_plan(self.args(domains=None))
+        self.assertIn("satellite", plan.domains)
+        self.assertNotIn("satellite-recal", plan.domains)
+
+    def test_a_domain_l1_never_learned_is_refused_by_name(self):
+        with self.assertRaisesRegex(SystemExit, "no domain for satellite-recal"):
+            launch.build_plan(self.args(domains=("gripper", "satellite-recal")))
 
     def test_options_for_a_training_run_are_refused(self):
         for extra in (
