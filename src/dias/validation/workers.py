@@ -1,6 +1,6 @@
 """Scoring sampled states in worker processes, within the memory this process may use.
 
-One worker runs per CPU, each limited to an equal share of the memory the parent leaves. A state that does not fit its share is scored again once the others are done, alone, with all of it; one that does not fit then raises `StateDoesNotFit`. The limit is set before a worker imports anything, so the task's module must not import torch, whose address-space reservations alone exceed a share.
+One worker runs per CPU, each limited to an equal share of the memory the parent leaves. The states that do not fit their share are scored again once the others are done, in half as many workers with twice the memory each, until a state has all of it; one that does not fit then raises `StateDoesNotFit`. The limit is set before a worker imports anything, so the task's module must not import torch, whose address-space reservations alone exceed a share.
 """
 
 from __future__ import annotations
@@ -153,16 +153,42 @@ def score_states(
             f"{memory / 2**30:.1f} GB leaves nothing for workers beside this process"
         )
     workers = max(1, min(workers, len(payloads), budget // MIN_WORKER_MEMORY))
-    share = budget // workers
     logger.info(
         "Scoring %d states in %d workers of %.1f GB each.",
         len(payloads),
         workers,
-        share / 2**30,
+        budget / workers / 2**30,
     )
     names = (_name(task), _name(initializer), config)
-    queue = deque(payloads)
-    alone: list[int] = []
+    pending = list(payloads)
+    while pending:
+        failed: list[int] = []
+        yield from _round(pending, payloads, names, workers, budget, failed)
+        if failed:
+            # Twice the memory each, until a state has all of it.
+            workers = max(1, workers // 2)
+            logger.warning(
+                "%d %s did not fit; scoring again in %d %s of %.1f GB each.",
+                len(failed),
+                "state" if len(failed) == 1 else "states",
+                workers,
+                "worker" if workers == 1 else "workers",
+                budget / workers / 2**30,
+            )
+        pending = failed
+
+
+def _round(
+    indices: list[int],
+    payloads: Mapping[int, Any],
+    names: tuple,
+    workers: int,
+    budget: int,
+    failed: list[int],
+) -> Iterator[tuple[int, Any]]:
+    """Score `indices` in `workers` workers sharing `budget`, collecting in `failed` those that do not fit their share."""
+    share = budget // workers
+    queue = deque(indices)
     running: list[_Worker] = []
     try:
         while queue or running:
@@ -178,12 +204,12 @@ def score_states(
                 if kind == "error":
                     raise RuntimeError(f"Scoring state {index} failed: {value}")
                 if kind == "memory":
-                    logger.warning(
-                        "State %d did not fit in %.1f GB; it is scored again alone.",
-                        index,
-                        share / 2**30,
+                    if workers == 1:
+                        raise StateDoesNotFit(index, budget)
+                    logger.debug(
+                        "State %d did not fit in %.1f GB.", index, share / 2**30
                     )
-                    alone.append(index)
+                    failed.append(index)
                     worker.kill()
                     running.remove(worker)
                     continue
@@ -195,20 +221,6 @@ def score_states(
                     worker.stop()
                     running.remove(worker)
                 yield index, value
-        for index in alone:
-            worker = _Worker(budget, *names)
-            running.append(worker)
-            worker.give(index, payloads[index])
-            kind, value = worker.receive()
-            running.remove(worker)
-            if kind == "memory":
-                worker.kill()
-                raise StateDoesNotFit(index, budget)
-            if kind == "error":
-                worker.kill()
-                raise RuntimeError(f"Scoring state {index} failed: {value}")
-            worker.stop()
-            yield index, value
     finally:
         for worker in running:
             worker.kill()
