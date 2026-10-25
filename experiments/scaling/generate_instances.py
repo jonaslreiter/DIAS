@@ -8,7 +8,7 @@ One instance per (domain, size) entry of ``sizes.yaml``, written to ``instances/
 Each generator emits its own dialect, rewritten here into the repository's ``pddl/<domain>/domain.pddl``:
 
 blocks-3
-    ``blocksworld-3ops`` to ``blocksworld``: objects get the ``- object`` type, and one ``(eq b b)`` fact per block, without which the ``(not (eq ?x ?y))`` preconditions are vacuously true.
+    ``blocksworld-3ops`` to ``blocksworld``: objects get the ``- object`` type.
 
 logistics
     ``logistics-strips`` to ``logistics``: ``OBJ`` -> ``object``, ``in-city`` -> ``loc``, plus a ``(vehicle ?v)`` fact per truck and airplane.
@@ -219,8 +219,6 @@ def _parse_init_atoms(text: str) -> list[str]:
 def _rewrite_blocksworld(text: str, num_objects: int) -> str:
     objects = _parse_objects(text)
     atoms = _parse_init_atoms(text)
-    # The repo domain guards its parameters with (not (eq ?x ?y)), which needs these.
-    atoms += [f"(eq {o} {o})" for o in objects]
     return _emit_problem(
         name=f"blocksworld-n{num_objects}",
         domain="blocksworld",
