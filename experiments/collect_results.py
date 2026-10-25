@@ -11,7 +11,9 @@ Reads per-run results (written by ``experiments/validate_runs.py``) from local J
 
 A seed's problems are reduced to one precision / recall by micro-averaging their tp/fp/fn, falling back to the mean of per-problem rates when the counts are absent.
 
-``--sweep AXIS`` instead reads the sub-experiments ``launch.py --sweep`` wrote and prints one domain x value matrix per metric; ``--threshold-sweep`` does the same over the thresholds of ``launch_threshold_validation.py``, whose columns share one set of checkpoints. Without a sweep, ``--experiment`` takes any number of unrelated experiments, each with its own table.
+P and R are shown to two decimals, a rate below 1 as at most 0.99.
+
+``--sweep AXIS`` instead reads the sub-experiments ``launch.py --sweep`` wrote and prints one domain x value matrix per metric (``--markdown``: one table, a row per domain and value); ``--threshold-sweep`` does the same over the thresholds of ``launch_threshold_validation.py``, whose columns share one set of checkpoints. Without a sweep, ``--experiment`` takes any number of unrelated experiments, each with its own table.
 
 Usage:
     python experiments/collect_results.py --experiment paper-main [--source wandb] [--domains gripper hanoi]
@@ -25,6 +27,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import math
 import re
 import sys
 from pathlib import Path
@@ -42,6 +45,8 @@ from pipeline import (
     WANDB_ENTITY,
     WANDB_PROJECT,
     add_logging_arguments,
+    domain_config,
+    load_yaml,
 )
 
 logger = logging.getLogger("dias.collect")
@@ -162,8 +167,8 @@ def _aggregate(prs: list[tuple[float, float]]) -> dict:
 
 METRICS = ("P", "R", "N_S", "N_C", "N_SC")
 METRIC_LABELS = {
-    "P": "mean precision over seeds",
-    "R": "mean recall over seeds",
+    "P": "mean precision over seeds (below 1 shown as at most 0.99)",
+    "R": "mean recall over seeds (below 1 shown as at most 0.99)",
     "N_S": "#seeds sound (precision == 1)",
     "N_C": "#seeds complete (recall == 1)",
     "N_SC": "#seeds sound and complete",
@@ -184,14 +189,20 @@ def _collect(
     return by_domain
 
 
+def _rate(value: float) -> str:
+    """Two decimals, never rounded up to 1.00."""
+    shown = f"{value:.2f}"
+    return "0.99" if shown == "1.00" and value < 1.0 else shown
+
+
 def _cell_value(
     metric: str, prs: list[tuple[float, float]] | None, missing: str = "-"
 ) -> str:
-    """One matrix cell: 3-decimal rate, integer count, or `missing` if no runs."""
+    """One cell: a rate, an integer count, or `missing` if no runs."""
     if not prs:
         return missing
     value = _aggregate(prs)[metric]
-    return f"{value:.3f}" if metric in ("P", "R") else f"{value:d}"
+    return _rate(value) if metric in ("P", "R") else f"{value:d}"
 
 
 def print_sweep_matrix(
@@ -227,50 +238,65 @@ def write_sweep_markdown(
     names: dict[float, str],
     domains: list[str],
     cells: dict[tuple[float, str], list[tuple[float, float]]],
-    source: str,
+    configured: dict[str, float],
 ) -> None:
-    """Write one markdown table per metric (domains x value, raw values)."""
-    cols = [f"{v:g}" for v in values]
+    """Write one markdown table, a row per (domain, value); the value a domain's config.yaml sets is in bold."""
+    columns = (*METRICS, "n")
     lines = [
         f"# {axis_name} sweep",
         "",
-        f"Rows are domains, columns are `{param}` (source: {source}); each cell aggregates over the seeds of that (domain, value) pair. `ALL` pools every seed of every domain at that value. Columns come from the sub-experiments "
-        + ", ".join(f"`{v:g}` → `{names[v]}`" for v in values)
-        + ".",
+        f"`{param}`, from "
+        + ", ".join(f"`{names[v]}`" for v in values)
+        + "."
+        + (" Bold: the value in the domain's `config.yaml`." if configured else ""),
         "",
+        "| Column | Meaning |",
+        "| --- | --- |",
+        *(f"| {c} | {METRIC_LABELS[c]} |" for c in columns),
+        "",
+        f"| domain | {axis_name} | " + " | ".join(columns) + " |",
+        "|---|" + "--:|" * (len(columns) + 1),
     ]
-    for metric in (*METRICS, "n"):
-        lines += [
-            f"## {metric}: {METRIC_LABELS[metric]}",
-            "",
-            "| domain | " + " | ".join(cols) + " |",
-            "|" + "---|" * (len(cols) + 1),
-        ]
-        for domain in domains:
-            row = [_cell_value(metric, cells.get((v, domain))) for v in values]
-            lines.append(f"| {domain} | " + " | ".join(row) + " |")
-        pooled = [
-            _cell_value(metric, [pr for d in domains for pr in cells.get((v, d), [])])
-            for v in values
-        ]
-        lines += ["| **ALL** | " + " | ".join(pooled) + " |", ""]
-
+    for domain in domains:
+        for i, value in enumerate(values):
+            shown = f"{value:g}"
+            if domain in configured and math.isclose(configured[domain], value):
+                shown = f"**{shown}**"
+            row = [_cell_value(c, cells.get((value, domain))) for c in columns]
+            lines.append(
+                f"| {domain if i == 0 else ''} | {shown} | " + " | ".join(row) + " |"
+            )
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines))
+    path.write_text("\n".join(lines) + "\n")
     print(f"\nwrote {path}")
+
+
+def configured_values(param: str, domains: list[str]) -> dict[str, float]:
+    """Per domain, the value its config.yaml sets for the dotted `param`, where it sets one."""
+    configured = {}
+    for domain in domains:
+        node = (
+            load_yaml(domain_config(domain)) if domain_config(domain).is_file() else {}
+        )
+        for key in param.split("."):
+            node = node.get(key) if isinstance(node, dict) else None
+        if isinstance(node, (int, float)) and not isinstance(node, bool):
+            configured[domain] = float(node)
+    return configured
 
 
 def run_sweep(args: argparse.Namespace, axis_name: str, values: list[float]) -> None:
     """Collect one sub-experiment per value and print/write the domain x value grid."""
     axis = SWEEP_AXES[axis_name]
     names = {v: sweep_experiment_name(args.experiment, axis, v) for v in values}
-    _report_matrix(args, axis_name, axis.param, values, names)
+    # An axis that moves other parameters with it has no single configured value.
+    _report_matrix(args, axis_name, axis.param, values, names, axis.linked is None)
 
 
 def run_threshold_sweep(args: argparse.Namespace, values: list[float]) -> None:
     """Collect the re-validations written by launch_threshold_validation.py, whose columns all read the same checkpoints."""
     names = {v: threshold_experiment_name(args.experiment, v) for v in values}
-    _report_matrix(args, "threshold", "binarization threshold", values, names)
+    _report_matrix(args, "threshold", "binarization threshold", values, names, False)
 
 
 def _report_matrix(
@@ -279,6 +305,7 @@ def _report_matrix(
     param: str,
     values: list[float],
     names: dict[float, str],
+    mark_configured: bool,
 ) -> None:
     """Print (and optionally write) the domain x value grid for named experiments."""
     cells: dict[tuple[float, str], list[tuple[float, float]]] = {}
@@ -312,7 +339,7 @@ def _report_matrix(
             names,
             ordered,
             cells,
-            args.source,
+            configured_values(param, ordered) if mark_configured else {},
         )
 
 
@@ -331,13 +358,13 @@ def print_table(
         pooled += prs
         a = _aggregate(prs)
         print(
-            f"{domain:<16} {a['P']:>6.3f} {a['R']:>6.3f} {a['N_S']:>5} {a['N_C']:>5} {a['N_SC']:>5} {a['n']:>4}"
+            f"{domain:<16} {_rate(a['P']):>6} {_rate(a['R']):>6} {a['N_S']:>5} {a['N_C']:>5} {a['N_SC']:>5} {a['n']:>4}"
         )
     if pooled:
         print("-" * len(header))
         a = _aggregate(pooled)
         print(
-            f"{'ALL':<16} {a['P']:>6.3f} {a['R']:>6.3f} {a['N_S']:>5} {a['N_C']:>5} {a['N_SC']:>5} {a['n']:>4}"
+            f"{'ALL':<16} {_rate(a['P']):>6} {_rate(a['R']):>6} {a['N_S']:>5} {a['N_C']:>5} {a['N_SC']:>5} {a['n']:>4}"
         )
     else:
         print("(no results found)")
@@ -475,7 +502,7 @@ def main() -> int:
         "--markdown",
         type=Path,
         default=None,
-        help="Also write the tables to this markdown file: one table per metric with --sweep / --threshold-sweep, one table per experiment otherwise.",
+        help="Also write the tables to this markdown file: one table with --sweep / --threshold-sweep, one per experiment otherwise.",
     )
     add_logging_arguments(p)
     args = p.parse_args()
