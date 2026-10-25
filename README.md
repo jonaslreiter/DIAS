@@ -73,7 +73,7 @@ The 14 domains are `blocks-3`, `delivery`, `driverlog`, `gripper`, `hanoi`, `log
 
 ### Your own PDDL
 
-Point `domain_path` / `problem_path` at any domain whose predicates are unary or binary and whose actions are STRIPS with injective parameter binding. To make it a domain like the 13 above, give it a `pddl/<name>/` folder holding the same files. The folder *is* the domain, so `--domains <name>` works in the sweep launcher as soon as it exists.
+Point `domain_path` / `problem_path` at any domain whose predicates are unary or binary and whose actions are STRIPS with injective parameter binding. To make it a domain like the 14 above, give it a `pddl/<name>/` folder holding the same files. The folder *is* the domain, so `--domains <name>` works in the sweep launcher as soon as it exists.
 
 ### Weights & Biases
 
@@ -81,14 +81,12 @@ W&B is the default logger, with `entity: null`, meaning whichever account you ar
 
 ## Reproducing the paper
 
-The recipes for the main table, the ablations, the sweeps, the threshold study, the instance-size scaling study, aggregation and cluster setup are in **[experiments/README.md](experiments/README.md)**. In short:
+Every experiment of the paper is a few `launch.py` commands and one `collect_results.py` command, listed in **[experiments/README.md](experiments/README.md)**. For example, action names on every domain:
 
 ```bash
-python experiments/launch.py --experiment dias-full
-python experiments/collect_results.py --experiment dias-full
+python experiments/launch.py --experiment dias-names
+python experiments/collect_results.py --experiment dias-names
 ```
-
-Some defaults have moved on since the paper: the model gets no `=` relation, and the domain it learns requires every schema's parameters to be distinct instead, because bindings are injective; hanoi and spanner train on the instances the L1 comparison learned from; noisy runs bound what a corrupted atom can cost instead of flooring τ and raising the threshold; and validation scores each run's final checkpoint on states drawn from random walks rather than a breadth-first search. The recipes say how to restore the paper's setting.
 
 ## Repository layout
 
