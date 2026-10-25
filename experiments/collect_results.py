@@ -17,7 +17,7 @@ P and R are shown to two decimals, a rate below 1 as at most 0.99.
 
 Usage:
     python experiments/collect_results.py --experiment dias-names [--source wandb] [--domains gripper hanoi]
-    python experiments/collect_results.py --experiment dias-names abl-no-pcgrad --markdown experiments/results/ablations.md
+    python experiments/collect_results.py --experiment dias-names ablation-no-pcgrad --markdown experiments/results/ablations.md
     python experiments/collect_results.py --experiment alpha --sweep aux-loss-alpha --markdown experiments/results/alpha-sweep.md
     python experiments/collect_results.py --experiment dias-names --threshold-sweep --markdown experiments/results/threshold.md
 """

@@ -14,7 +14,7 @@ Examples
     python experiments/launch.py --experiment noise-f8 --experiment-type noise --set data.init_args.noise.added_atoms=2 --set data.init_args.noise.removed_atoms=2
 
     # An ablation, and a sweep into the experiments alpha-aux0.01 .. alpha-aux1.
-    python experiments/launch.py --experiment abl-no-pcgrad --ablation no-pcgrad
+    python experiments/launch.py --experiment ablation-no-pcgrad --ablation no-pcgrad
     python experiments/launch.py --experiment alpha --sweep aux-loss-alpha --seeds 0-4
 
     # The L1 baseline.

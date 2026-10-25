@@ -82,8 +82,8 @@ python experiments/collect_results.py --experiment noise-f1 noise-f2 noise-f4 no
 | `no-random-embeddings` | the random initial node features |
 
 ```bash
-for ablation in no-slot-weights no-precondition-loss no-effect-loss no-aux-loss no-pcgrad no-random-embeddings; do python experiments/launch.py --experiment abl-$ablation --ablation $ablation; done
-python experiments/collect_results.py --experiment dias-names abl-no-slot-weights abl-no-precondition-loss abl-no-effect-loss abl-no-aux-loss abl-no-pcgrad abl-no-random-embeddings --markdown experiments/results/ablations.md
+for ablation in no-slot-weights no-precondition-loss no-effect-loss no-aux-loss no-pcgrad no-random-embeddings; do python experiments/launch.py --experiment ablation-$ablation --ablation $ablation; done
+python experiments/collect_results.py --experiment dias-names ablation-no-slot-weights ablation-no-precondition-loss ablation-no-effect-loss ablation-no-aux-loss ablation-no-pcgrad ablation-no-random-embeddings --markdown experiments/results/ablations.md
 ```
 
 ### α sweep
