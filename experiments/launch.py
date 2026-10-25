@@ -220,7 +220,6 @@ class LaunchPlan:
     backend: str
     validate_only: bool
     num_workers: int | None
-    states_per_worker: int | None
     resume: bool
     dry_run: bool
     log_wandb: bool
@@ -433,7 +432,6 @@ def build_plan(args: argparse.Namespace) -> LaunchPlan:
         backend=args.backend,
         validate_only=validate_only,
         num_workers=args.num_workers,
-        states_per_worker=args.states_per_worker,
         resume=args.resume,
         dry_run=args.dry_run,
         log_wandb=not args.no_wandb,
@@ -503,8 +501,6 @@ def submit_domain(plan: LaunchPlan, point: SweepPoint, domain: str) -> None:
         val_vars.append(f"CHECKPOINT={plan.checkpoint}")
     if plan.num_workers is not None:
         val_vars.append(f"NUM_WORKERS={plan.num_workers}")
-    if plan.states_per_worker is not None:
-        val_vars.append(f"STATES_PER_WORKER={plan.states_per_worker}")
     if plan.resume:
         val_vars.append("RESUME=1")
 
@@ -586,7 +582,6 @@ def run_domain(plan: LaunchPlan, point: SweepPoint, domain: str) -> None:
             threshold=plan.threshold,
             checkpoint=plan.checkpoint,
             num_workers=plan.num_workers,
-            states_per_worker=plan.states_per_worker,
             resume=plan.resume,
         )
 
@@ -670,13 +665,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--num-workers",
         type=int,
         default=None,
-        help="Processes the MLP-effects validator grounds states across. Default: the CPUs each validation task is allocated.",
-    )
-    p.add_argument(
-        "--states-per-worker",
-        type=int,
-        default=None,
-        help="States an MLP-effects grounding worker handles before it is replaced, releasing the ground actions pymimir keeps until a process exits.",
+        help="Worker processes each validation task scores states in. Default: the CPUs it is allocated.",
     )
     p.add_argument(
         "--resume",

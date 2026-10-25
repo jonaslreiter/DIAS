@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "experiments"))
 
 import validate_runs
 from collect_results import collect_local
+from dias.validation.workers import StateDoesNotFit
 from support import temp_dir
 from validate_runs import _write_json, validate_run
 
@@ -48,6 +49,13 @@ class SeedStatusTest(unittest.TestCase):
         per_problem = {"test-1": scored()}
         self.assertEqual(self.status(per_problem, expected=PROBLEMS), "partial")
 
+    def test_a_problem_out_of_memory_leaves_the_seed_out(self):
+        per_problem = {
+            "test-1": scored(),
+            "test-2": {"error": "state 7 does not fit", "out_of_memory": True},
+        }
+        self.assertEqual(self.status(per_problem), "out_of_memory")
+
     def test_no_problem_scored_is_a_failure(self):
         self.assertEqual(
             self.status({"test-1": {"error": "boom"}}), "validation_failed"
@@ -69,6 +77,8 @@ class SeedStatusTest(unittest.TestCase):
 
 class StandInValidator:
     calls: list = []
+    # Problems with a state that does not fit.
+    too_big: set = set()
     threshold = 0.5
     learned_domain_text = "(define (domain learned))"
 
@@ -82,6 +92,8 @@ class StandInValidator:
 
     def validate(self, progress_path=None):
         StandInValidator.calls.append((self.problem, self.seed))
+        if self.problem in StandInValidator.too_big:
+            raise StateDoesNotFit(7, 2**30)
         return scored(tp=50)
 
 
@@ -98,6 +110,7 @@ class ResumeTest(unittest.TestCase):
         self.result = self.logs / "validation" / "mlp" / "gripper" / "seed0.json"
         StandInValidator.calls = []
         StandInValidator.instances = []
+        StandInValidator.too_big = set()
         patcher = mock.patch.object(
             validate_runs, "validator_class", return_value=StandInValidator
         )
@@ -173,6 +186,15 @@ class ResumeTest(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "force_injective None"):
             self.validate()
 
+    def test_a_state_that_does_not_fit_ends_the_seed(self):
+        StandInValidator.too_big = {"test-2"}
+        per_problem = self.validate(resume=False)
+        self.assertEqual(
+            [problem for problem, _ in StandInValidator.calls], ["test-1", "test-2"]
+        )
+        self.assertTrue(per_problem["test-2"]["out_of_memory"])
+        self.assertEqual(json.loads(self.result.read_text())["status"], "out_of_memory")
+
     def test_the_best_checkpoint_is_scored_when_asked(self):
         best = self.checkpoint.with_name("best-epoch=0-step=5.ckpt")
         best.touch()
@@ -219,6 +241,7 @@ class L1RunTest(unittest.TestCase):
         self.logs = temp_dir(self)
         StandInValidator.calls = []
         StandInValidator.instances = []
+        StandInValidator.too_big = set()
         patcher = mock.patch.object(
             validate_runs, "validator_class", return_value=StandInValidator
         )

@@ -6,8 +6,6 @@ import time
 from collections import deque
 from typing import Any, NamedTuple
 
-import torch
-
 from dias.schema.domain import tensor_relations
 
 logger = logging.getLogger(__name__)
@@ -221,6 +219,9 @@ def samples_to_tensors(
     include_equality: bool = False,
 ):
     """Convert samples to adjacency-matrix tensors of shape [N, R, O, O]."""
+    # Here rather than at the top: validation workers walk and ground with this module and must not load torch.
+    import torch
+
     relation_info = tensor_relations(
         metadata["predicates"],
         include_statics=include_statics,

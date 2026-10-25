@@ -39,6 +39,7 @@ def _construction_kwargs(args: argparse.Namespace) -> dict:
     common = {
         "problem_path": str(args.problem.resolve()),
         "force_injective": args.force_injective,
+        "num_workers": args.num_workers,
     }
     if not validator.from_checkpoint:
         if not (args.original_domain and args.learned_domain):
@@ -63,8 +64,8 @@ def _construction_kwargs(args: argparse.Namespace) -> dict:
         "threshold": args.threshold,
         "checkpoint": args.checkpoint,
     }
-    if validator.grounds_in_parallel:
-        kwargs |= {"num_workers": args.num_workers, "batch_size": args.batch_size}
+    if args.validator == "mlp":
+        kwargs["batch_size"] = args.batch_size
     return kwargs
 
 
@@ -143,7 +144,12 @@ def main() -> int:
         default=bool(defaults.get("force_injective", False)),
         help="Replace whatever the learned domain says about equality with distinct parameters in every schema. Default from validation.yaml.",
     )
-    p.add_argument("--num-workers", type=int, default=1, help="mlp only.")
+    p.add_argument(
+        "--num-workers",
+        type=int,
+        default=1,
+        help="Worker processes to score states in.",
+    )
     p.add_argument("--batch-size", type=int, default=4096, help="mlp only.")
     p.add_argument("--out", type=Path, default=None, help="Write the result JSON here.")
     add_logging_arguments(p)

@@ -11,6 +11,7 @@ import pymimir
 from tqdm import tqdm
 
 from dias.pddl import text as pddl_text
+from dias.pddl.states import rebuild_state, state_atoms
 from dias.pddl.untype import (
     extract_domain_header,
     strip_problem_types,
@@ -31,6 +32,7 @@ from .successors import (
     successor_sets,
     transfer_states,
 )
+from .workers import score_states
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +51,11 @@ class PddlValidator:
         learned_domain_path,
         problem_path,
         force_injective=False,
+        num_workers: int = 1,
+        memory: int | None = None,
     ):
+        self.num_workers = num_workers
+        self.memory = memory
         self.learned_domain_text = Path(learned_domain_path).read_text()
         original_domain_text = pddl_text.equality_as_predicate(
             Path(original_domain_path).read_text()
@@ -97,12 +103,15 @@ class PddlValidator:
         ).hexdigest()
 
         self.workspace = PddlWorkspace()
-        self.merged_domain = pymimir.Domain(
-            Path(self.workspace.write("merged-domain.pddl", merged_domain_text))
+        self.merged_domain_path = self.workspace.write(
+            "merged-domain.pddl", merged_domain_text
         )
+        self.merged_problem_path = self.workspace.write(
+            "merged-problem.pddl", merged_problem_text
+        )
+        self.merged_domain = pymimir.Domain(Path(self.merged_domain_path))
         self.merged_problem = pymimir.Problem(
-            self.merged_domain,
-            Path(self.workspace.write("merged-problem.pddl", merged_problem_text)),
+            self.merged_domain, Path(self.merged_problem_path)
         )
         self.original_domain = pymimir.Domain(
             Path(self.workspace.write("original-domain.pddl", original_domain_text))
@@ -193,9 +202,11 @@ class PddlValidator:
         self.sample_seed = resolve_sample_seed(seed)
         self.sampling = sampling
         states = sampling.draw(self.original_problem, self.sample_seed)
-        self.state_set = transfer_states(
+        # Checks that the merged problem holds every sampled state; workers rebuild them from their atoms.
+        transfer_states(
             states, self.merged_problem, self.original_domain, self.merged_domain
         )
+        self.state_set = [state_atoms(state) for state in states]
 
     def validate(self, progress_path: str | Path | None = None) -> dict:
         """Score every sampled state.
@@ -213,16 +224,34 @@ class PddlValidator:
                 "sampling": self.sampling.record(),
             }
             scores = read_progress(progress_path, header)
-        todo = [i for i in range(len(self.state_set)) if i not in scores]
-        for index in tqdm(
-            todo,
-            total=len(self.state_set),
-            initial=len(scores),
-            desc="Validating states",
-        ):
-            scores[index] = score_successors(
-                [successor_sets(self.state_set[index], LEARNED_ACTION_PREFIX)]
-            )
-            if progress_path is not None:
-                append_progress(progress_path, index, scores[index])
+        todo = {i: atoms for i, atoms in enumerate(self.state_set) if i not in scores}
+        config = {
+            "domain": self.merged_domain_path,
+            "problem": self.merged_problem_path,
+        }
+        with tqdm(
+            total=len(self.state_set), initial=len(scores), desc="Validating states"
+        ) as bar:
+            for index, score in score_states(
+                score_state, init_worker, config, todo, self.num_workers, self.memory
+            ):
+                scores[index] = score
+                if progress_path is not None:
+                    append_progress(progress_path, index, score)
+                bar.update()
         return combine_scores(scores[i] for i in range(len(self.state_set)))
+
+
+_WORKER: dict = {}
+
+
+def init_worker(config: dict) -> None:
+    """A worker's merged domain, parsed once."""
+    _WORKER.update(config, domain=pymimir.Domain(Path(config["domain"])))
+
+
+def score_state(atoms) -> dict:
+    """One state's score, on a problem of its own: pymimir keeps every action a problem grounds until the problem is dropped."""
+    problem = pymimir.Problem(_WORKER["domain"], Path(_WORKER["problem"]))
+    state = rebuild_state(atoms, problem)
+    return score_successors([successor_sets(state, LEARNED_ACTION_PREFIX)])

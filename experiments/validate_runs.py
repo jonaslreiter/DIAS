@@ -6,7 +6,7 @@ A run is located by its deterministic id, its problems are the domain folder's `
 
 ``--threshold`` extracts a run's learned domain anew at another binarization threshold, and ``--results-experiment`` redirects only the output directory, which together re-validate a finished experiment without touching its JSONs; see ``experiments/launch_threshold_validation.py``.
 
-The MLP-effects validator grounds its sampled states across ``--num-workers`` processes, defaulting to the CPUs the job was allocated. Every validator records each state's score as it finishes, and ``--resume`` continues a seed from the problems and states an earlier run on the same checkpoint scored.
+Every validator scores its sampled states in worker processes, one per CPU the job was allocated (``--num-workers`` overrides), each limited to an equal share of the job's memory. A state that does not fit even alone ends the seed as ``out_of_memory``. Each state's score is recorded as it finishes, and ``--resume`` continues a seed from the problems and states an earlier run on the same checkpoint scored.
 """
 
 from __future__ import annotations
@@ -62,7 +62,6 @@ def validate_run(
     threshold: float | None = None,
     results_experiment: str | None = None,
     num_workers: int | None = None,
-    states_per_worker: int | None = None,
     resume: bool = False,
     checkpoint: str = "final",
 ) -> dict:
@@ -73,6 +72,7 @@ def validate_run(
     # Imported here, not at module scope: submitting jobs must not need torch or pymimir.
     from dias.validation.checkpoint import resolve_checkpoint
     from dias.validation.successors import resolve_sample_seed, sampling_from_record
+    from dias.validation.workers import StateDoesNotFit
 
     run_id = run_id or run_id_for(experiment, domain, seed)
     results_experiment = results_experiment or experiment
@@ -103,12 +103,7 @@ def validate_run(
             "original_domain_path": str(domain_pddl(domain)),
             "learned_domain_path": str(l1_domain(domain)),
         }
-    if validator.grounds_in_parallel:
-        workers = allocated_cpus() if num_workers is None else num_workers
-        logger.info("Grounding states across %d worker processes.", workers)
-        learned["num_workers"] = workers
-        if states_per_worker is not None:
-            learned["states_per_worker"] = states_per_worker
+    learned["num_workers"] = allocated_cpus() if num_workers is None else num_workers
     # Written into the result, since a resumed run must draw its remaining problems' states the same way.
     sampling = sampling_from_record(val_cfg["sampling"])
     force_injective = bool(val_cfg.get("force_injective", False))
@@ -159,6 +154,9 @@ def validate_run(
             out.with_suffix(".pddl").write_text(v.learned_domain_text)
             v.setup(sampling, seed=sample_seed)
             result = v.validate(out.with_name(f"seed{seed}.{stem}.states.jsonl"))
+        except StateDoesNotFit as e:
+            logger.error("%s: %s, so the seed is left out.", stem, e)
+            per_problem[stem] = {"error": str(e), "out_of_memory": True}
         except Exception as e:  # noqa: BLE001 - one bad problem shouldn't sink the rest
             logger.exception("Validation of %s failed.", stem)
             per_problem[stem] = {"error": str(e)}
@@ -192,6 +190,8 @@ def validate_run(
             force_injective=force_injective,
             sampling=sampling.record(),
         )
+        if per_problem[stem].get("out_of_memory"):
+            break
 
     if log_wandb:
         _log_to_wandb(results_experiment, domain, seed, run_id, logs_dir, per_problem)
@@ -267,11 +267,12 @@ def _write_json(
     scored = sum(
         stem in per_problem and "error" not in per_problem[stem] for stem in expected
     )
-    status = (
-        "ok"
-        if expected and scored == len(expected)
-        else "partial" if scored else "validation_failed"
-    )
+    if any(result.get("out_of_memory") for result in per_problem.values()):
+        status = "out_of_memory"
+    elif expected and scored == len(expected):
+        status = "ok"
+    else:
+        status = "partial" if scored else "validation_failed"
     payload = {
         "experiment": experiment,
         "domain": domain,
@@ -361,13 +362,7 @@ def main() -> int:
         "--num-workers",
         type=int,
         default=None,
-        help="Processes the MLP-effects validator grounds states across. Default: the CPUs this job was allocated. Ignored by the other validators, which ground nothing in parallel.",
-    )
-    p.add_argument(
-        "--states-per-worker",
-        type=int,
-        default=None,
-        help="States an MLP-effects grounding worker handles before it is replaced, releasing the ground actions pymimir keeps until a process exits.",
+        help="Worker processes to score states in. Default: the CPUs this job was allocated.",
     )
     p.add_argument(
         "--resume",
@@ -392,12 +387,14 @@ def main() -> int:
         threshold=args.threshold,
         results_experiment=args.results_experiment,
         num_workers=args.num_workers,
-        states_per_worker=args.states_per_worker,
         resume=args.resume,
         checkpoint=args.checkpoint,
     )
-    failed = all("error" in v for v in per_problem.values()) if per_problem else True
-    return 1 if failed else 0
+    # A seed left out for memory is a result, not a failure of the job.
+    failed = [
+        v for v in per_problem.values() if "error" in v and not v.get("out_of_memory")
+    ]
+    return 1 if not per_problem or len(failed) == len(per_problem) else 0
 
 
 if __name__ == "__main__":

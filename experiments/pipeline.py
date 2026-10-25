@@ -114,7 +114,7 @@ def run_command(cmd: list[str], dry_run: bool, capture: bool = True) -> str | No
 class Validator:
     """One way of scoring a learned action model against the real domain.
 
-    ``from_checkpoint``: the learned domain is a training run's, so it can be extracted anew at another threshold; L1's is a PDDL file. ``grounds_in_parallel``: whether the class takes ``num_workers``, which only the MLP-effects one does, its per-state grounding being the one that pays for a pool.
+    ``from_checkpoint``: the learned domain is a training run's, so it can be extracted anew at another threshold; L1's is a PDDL file.
     """
 
     name: str
@@ -122,7 +122,6 @@ class Validator:
     class_name: str
     summary: str
     from_checkpoint: bool
-    grounds_in_parallel: bool = False
 
 
 VALIDATORS: dict[str, Validator] = {
@@ -139,7 +138,6 @@ VALIDATORS: dict[str, Validator] = {
         class_name="MlpEffectsValidator",
         summary="MLP effects: learned preconditions, effects predicted from the state",
         from_checkpoint=True,
-        grounds_in_parallel=True,
     ),
     "l1": Validator(
         name="l1",

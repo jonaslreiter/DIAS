@@ -3,13 +3,8 @@
 from __future__ import annotations
 
 import logging
-import multiprocessing as _mp
 import re
-import sys
 from collections import defaultdict
-from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
-from concurrent.futures.process import BrokenProcessPool
-from itertools import islice
 from pathlib import Path
 
 import numpy as np
@@ -18,6 +13,7 @@ import torch
 from tqdm import tqdm
 
 from dias.pddl import text as pddl_text
+from dias.pddl.states import state_atoms
 from dias.pddl.untype import (
     extract_domain_header,
     strip_problem_types,
@@ -40,13 +36,11 @@ from .successors import (
     score_successors,
     transfer_states,
 )
+from .workers import score_states
 
 UNREACHABLE_GUARD = "dummy_guard"
 
 logger = logging.getLogger(__name__)
-
-# Consecutive grounding pools that may break before returning a state until validation gives up.
-BARREN_POOLS = 3
 
 
 def _unreachable_action(predicates: list[tuple[str, int]]) -> ActionSchema:
@@ -82,11 +76,11 @@ class MlpEffectsValidator:
         checkpoint="final",
         batch_size: int = 65536,
         num_workers: int = 1,
-        states_per_worker: int = 4,
+        memory: int | None = None,
     ):
         self.batch_size = batch_size
         self.num_workers = num_workers
-        self.states_per_worker = states_per_worker
+        self.memory = memory
 
         run = load_run(model_id, logs_path, checkpoint)
         self.checkpoint_path = str(run.checkpoint_path)
@@ -221,26 +215,14 @@ class MlpEffectsValidator:
         self.state_pairs = list(zip(original_states, learned_states))
 
     def validate(self, progress_path: str | Path | None = None) -> dict:
-        """Score every sampled state: ground it in a worker, predict its successors on the GPU, compare.
+        """Score every sampled state: ground it in a worker, predict its successors here, compare.
 
         With `progress_path`, each state's score is appended as it finishes, and a later run for the same checkpoint, problem, sample seed and sampling skips those states.
         """
         if self.state_pairs is None:
             raise RuntimeError("\033[91mCall setup() before validate().\033[0m")
 
-        # One serializable atom payload per state pair; statics come from :init in the worker.
-        payloads = [
-            [
-                (
-                    atom.get_predicate().get_name(),
-                    tuple(t.get_name() for t in atom.get_terms()),
-                )
-                for atom in orig_state.get_atoms(
-                    ignore_static=False, ignore_derived=True
-                )
-            ]
-            for orig_state, _ in self.state_pairs
-        ]
+        payloads = [state_atoms(original) for original, _ in self.state_pairs]
         config = {
             "original_domain_path": self.original_domain_path,
             "original_problem_path": self.original_problem_path,
@@ -279,10 +261,10 @@ class MlpEffectsValidator:
         if self.eq_channel_idx is not None:
             channels[self.eq_channel_idx] = False
 
-        todo = [i for i in range(len(payloads)) if i not in scores]
+        todo = {i: payload for i, payload in enumerate(payloads) if i not in scores}
         with tqdm(total=len(payloads), initial=len(scores), desc="states") as bar:
-            for index, (adjacency, expected, actions, slot_objects) in self._ground(
-                todo, payloads, config
+            for index, (adjacency, expected, actions, slot_objects) in score_states(
+                ground_state, init_worker, config, todo, self.num_workers, self.memory
             ):
                 produced = self._predict(
                     adjacency, actions, slot_objects, keys, channels
@@ -293,65 +275,6 @@ class MlpEffectsValidator:
                 bar.update()
 
         return combine_scores(scores[i] for i in range(len(payloads)))
-
-    def _ground(self, todo, payloads, config):
-        """Yield ``(index, grounding)`` for the states in `todo`, grounding at most `num_workers` at once."""
-        if self.num_workers <= 1:
-            init_worker(config)
-            for index in todo:
-                yield index, ground_state(payloads[index])
-            return
-        options = {
-            "max_workers": self.num_workers,
-            "mp_context": _mp.get_context("spawn"),
-            "initializer": init_worker,
-            "initargs": (config,),
-        }
-        if sys.version_info >= (3, 11):
-            options["max_tasks_per_child"] = self.states_per_worker
-        queue = iter(todo)
-        # States handed to a pool that broke before it returned them.
-        unfinished: list = []
-        barren = 0
-        while True:
-            outstanding = dict.fromkeys(unfinished)
-            returned = 0
-            try:
-                with ProcessPoolExecutor(**options) as pool:
-                    running = {}
-
-                    def submit(index):
-                        outstanding[index] = None
-                        running[pool.submit(ground_state, payloads[index])] = index
-
-                    for index in unfinished:
-                        submit(index)
-                    for index in islice(
-                        queue, max(0, self.num_workers - len(unfinished))
-                    ):
-                        submit(index)
-                    while running:
-                        done, _ = wait(running, return_when=FIRST_COMPLETED)
-                        for future in done:
-                            index = running.pop(future)
-                            grounding = future.result()
-                            del outstanding[index]
-                            returned += 1
-                            yield index, grounding
-                            for index in islice(queue, 1):
-                                submit(index)
-                return
-            except BrokenProcessPool:
-                # A worker that exits after its max_tasks_per_child can be taken for one that died, which breaks the pool. Pools that break again and again before returning a single state have a state killing their workers, by memory or a crash, and retrying it would not end.
-                barren = 0 if returned else barren + 1
-                if barren == BARREN_POOLS:
-                    raise
-                unfinished = list(outstanding)
-                logger.warning(
-                    "The grounding pool broke after %d states; %d it held go to a new one.",
-                    returned,
-                    len(unfinished),
-                )
 
     def _predict(self, adjacency, actions, slot_objects, keys, channels) -> dict:
         """The successor signatures the model predicts for one state's groundings, keyed by action name."""

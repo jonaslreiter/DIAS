@@ -40,9 +40,6 @@ fi
 if [[ -n "${NUM_WORKERS:-}" ]]; then
   EXTRA+=(--num-workers "$NUM_WORKERS")
 fi
-if [[ -n "${STATES_PER_WORKER:-}" ]]; then
-  EXTRA+=(--states-per-worker "$STATES_PER_WORKER")
-fi
 if [[ "${RESUME:-0}" == "1" ]]; then
   EXTRA+=(--resume)
 fi
