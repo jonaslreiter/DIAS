@@ -45,3 +45,5 @@ trainer:
   limit_val_batches: 10
   accelerator: gpu
   devices: 1
+  # A run repeats exactly from (domain, seed).
+  deterministic: true

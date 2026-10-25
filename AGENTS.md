@@ -60,7 +60,7 @@ End to end: load a domain and one problem, sample transitions by random walk or 
 - The default batching strategy is `stratified`, an effectively unbounded iterable dataset, so run length comes from `trainer.max_steps`, not dataset exhaustion.
 - The default logger is W&B (`project: dias`, `entity: null`, meaning the logged-in account or `$WANDB_ENTITY`). No account appears anywhere in the code. Checkpoints are written under `logs/dias/<run_id>/checkpoints/` as `final-epoch*.ckpt` and `best-epoch*.ckpt`.
 - **The last encoder convolution has no bias**, deliberately: nothing is normalised after it, so it reaches the assignment as a per-slot constant that Sinkhorn's row scaling removes exactly, and no gradient above float32 round-off ever reached it.
-- **What reproducibility is promised.** A run repeats exactly only under `--trainer.deterministic=true` (Lightning's own flag; do not add a second). It is off by default because it raises on any operation without a deterministic implementation. On CPU the thread count decides the trajectory with or without it, which is why `tests/test_training_characterization.py` sets `torch.set_num_threads(1)` and compares at `TRAJECTORY_TOLERANCE` (1e-4) while the forward golden keeps 1e-6.
+- **What reproducibility is promised.** A run repeats exactly from `(domain, seed)`: `configs/main.yaml` sets Lightning's `trainer.deterministic` (do not add a second flag), which raises on any operation without a deterministic implementation. On CPU the thread count decides the trajectory with or without it, which is why `tests/test_training_characterization.py` sets `torch.set_num_threads(1)` and compares at `TRAJECTORY_TOLERANCE` (1e-4) while the forward golden keeps 1e-6.
 
 ## Validation
 
