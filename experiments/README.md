@@ -116,7 +116,7 @@ See [scaling/README.md](scaling/README.md).
 | `N_SC` | seeds that are both |
 | `n` | seeds scored |
 
-`P` and `R` are shown to two decimals, and never as 1.00 unless every seed reaches 1. Precision and recall are micro-averaged per action: a successor reached by the wrong action counts against both actions. A seed whose validation did not score every problem is left out with a warning. `--source wandb` reads W&B instead of `logs/`.
+`P` and `R` are shown to two decimals, and never as 1.00 unless every seed reaches 1. Precision and recall are micro-averaged per action: a successor reached by the wrong action counts against both actions. A seed whose validation did not score every problem, or ran out of memory, is left out with a warning. `--source wandb` reads W&B instead of `logs/`.
 
 ## Narrowing and re-running
 
@@ -149,7 +149,7 @@ Training repeats exactly from `(domain, seed)`. Validation draws its states with
 
 `experiments/slurm/train.sh`, `experiments/slurm/validate.sh` and `experiments/scaling/slurm/benchmark.sh` each begin with a `── site configuration ──` block holding everything specific to one cluster, including `DIAS_ENV_SETUP`, the snippet that puts a Python with `dias` on `PATH`. Edit that block, or export `DIAS_ENV_SETUP` before launching.
 
-Per-domain resources are in `experiments/configs/slurm-resources.yaml` (training), `slurm-resources-validation.yaml` (validation) and `slurm-resources-validation-mlp.yaml` (MLP-effects validation); `--slurm-resources` and `--slurm-resources-validation` replace them. Training requests GPU shards (`gres: shard:N`); use `gpu:1` where your cluster defines no shards. Every job ends itself once its RAM and swap exceed its `mem`; give such a domain more `mem` in its resources file.
+Per-domain resources are in `experiments/configs/slurm-resources.yaml` (training), `slurm-resources-validation.yaml` (validation) and `slurm-resources-validation-mlp.yaml` (MLP-effects validation); `--slurm-resources` and `--slurm-resources-validation` replace them. Training requests GPU shards (`gres: shard:N`); use `gpu:1` where your cluster defines no shards. Validation scores states in one worker per allocated CPU, each limited to an equal share of the job's `mem`; a state that does not fit even alone ends the seed as `out_of_memory`, which the tables leave out. Every job also ends itself once its RAM and swap exceed its `mem`.
 
 ## Learned precondition categories
 

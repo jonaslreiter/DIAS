@@ -1,6 +1,6 @@
-# Per-domain Slurm resources for the VALIDATION array of an MLP-effects experiment, which `pipeline.validation_resources_file` picks for that validator in launch.py and launch_threshold_validation.py. Same schema as experiments/configs/slurm-resources-validation.yaml, resolved on its own.
+# Per-domain Slurm resources for the validation array of MLP-effects experiments (experiments/launch.py). Same schema as slurm-resources.yaml, resolved on its own.
 #
-# The MLP-effects validator grounds the learned preconditions in every sampled state, so its cost follows how permissive they are rather than the instance alone, and it grounds across every CPU the task is allocated. The times are generous: the 500 walk states take the DIAS validator alone 30 to 45 minutes in most domains, longer where a learned schema has more parameters than the action, and this one also runs the network on every grounding; a task that runs out of time keeps the states it scored, and `launch.py --validate-only --resume` continues from them. Memory bounds the worker count: a worker holds its ground actions until it is replaced after `--states-per-worker` states, over 20 GB on driverlog test-3 for a permissive schema.
+# As in slurm-resources-validation.yaml, one worker per CPU, each limited to an equal share of `mem`. Cost follows how permissive the learned preconditions are, so domains whose schemas ground many actions per state get more time and memory.
 
 defaults:
   time: "08:00:00"
