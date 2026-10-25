@@ -2,12 +2,13 @@
 
 Array task id = seed, so ``--dependency=aftercorr`` pairs training task i with validation task i, and ``--seeds`` becomes a sparse spec such as ``--array=3,7-8``. Runs are identified by a deterministic ``<experiment>-<domain>-s<seed>`` (``validate_runs.run_id_for``), so the two arrays need no id handoff.
 
-Config chain: ``configs/main.yaml`` -> ``pddl/<domain>/config.yaml`` -> ``--experiment-type`` overlay -> ``--ablation`` overlay -> ``--set`` overrides. The experiment type also picks the validator. ``--sweep AXIS`` submits the whole grid once per value of that axis, each into its own sub-experiment. ``--validate-only`` submits the validation array alone, over runs that already trained to ``max_steps``; ``--experiment-type l1`` does nothing else, since L1's learned domains have no training run.
+Config chain: ``configs/main.yaml`` -> ``pddl/<domain>/config.yaml`` -> ``--experiment-type`` overlay -> ``--labels`` overlay -> ``--ablation`` overlay -> ``--set`` overrides. The experiment type also picks the validator. ``--sweep AXIS`` submits the whole grid once per value of that axis, each into its own sub-experiment. ``--validate-only`` submits the validation array alone, over runs that already trained to ``max_steps``; ``--experiment-type l1`` does nothing else, since L1's learned domains have no training run.
 
 Examples
 --------
-    # Full grid: all domains, 10 seeds each.
+    # Full grid: all domains, 10 seeds each; action names, then full STRIPS actions.
     python experiments/launch.py --experiment paper-main
+    python experiments/launch.py --experiment paper-main-strips --labels strips
 
     # Noise sweep point, 2 added / 2 removed atoms.
     python experiments/launch.py --experiment-type noise --experiment noise-a2r2 --set data.init_args.noise.added_atoms=2 --set data.init_args.noise.removed_atoms=2
@@ -76,6 +77,12 @@ EXPERIMENT_OVERLAYS = {
     "mlp": CONFIGS_DIR / "experiment-mlp.yaml",
     "noise": CONFIGS_DIR / "experiment-noise.yaml",
 }
+# What a transition is labelled with; action names need no overlay.
+LABEL_OVERLAYS = {
+    "strips": CONFIGS_DIR / "labels-strips.yaml",
+    "strips-plus": CONFIGS_DIR / "labels-strips-plus.yaml",
+}
+LABELS = ("names", *LABEL_OVERLAYS)
 # Orthogonal to --experiment-type, composed after it; all use the DIAS validator.
 ABLATION_OVERLAYS = {
     "no-slot-weights": CONFIGS_DIR / "ablation-no-slot-weights.yaml",
@@ -196,6 +203,7 @@ class LaunchPlan:
 
     experiment: str
     experiment_type: str
+    labels: str
     ablation: str | None
     validator: str
     threshold: float | None
@@ -347,6 +355,7 @@ def build_plan(args: argparse.Namespace) -> LaunchPlan:
         refused = [
             flag
             for flag, given in (
+                ("--labels", args.labels != "names"),
                 ("--ablation", args.ablation is not None),
                 ("--sweep", args.sweep is not None),
                 ("--set", bool(args.overrides)),
@@ -378,6 +387,8 @@ def build_plan(args: argparse.Namespace) -> LaunchPlan:
     exp_overlay = EXPERIMENT_OVERLAYS.get(args.experiment_type)
     if exp_overlay is not None:
         overlays.append(exp_overlay)
+    if args.labels in LABEL_OVERLAYS:
+        overlays.append(LABEL_OVERLAYS[args.labels])
     if args.ablation is not None:
         overlays.append(ABLATION_OVERLAYS[args.ablation])
 
@@ -403,6 +414,7 @@ def build_plan(args: argparse.Namespace) -> LaunchPlan:
     return LaunchPlan(
         experiment=args.experiment,
         experiment_type=args.experiment_type,
+        labels=args.labels,
         ablation=args.ablation,
         validator=EXPERIMENT_VALIDATOR[args.experiment_type],
         threshold=threshold,
@@ -439,7 +451,7 @@ def build_plan(args: argparse.Namespace) -> LaunchPlan:
 def describe(plan: LaunchPlan) -> None:
     """Print what is about to happen, before it happens."""
     print(
-        f"experiment : {plan.experiment}  (type={plan.experiment_type}, ablation={plan.ablation or 'none'}, validator={plan.validator}, threshold={'default' if plan.threshold is None else f'{plan.threshold:g}'})"
+        f"experiment : {plan.experiment}  (type={plan.experiment_type}, labels={plan.labels}, ablation={plan.ablation or 'none'}, validator={plan.validator}, threshold={'default' if plan.threshold is None else f'{plan.threshold:g}'})"
     )
     print(
         f"domains    : {len(plan.domains)} x {len(plan.seeds)} runs  (seeds={format_array(plan.seeds)}, backend={plan.backend})"
@@ -601,6 +613,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     p.add_argument(
         "--experiment-type", default="dias", choices=sorted(EXPERIMENT_TYPES)
+    )
+    p.add_argument(
+        "--labels",
+        default="names",
+        choices=LABELS,
+        help="What each transition is labelled with: the action name (default), full STRIPS actions, or STRIPS+ actions.",
     )
     p.add_argument(
         "--ablation",

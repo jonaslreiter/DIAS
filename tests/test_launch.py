@@ -133,6 +133,20 @@ class ValidationResourcesTest(unittest.TestCase):
         self.assertNotEqual(requested["mlp"], requested["dias"])
 
 
+class LabelsTest(unittest.TestCase):
+    def test_a_label_setting_composes_its_overlay_after_the_experiment_type(self):
+        for labels, overlays in (
+            ("names", ["experiment-noise.yaml"]),
+            ("strips", ["experiment-noise.yaml", "labels-strips.yaml"]),
+            ("strips-plus", ["experiment-noise.yaml", "labels-strips-plus.yaml"]),
+        ):
+            with self.subTest(labels=labels):
+                plan = launch.build_plan(
+                    plan_args(temp_dir(self), labels=labels, experiment_type="noise")
+                )
+                self.assertEqual([path.name for path in plan.overlays], overlays)
+
+
 class L1LaunchTest(unittest.TestCase):
     def args(self, *extra, domains=("gripper",)):
         return launch.parse_args(
@@ -155,7 +169,7 @@ class L1LaunchTest(unittest.TestCase):
         self.assertTrue([opt for opt in validate if "EXP_TYPE=l1" in opt])
 
     def test_without_domains_it_validates_every_domain_l1_learned(self):
-        # satellite-recal came after the comparison, so L1 never learned it.
+        # L1 learned no domain for satellite-recal.
         plan = launch.build_plan(self.args(domains=None))
         self.assertIn("satellite", plan.domains)
         self.assertNotIn("satellite-recal", plan.domains)
@@ -166,6 +180,7 @@ class L1LaunchTest(unittest.TestCase):
 
     def test_options_for_a_training_run_are_refused(self):
         for extra in (
+            ["--labels", "strips"],
             ["--ablation", "no-pcgrad"],
             ["--set", "model.init_args.num_slots=3"],
             ["--validation-threshold", "0.25"],

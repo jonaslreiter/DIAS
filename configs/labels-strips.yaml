@@ -1,0 +1,9 @@
+# Full STRIPS actions: each transition is labelled with the action and all its arguments.
+data:
+  init_args:
+    action_arguments: true
+model:
+  init_args:
+    force_action_args: true
+    per_action_slots: true
+    num_slots: null
