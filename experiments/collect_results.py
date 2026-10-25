@@ -16,10 +16,10 @@ P and R are shown to two decimals, a rate below 1 as at most 0.99.
 ``--sweep AXIS`` instead reads the sub-experiments ``launch.py --sweep`` wrote and prints one domain x value matrix per metric (``--markdown``: one table, a row per domain and value); ``--threshold-sweep`` does the same over the thresholds of ``launch_threshold_validation.py``, whose columns share one set of checkpoints. Without a sweep, ``--experiment`` takes any number of unrelated experiments, each with its own table.
 
 Usage:
-    python experiments/collect_results.py --experiment paper-main [--source wandb] [--domains gripper hanoi]
-    python experiments/collect_results.py --experiment dias-full abl-no-pcgrad --markdown experiments/results/ablations-summary.md
-    python experiments/collect_results.py --experiment aux-sweep --sweep aux-loss-alpha --markdown experiments/results/aux-sweep.md
-    python experiments/collect_results.py --experiment dias-full --threshold-sweep --markdown experiments/results/threshold-sweep.md
+    python experiments/collect_results.py --experiment dias-names [--source wandb] [--domains gripper hanoi]
+    python experiments/collect_results.py --experiment dias-names abl-no-pcgrad --markdown experiments/results/ablations.md
+    python experiments/collect_results.py --experiment alpha --sweep aux-loss-alpha --markdown experiments/results/alpha-sweep.md
+    python experiments/collect_results.py --experiment dias-names --threshold-sweep --markdown experiments/results/threshold.md
 """
 
 from __future__ import annotations

@@ -6,29 +6,27 @@ Config chain: ``configs/main.yaml`` -> ``pddl/<domain>/config.yaml`` -> ``--expe
 
 Examples
 --------
-    # Full grid: all domains, 10 seeds each; action names, then full STRIPS actions.
-    python experiments/launch.py --experiment paper-main
-    python experiments/launch.py --experiment paper-main-strips --labels strips
+    # All domains, 10 seeds each: action names, then full STRIPS actions.
+    python experiments/launch.py --experiment dias-names
+    python experiments/launch.py --experiment dias-strips --labels strips
 
-    # Noise sweep point, 2 added / 2 removed atoms.
-    python experiments/launch.py --experiment-type noise --experiment noise-a2r2 --set data.init_args.noise.added_atoms=2 --set data.init_args.noise.removed_atoms=2
+    # 8 flips per transition.
+    python experiments/launch.py --experiment noise-f8 --experiment-type noise --set data.init_args.noise.added_atoms=2 --set data.init_args.noise.removed_atoms=2
 
-    # An ablation, and a sweep into sub-experiments aux-sweep-aux0.01 .. -aux1.
-    python experiments/launch.py --ablation no-pcgrad --experiment abl-no-pcgrad
-    python experiments/launch.py --experiment aux-sweep --sweep aux-loss-alpha --num-runs 3
+    # An ablation, and a sweep into the experiments alpha-aux0.01 .. alpha-aux1.
+    python experiments/launch.py --experiment abl-no-pcgrad --ablation no-pcgrad
+    python experiments/launch.py --experiment alpha --sweep aux-loss-alpha --seeds 0-4
 
-    # The L1 baseline on every domain.
-    python experiments/launch.py --experiment-type l1 --experiment l1
+    # The L1 baseline.
+    python experiments/launch.py --experiment l1 --experiment-type l1
 
-    # Re-run only the seeds that failed, into the same experiment.
-    python experiments/launch.py --experiment paper-main --domains gripper --seeds 3 7-8
-
-    # Re-run only the validation step, over runs that already finished training.
-    python experiments/launch.py --experiment paper-main --domains visitall --validate-only
+    # Re-run seeds into the same experiment, or only their validation.
+    python experiments/launch.py --experiment dias-names --domains gripper --seeds 3 7-8
+    python experiments/launch.py --experiment dias-names --domains visitall --validate-only
 
     # Print without submitting, or run here instead of on Slurm.
-    python experiments/launch.py --domains gripper --num-runs 3 --dry-run
-    python experiments/launch.py --backend local --domains gripper --num-runs 2 --experiment smoke --no-wandb
+    python experiments/launch.py --experiment dias-names --domains gripper --dry-run
+    python experiments/launch.py --experiment smoke --backend local --domains gripper --num-runs 1 --no-wandb
 """
 
 from __future__ import annotations
