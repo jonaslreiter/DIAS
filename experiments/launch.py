@@ -101,20 +101,20 @@ VALIDATE_SCRIPT = SLURM_DIR / "validate.sh"
 class SweepAxis:
     """One hyperparameter axis that ``--sweep`` varies over the full grid.
 
-    ``values`` is the bare flag's default grid, ``tag`` the sub-experiment infix, and ``linked`` further overrides that move with the axis value. All are appended last, so they beat the domain config and the overlays, and all are rejected as ``--set`` targets.
+    ``values`` is the bare flag's default grid and ``tag`` the sub-experiment infix. A value sets ``param`` to ``value * scale``, and ``linked`` gives further overrides that move with it. All are appended last, so they beat the domain config and the overlays, and all are rejected as ``--set`` targets.
     """
 
     param: str
     tag: str
     values: tuple[float, ...]
-    cast: Callable[[float], float]
+    scale: float = 1.0
     linked: Callable[[float], dict[str, float]] | None = None
 
 
 def _dataset_size_overrides(value: float) -> dict[str, int]:
     """Sampling knobs that move with ``min_per_action_train`` on the size axis.
 
-    Pinning the caps to the same N makes the dataset size exact rather than a lower bound. The ``*_floor`` overrides neutralise the noise overlay's 200/100 floors, which are composed later and would clamp the small points back up.
+    Pinning the caps to the same N makes the dataset size exact rather than a lower bound, and pinning the ``*_floor`` knobs keeps any floor a run sets from raising it.
     """
     n = int(value)
     half = max(1, n // 2)
@@ -133,28 +133,32 @@ SWEEP_AXES: dict[str, SweepAxis] = {
         param="model.init_args.aux_loss_alpha",
         tag="aux",
         values=(0.01, 0.03, 0.1, 0.3, 1.0),
-        cast=float,
     ),
     "num-slots": SweepAxis(
         param="model.init_args.num_slots",
         tag="slots",
         values=(5, 7, 9),
-        cast=int,
     ),
     # 0 means tau sits at its floor from step 0; with the default floor of 0 that is the exact precondition product rather than a relaxation. Exponential handles the degenerate case.
     "tau": SweepAxis(
         param=f"{SCHEDULE_KEY}.init_args.every",
         tag="tau",
         values=(0, 100, 500, 1000, 5000),
-        cast=int,
     ),
     # Training-set size, in transitions per action schema (N train + N/2 valid). The grid brackets every tuned per-domain minimum, so each domain is scaled both down and up relative to its own default.
     "dataset-size": SweepAxis(
         param="data.init_args.min_per_action_train",
         tag="n",
         values=(20, 50, 100, 200, 500, 1000, 2000),
-        cast=int,
         linked=_dataset_size_overrides,
+    ),
+    # Flips per transition. Both states of a transition are corrupted, each by a quarter of the flips as added and a quarter as removed atoms; needs --experiment-type noise.
+    "noise": SweepAxis(
+        param="data.init_args.noise.added_atoms",
+        tag="f",
+        values=(1, 2, 4, 8),
+        scale=0.25,
+        linked=lambda flips: {"data.init_args.noise.removed_atoms": flips / 4},
     ),
 }
 
@@ -181,7 +185,7 @@ def _sweep_override_args(axis: SweepAxis, value: float) -> list[str]:
     """Lightning args pinning ``axis`` to ``value`` (appended last, so they win)."""
     extra = axis.linked(value) if axis.linked else {}
     linked = [f"--{k}={v:g}" for k, v in extra.items()]
-    return [f"--{axis.param}={value:g}", *linked]
+    return [f"--{axis.param}={value * axis.scale:g}", *linked]
 
 
 # ── the launch, resolved ──────────────────────────────────────────────────────
@@ -287,6 +291,8 @@ def _sweep_points(args: argparse.Namespace) -> tuple:
     for param in _axis_params(axis):
         if any(o.startswith(f"{param}=") for o in args.overrides):
             raise SystemExit(f"--set {param}=... conflicts with --sweep {axis_name}")
+    if axis_name == "noise" and args.experiment_type != "noise":
+        raise SystemExit("--sweep noise needs --experiment-type noise")
     if axis_name == "aux-loss-alpha" and args.ablation == "no-aux-loss":
         raise SystemExit(
             "--ablation no-aux-loss disables the auxiliary losses, so sweeping their alpha has no effect"

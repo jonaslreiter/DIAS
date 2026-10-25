@@ -147,6 +147,27 @@ class LabelsTest(unittest.TestCase):
                 self.assertEqual([path.name for path in plan.overlays], overlays)
 
 
+class NoiseSweepTest(unittest.TestCase):
+    def test_flips_per_transition_set_a_quarter_added_and_a_quarter_removed(self):
+        plan = launch.build_plan(
+            plan_args(temp_dir(self), experiment_type="noise", sweep="noise")
+        )
+        self.assertEqual(
+            [point.experiment for point in plan.points],
+            ["exp-f1", "exp-f2", "exp-f4", "exp-f8"],
+        )
+        self.assertIn(
+            "--data.init_args.noise.added_atoms=0.5", plan.points[1].overrides
+        )
+        self.assertIn(
+            "--data.init_args.noise.removed_atoms=0.5", plan.points[1].overrides
+        )
+
+    def test_it_needs_the_noise_experiment_type(self):
+        with self.assertRaisesRegex(SystemExit, "--experiment-type noise"):
+            launch.build_plan(plan_args(temp_dir(self), sweep="noise"))
+
+
 class L1LaunchTest(unittest.TestCase):
     def args(self, *extra, domains=("gripper",)):
         return launch.parse_args(

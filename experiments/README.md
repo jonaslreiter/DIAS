@@ -60,14 +60,11 @@ python experiments/collect_results.py --experiment mlp-names --markdown experime
 
 ### Noise
 
-`--experiment-type noise` corrupts both states of every transition. `added_atoms` and `removed_atoms` are the expected flips per state, so 1, 2, 4 and 8 flips per transition are 0.25, 0.5, 1 and 2 of each.
+`--sweep noise` trains on transitions with 1, 2, 4 and 8 flipped atoms each, every level as its own experiment `noise-f<flips>`.
 
 ```bash
-python experiments/launch.py --experiment noise-f1 --experiment-type noise --set data.init_args.noise.added_atoms=0.25 --set data.init_args.noise.removed_atoms=0.25
-python experiments/launch.py --experiment noise-f2 --experiment-type noise --set data.init_args.noise.added_atoms=0.5 --set data.init_args.noise.removed_atoms=0.5
-python experiments/launch.py --experiment noise-f4 --experiment-type noise --set data.init_args.noise.added_atoms=1 --set data.init_args.noise.removed_atoms=1
-python experiments/launch.py --experiment noise-f8 --experiment-type noise --set data.init_args.noise.added_atoms=2 --set data.init_args.noise.removed_atoms=2
-python experiments/collect_results.py --experiment noise-f1 noise-f2 noise-f4 noise-f8 --markdown experiments/results/noise.md
+python experiments/launch.py --experiment noise --experiment-type noise --sweep noise
+python experiments/collect_results.py --experiment noise --sweep noise --markdown experiments/results/noise.md
 ```
 
 ### Ablations
@@ -93,15 +90,6 @@ python experiments/collect_results.py --experiment dias-names ablation-no-slot-w
 ```bash
 python experiments/launch.py --experiment alpha --sweep aux-loss-alpha --seeds 0-4
 python experiments/collect_results.py --experiment alpha --sweep aux-loss-alpha --markdown experiments/results/alpha-sweep.md
-```
-
-Logistics at twice and four times its sampling bounds:
-
-```bash
-python experiments/launch.py --experiment alpha-logistics-n500 --domains logistics --sweep aux-loss-alpha --seeds 0-4 --set data.init_args.min_per_action_train=500 --set data.init_args.min_per_action_valid=250 --set data.init_args.max_per_action_train=2000 --set data.init_args.max_per_action_valid=1000
-python experiments/launch.py --experiment alpha-logistics-n1000 --domains logistics --sweep aux-loss-alpha --seeds 0-4 --set data.init_args.min_per_action_train=1000 --set data.init_args.min_per_action_valid=500 --set data.init_args.max_per_action_train=4000 --set data.init_args.max_per_action_valid=2000
-python experiments/collect_results.py --experiment alpha-logistics-n500 --sweep aux-loss-alpha --markdown experiments/results/alpha-logistics-n500.md
-python experiments/collect_results.py --experiment alpha-logistics-n1000 --sweep aux-loss-alpha --markdown experiments/results/alpha-logistics-n1000.md
 ```
 
 ### Threshold sensitivity

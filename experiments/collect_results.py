@@ -233,7 +233,7 @@ def print_sweep_matrix(
 def write_sweep_markdown(
     path: Path,
     axis_name: str,
-    param: str,
+    flag: str,
     values: list[float],
     names: dict[float, str],
     domains: list[str],
@@ -245,7 +245,7 @@ def write_sweep_markdown(
     lines = [
         f"# {axis_name} sweep",
         "",
-        f"`{param}`, from "
+        f"`{flag}`, from "
         + ", ".join(f"`{names[v]}`" for v in values)
         + "."
         + (" Bold: the value in the domain's `config.yaml`." if configured else ""),
@@ -334,7 +334,7 @@ def _report_matrix(
         write_sweep_markdown(
             args.markdown,
             axis_name,
-            param,
+            "--threshold-sweep" if axis_name == "threshold" else f"--sweep {axis_name}",
             values,
             names,
             ordered,
