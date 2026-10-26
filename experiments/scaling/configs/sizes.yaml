@@ -7,7 +7,7 @@
 # `target` is the rung of the shared ladder that entry belongs to. The three domains scale in different units (blocks / cities x locations / grid cells), so they cannot all hit the same object count exactly: logistics lands on 21, 38, 67, 103, 147 against targets 20, 40, 68, 100, 150. The target is what aligns the columns of experiments/scaling/collect_scaling.py; the exact counts are reported in their own table there. Targets must be unique within a domain.
 
 # Per (domain, size). The seed drives model init and transition sampling; the instance itself is fixed, generated once and committed.
-seeds: [0, 1, 2]
+seeds: [0, 1, 2, 3, 4]
 
 # The first `warmup_steps` steps are discarded (CUDA context, cuDNN autotuning, allocator warm-up), the peak-memory counters are reset right after them, and the throughput is taken over the remaining `measure_steps`.
 warmup_steps: 20

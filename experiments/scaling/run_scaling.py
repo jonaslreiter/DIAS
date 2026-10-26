@@ -5,7 +5,7 @@ Every size is its own ``benchmark.py`` subprocess, which is the point of the ind
 
 Usage
 -----
-    python experiments/scaling/run_scaling.py --domain blocks-3 --seed 0 [--experiment scaling-a10]
+    python experiments/scaling/run_scaling.py --domain blocks-3 --seed 0 [--experiment scaling-a10] [--log-dir logs]
 """
 
 from __future__ import annotations
@@ -19,8 +19,9 @@ from pathlib import Path
 
 import yaml
 
-from benchmark import DEFAULT_RESULTS_DIR, SIZES_CONFIG, instance_path, result_path
+from benchmark import SIZES_CONFIG, instance_path, result_path, results_dir
 from generate_instances import OBJECT_COUNT, instance_id
+from pipeline import LOGS_DIR
 
 SCALING_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCALING_DIR.parents[1]
@@ -50,18 +51,18 @@ def run_ladder(
     seed: int,
     experiment: str,
     cfg: dict,
-    results_dir: Path,
+    log_dir: Path,
     skip_existing: bool,
     accelerator: str | None = None,
 ) -> int:
     instances = instances_for(domain, cfg)
     print(
-        f"[{domain} seed={seed}] ladder: {', '.join(instances)} -> {results_dir / experiment / domain}",
+        f"[{domain} seed={seed}] ladder: {', '.join(instances)} -> {results_dir(log_dir, experiment) / domain}",
         flush=True,
     )
     failures = 0
     for instance in instances:
-        out = result_path(results_dir, experiment, domain, instance, seed)
+        out = result_path(log_dir, experiment, domain, instance, seed)
         if skip_existing and out.exists():
             print(f"[{domain} seed={seed}] {instance}: exists, skipping", flush=True)
             continue
@@ -83,7 +84,7 @@ def run_ladder(
             "--experiment", experiment,
             "--warmup", str(cfg["warmup_steps"]),
             "--measure", str(cfg["measure_steps"]),
-            "--results-dir", str(results_dir),
+            "--log-dir", str(log_dir),
         ]  # fmt: skip
         if accelerator:
             cmd += ["--accelerator", accelerator]
@@ -109,7 +110,7 @@ def main() -> int:
     p.add_argument("--domain", required=True)
     p.add_argument("--seed", type=int, required=True)
     p.add_argument("--experiment", default="scaling")
-    p.add_argument("--results-dir", type=Path, default=DEFAULT_RESULTS_DIR)
+    p.add_argument("--log-dir", type=Path, default=LOGS_DIR)
     p.add_argument("--sizes-config", type=Path, default=SIZES_CONFIG)
     p.add_argument(
         "--skip-existing",
@@ -130,13 +131,15 @@ def main() -> int:
         seed=args.seed,
         experiment=args.experiment,
         cfg=cfg,
-        results_dir=args.results_dir,
+        log_dir=args.log_dir,
         skip_existing=args.skip_existing,
         accelerator=args.accelerator,
     )
 
     written = sorted(
-        (args.results_dir / args.experiment / args.domain).glob(f"*-s{args.seed}.json")
+        (results_dir(args.log_dir, args.experiment) / args.domain).glob(
+            f"*-s{args.seed}.json"
+        )
     )
     print(f"\n[{args.domain} seed={args.seed}] {len(written)} result(s):", flush=True)
     for path in written:

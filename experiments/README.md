@@ -20,11 +20,11 @@ experiments/
 └── results/                        collected tables (gitignored)
 ```
 
-Runs write `logs/dias/<run>/` (checkpoints, each with its learned domain as PDDL beside it), `logs/validation/<experiment>/` (one result JSON per domain and seed) and `logs/slurm/` (job output).
+Runs write `logs/dias/<run>/` (checkpoints, each with its learned domain as PDDL beside it), `logs/validation/<experiment>/` (one result JSON per domain and seed) and `logs/slurm/` (job output); `--log-dir` puts them under another directory.
 
 ## How a launch works
 
-For each domain, `launch.py` submits a Slurm array that trains one run per seed and an array that validates each run once it has trained; `--backend local` runs the same steps here, one after another. A run is named `<experiment>-<domain>-s<seed>`, and `--experiment` is also its W&B group. By default a launch covers all 14 domains with seeds 0 to 9, labelled with action names.
+For each domain, `launch.py` submits a Slurm array that trains one run per seed and an array that validates each run once it has trained; `--backend local` runs the same steps here, one after another. A run is named `<experiment>-<domain>-s<seed>`, and `--experiment` is also its W&B group. By default a launch covers all 14 domains with seeds 0 to 9, labelled with action names. The main table runs all ten seeds; every other experiment runs seeds 0 to 4 (`--seeds 0-4`).
 
 A run's config is composed from these files, later ones winning:
 
@@ -54,7 +54,7 @@ L1 trains nothing: its launch scores the domains in `l1_pddl/`, every domain but
 ### MLP effects
 
 ```bash
-python experiments/launch.py --experiment mlp-names --experiment-type mlp
+python experiments/launch.py --experiment mlp-names --experiment-type mlp --seeds 0-4
 python experiments/collect_results.py --experiment mlp-names --markdown experiments/results/mlp.md
 ```
 
@@ -63,7 +63,7 @@ python experiments/collect_results.py --experiment mlp-names --markdown experime
 `--sweep noise` trains on transitions with 1, 2, 4 and 8 flipped atoms each, every level as its own experiment `noise-f<flips>`.
 
 ```bash
-python experiments/launch.py --experiment noise --experiment-type noise --sweep noise
+python experiments/launch.py --experiment noise --experiment-type noise --sweep noise --seeds 0-4
 python experiments/collect_results.py --experiment noise --sweep noise --markdown experiments/results/noise.md
 ```
 
@@ -79,9 +79,11 @@ python experiments/collect_results.py --experiment noise --sweep noise --markdow
 | `no-random-embeddings` | the random initial node features |
 
 ```bash
-for ablation in no-slot-weights no-precondition-loss no-effect-loss no-aux-loss no-pcgrad no-random-embeddings; do python experiments/launch.py --experiment ablation-$ablation --ablation $ablation; done
-python experiments/collect_results.py --experiment dias-names ablation-no-slot-weights ablation-no-precondition-loss ablation-no-effect-loss ablation-no-aux-loss ablation-no-pcgrad ablation-no-random-embeddings --markdown experiments/results/ablations.md
+for ablation in no-slot-weights no-precondition-loss no-effect-loss no-aux-loss no-pcgrad no-random-embeddings; do python experiments/launch.py --experiment ablation-$ablation --ablation $ablation --seeds 0-4; done
+python experiments/collect_results.py --experiment dias-names ablation-no-slot-weights ablation-no-precondition-loss ablation-no-effect-loss ablation-no-aux-loss ablation-no-pcgrad ablation-no-random-embeddings --seeds 0-4 --markdown experiments/results/ablations.md
 ```
+
+`--seeds 0-4` compares the ablations with the same seeds of `dias-names`.
 
 ### α sweep
 
@@ -94,10 +96,10 @@ python experiments/collect_results.py --experiment alpha --sweep aux-loss-alpha 
 
 ### Threshold sensitivity
 
-Re-validates the finished `dias-names` runs at thresholds 0.1, 0.25, 0.5, 0.75 and 0.9, each into `dias-names-thr<T>`, without retraining:
+Re-validates seeds 0 to 4 of the finished `dias-names` runs at thresholds 0.1, 0.25, 0.5, 0.75 and 0.9, each into `dias-names-thr<T>`, without retraining:
 
 ```bash
-python experiments/launch_threshold_validation.py --experiment dias-names
+python experiments/launch_threshold_validation.py --experiment dias-names --seeds 0-4
 python experiments/collect_results.py --experiment dias-names --threshold-sweep --markdown experiments/results/threshold.md
 ```
 
@@ -116,7 +118,7 @@ See [scaling/README.md](scaling/README.md).
 | `N_SC` | seeds that are both |
 | `n` | seeds scored |
 
-`P` and `R` are shown to two decimals, and never as 1.00 unless every seed reaches 1. Precision and recall are micro-averaged per action: a successor reached by the wrong action counts against both actions. A seed whose validation did not score every problem, or ran out of memory, is left out with a warning. `--source wandb` reads W&B instead of `logs/`.
+`P` and `R` are shown to two decimals, and never as 1.00 unless every seed reaches 1. Precision and recall are micro-averaged per action: a successor reached by the wrong action counts against both actions. A seed whose validation did not score every problem, or ran out of memory, is left out with a warning. `--seeds` restricts every experiment to those seeds, and `--source wandb` reads W&B instead of `logs/`.
 
 ## Narrowing and re-running
 
@@ -129,7 +131,7 @@ python experiments/launch.py --experiment dias-names --dry-run
 python experiments/launch.py --experiment smoke --backend local --domains gripper --num-runs 1 --no-wandb
 ```
 
-Re-running seeds into the same experiment replaces their results. `--validate-only` validates runs that finished training; `--resume` continues a validation from the problems and states it already scored, so a killed one loses at most the state in progress. `--dry-run` prints the sbatch commands, and `--backend local` runs here instead of on Slurm.
+Re-running seeds into the same experiment replaces their results. `--validate-only` validates runs that finished training; `--resume` continues a validation from the problems and states it already scored, so a killed one loses at most the state in progress. `--dry-run` prints the sbatch commands, and `--backend local` runs here instead of on Slurm. `launch_threshold_validation.py` and `scaling/launch_scaling.py` take `--domains`, `--seeds`, `--num-runs`, `--log-dir`, `--backend` and `--dry-run` with the same meaning, and the first also `--resume`.
 
 ## Validating one model
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Aggregate the scaling study into domain x instance-size tables.
 
-Reads ``logs/scaling/<experiment>/<domain>/<instance>-s<seed>.json`` and prints one matrix per metric (iterations/second, peak GPU memory, step time, sampling time, seeds per cell), mean +/- population stdev over the seeds. OOM shows as ``oom``, a missing point as ``-``.
+Reads ``<log-dir>/scaling/<experiment>/<domain>/<instance>-s<seed>.json`` and prints one matrix per metric (iterations/second, peak GPU memory, step time, sampling time, seeds per cell), mean +/- population stdev over the seeds. OOM shows as ``oom``, a missing point as ``-``.
 
     python experiments/scaling/collect_scaling.py --experiment scaling-a10
     python experiments/scaling/collect_scaling.py --experiment scaling-a10 --markdown experiments/results/scaling.md
@@ -18,7 +18,8 @@ from pathlib import Path
 
 import yaml
 
-from benchmark import DEFAULT_RESULTS_DIR, SIZES_CONFIG
+from benchmark import SIZES_CONFIG, results_dir
+from pipeline import LOGS_DIR
 from run_scaling import ladder_for
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -34,12 +35,10 @@ METRICS = [
 ]
 
 
-def load_results(
-    results_dir: Path, experiment: str, domain: str
-) -> dict[str, list[dict]]:
+def load_results(log_dir: Path, experiment: str, domain: str) -> dict[str, list[dict]]:
     """{instance id: [record per seed]} for one domain."""
     out: dict[str, list[dict]] = {}
-    directory = results_dir / experiment / domain
+    directory = results_dir(log_dir, experiment) / domain
     for path in sorted(directory.glob("*.json")) if directory.is_dir() else []:
         record = json.loads(path.read_text())
         out.setdefault(record["instance"], []).append(record)
@@ -108,7 +107,7 @@ def main() -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     p.add_argument("--experiment", default="scaling")
-    p.add_argument("--results-dir", type=Path, default=DEFAULT_RESULTS_DIR)
+    p.add_argument("--log-dir", type=Path, default=LOGS_DIR)
     p.add_argument("--sizes-config", type=Path, default=SIZES_CONFIG)
     p.add_argument("--domains", nargs="+", default=None)
     p.add_argument(
@@ -120,17 +119,18 @@ def main() -> int:
     cfg = yaml.safe_load(args.sizes_config.read_text())
     domains = args.domains or list(cfg["domains"])
     ladders = {d: ladder_for(d, cfg) for d in domains}
-    results = {d: load_results(args.results_dir, args.experiment, d) for d in domains}
+    results = {d: load_results(args.log_dir, args.experiment, d) for d in domains}
 
     found = sum(len(v) for r in results.values() for v in r.values())
     if not found:
         raise SystemExit(
-            f"No results under {args.results_dir / args.experiment}. Run experiments/scaling/launch_scaling.py first."
+            f"No results under {results_dir(args.log_dir, args.experiment)}. Run experiments/scaling/launch_scaling.py first."
         )
     print(f"experiment={args.experiment}  runs={found}")
     gpus = {
         r.get("gpu_name", "?") for d in results.values() for v in d.values() for r in v
     }
+    seeds = {r["seed"] for d in results.values() for v in d.values() for r in v}
     print(f"GPU(s): {', '.join(sorted(gpus))}")
     print("columns = ladder rung; cells = mean ± stdev over seeds")
 
@@ -175,9 +175,9 @@ def main() -> int:
     if args.markdown:
         args.markdown.parent.mkdir(parents=True, exist_ok=True)
         blocks = [f"# Scaling study: {args.experiment}", ""]
-        blocks.append(f"GPU(s): {', '.join(sorted(gpus))}. ")
-        blocks.append("Columns are the number of objects in the instance; cells are")
-        blocks.append(f"mean ± stdev over {len(cfg['seeds'])} seeds.\n")
+        blocks.append(
+            f"GPU(s): {', '.join(sorted(gpus))}. Columns are the number of objects in the instance; cells are mean ± stdev over {len(seeds)} seeds.\n"
+        )
         for title, hdr, rws in sections:
             blocks += [f"## {title}", "", _markdown_table(hdr, rws), ""]
         args.markdown.write_text("\n".join(blocks) + "\n")

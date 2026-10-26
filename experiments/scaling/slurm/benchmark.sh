@@ -36,6 +36,6 @@ python "${DIAS_ROOT}/experiments/scaling/run_scaling.py" \
   --domain "$DOMAIN" \
   --seed "$SEED" \
   --experiment "$EXPERIMENT" \
-  --results-dir "$RESULTS_DIR" \
+  --log-dir "$LOGS_DIR" \
   --sizes-config "$SIZES_CONFIG" \
   "${EXTRA[@]}"

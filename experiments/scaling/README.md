@@ -1,6 +1,6 @@
 # Instance-size scaling
 
-Training iterations per second and peak GPU memory against the number of objects, on `blocks-3`, `logistics` and `delivery`, six instance sizes each, seeds 0 to 2. Each point is a real training run on the usual config chain plus `configs/scaling.yaml`, cut to 20 warm-up and 100 measured steps on an exclusive GPU.
+Training iterations per second and peak GPU memory against the number of objects, on `blocks-3`, `logistics` and `delivery`, six instance sizes each, seeds 0 to 4. Each point is a real training run on the usual config chain plus `configs/scaling.yaml`, cut to 20 warm-up and 100 measured steps on an exclusive GPU.
 
 | domain | object counts |
 |---|---|
@@ -11,7 +11,7 @@ Training iterations per second and peak GPU memory against the number of objects
 ## Running it
 
 ```bash
-python experiments/scaling/launch_scaling.py --experiment scaling
+python experiments/scaling/launch_scaling.py --experiment scaling --seeds 0-4
 python experiments/scaling/collect_scaling.py --experiment scaling --markdown experiments/results/scaling.md
 ```
 
@@ -20,12 +20,12 @@ One Slurm array per domain, one task per seed, each walking the domain's sizes i
 `collect_scaling.py` prints a domain × object-count table per metric (iterations per second, peak GPU memory allocated and reserved, step time, sampling time, peak host memory), mean ± standard deviation over the seeds; `--csv` writes the per-run rows instead.
 
 ```bash
-python experiments/scaling/launch_scaling.py --experiment scaling --dry-run
-python experiments/scaling/launch_scaling.py --experiment scaling --domains delivery --seeds 1 2 --skip-existing
+python experiments/scaling/launch_scaling.py --experiment scaling --seeds 0-4 --dry-run
+python experiments/scaling/launch_scaling.py --experiment scaling --domains delivery --seeds 1-2 --skip-existing
 python experiments/scaling/launch_scaling.py --experiment smoke --backend local --domains blocks-3 --seeds 0
 ```
 
-Results are written to `logs/scaling/<experiment>/<domain>/<instance>-s<seed>.json`.
+Results are written to `logs/scaling/<experiment>/<domain>/<instance>-s<seed>.json` and job output to `logs/slurm/`. `--seeds`, `--num-runs`, `--log-dir`, `--backend` and `--dry-run` work as for `experiments/launch.py`; `collect_scaling.py` takes the same `--log-dir`.
 
 ## Instances
 

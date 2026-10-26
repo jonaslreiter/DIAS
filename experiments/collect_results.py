@@ -13,11 +13,11 @@ A seed's problems are reduced to one precision / recall by micro-averaging their
 
 P and R are shown to two decimals, a rate below 1 as at most 0.99.
 
-``--sweep AXIS`` instead reads the sub-experiments ``launch.py --sweep`` wrote and prints one domain x value matrix per metric (``--markdown``: one table, a row per domain and value); ``--threshold-sweep`` does the same over the thresholds of ``launch_threshold_validation.py``, whose columns share one set of checkpoints. Without a sweep, ``--experiment`` takes any number of unrelated experiments, each with its own table.
+``--sweep AXIS`` instead reads the sub-experiments ``launch.py --sweep`` wrote and prints one domain x value matrix per metric (``--markdown``: one table, a row per domain and value); ``--threshold-sweep`` does the same over the thresholds of ``launch_threshold_validation.py``, whose columns share one set of checkpoints. Without a sweep, ``--experiment`` takes any number of unrelated experiments, each with its own table. ``--seeds`` restricts every experiment to those seeds, so experiments run with different seed counts are compared on the same ones.
 
 Usage:
     python experiments/collect_results.py --experiment dias-names [--source wandb] [--domains gripper hanoi]
-    python experiments/collect_results.py --experiment dias-names ablation-no-pcgrad --markdown experiments/results/ablations.md
+    python experiments/collect_results.py --experiment dias-names ablation-no-pcgrad --seeds 0-4 --markdown experiments/results/ablations.md
     python experiments/collect_results.py --experiment alpha --sweep aux-loss-alpha --markdown experiments/results/alpha-sweep.md
     python experiments/collect_results.py --experiment dias-names --threshold-sweep --markdown experiments/results/threshold.md
 """
@@ -46,7 +46,9 @@ from pipeline import (
     WANDB_PROJECT,
     add_logging_arguments,
     domain_config,
+    format_array,
     load_yaml,
+    parse_seeds,
 )
 
 logger = logging.getLogger("dias.collect")
@@ -105,12 +107,15 @@ def _seed_precision_recall(per_problem: dict) -> tuple[float, float] | None:
 
 
 def collect_local(
-    experiment: str, logs_dir: Path
+    experiment: str, logs_dir: Path, seeds: set[int] | None = None
 ) -> dict[str, list[tuple[float, float]]]:
     root = logs_dir / "validation" / experiment
     by_domain: dict[str, list[tuple[float, float]]] = {}
     for seed_json in sorted(root.glob("*/seed*.json")):
         payload = json.loads(seed_json.read_text())
+        seed = payload.get("seed", int(seed_json.stem.removeprefix("seed")))
+        if seeds is not None and seed not in seeds:
+            continue
         domain = payload.get("domain", seed_json.parent.name)
         # A seed missing some problem's score would be averaged as if it had all three.
         if payload.get("status", "ok") != "ok":
@@ -123,7 +128,7 @@ def collect_local(
 
 
 def collect_wandb(
-    experiment: str, project: str, entity: str | None
+    experiment: str, project: str, entity: str | None, seeds: set[int] | None = None
 ) -> dict[str, list[tuple[float, float]]]:
     import wandb
 
@@ -136,6 +141,8 @@ def collect_wandb(
     for run in api.runs(path, filters={"group": experiment}):
         domain = run.config.get("domain")
         if domain is None:
+            continue
+        if seeds is not None and run.config.get("seed") not in seeds:
             continue
         per_problem: dict[str, dict] = {}
         for key, val in run.summary.items():
@@ -181,12 +188,19 @@ def _collect(
 ) -> dict[str, list[tuple[float, float]]]:
     """Per-domain (precision, recall) pairs, from the chosen source."""
     if args.source == "local":
-        by_domain = collect_local(experiment, args.log_dir)
+        by_domain = collect_local(experiment, args.log_dir, args.seeds)
     else:
-        by_domain = collect_wandb(experiment, args.wandb_project, args.wandb_entity)
+        by_domain = collect_wandb(
+            experiment, args.wandb_project, args.wandb_entity, args.seeds
+        )
     if args.domains:
         by_domain = {d: v for d, v in by_domain.items() if d in args.domains}
     return by_domain
+
+
+def _seeds_note(seeds: set[int] | None) -> str:
+    """A sentence naming the seeds a table is restricted to, if it is."""
+    return f" Seeds {format_array(sorted(seeds))} only." if seeds else ""
 
 
 def _rate(value: float) -> str:
@@ -239,6 +253,7 @@ def write_sweep_markdown(
     domains: list[str],
     cells: dict[tuple[float, str], list[tuple[float, float]]],
     configured: dict[str, float],
+    seeds: set[int] | None = None,
 ) -> None:
     """Write one markdown table, a row per (domain, value); the value a domain's config.yaml sets is in bold."""
     columns = (*METRICS, "n")
@@ -248,6 +263,7 @@ def write_sweep_markdown(
         f"`{flag}`, from "
         + ", ".join(f"`{names[v]}`" for v in values)
         + "."
+        + _seeds_note(seeds)
         + (" Bold: the value in the domain's `config.yaml`." if configured else ""),
         "",
         "| Column | Meaning |",
@@ -321,6 +337,8 @@ def _report_matrix(
 
     print(f"\nexperiment: {args.experiment}  ({axis_name} sweep, {param})")
     print(f"values    : {', '.join(f'{v:g} -> {names[v]}' for v in values)}")
+    if args.seeds:
+        print(f"seeds     : {format_array(sorted(args.seeds))}")
     if missing:
         print(f"no results: {', '.join(missing)}")
     if not domains:
@@ -340,6 +358,7 @@ def _report_matrix(
             ordered,
             cells,
             configured_values(param, ordered) if mark_configured else {},
+            args.seeds,
         )
 
 
@@ -376,6 +395,7 @@ def write_experiments_markdown(
     results: dict[str, dict[str, list[tuple[float, float]]]],
     domains: list[str],
     source: str,
+    seeds: set[int] | None = None,
 ) -> None:
     """Write one domain table per experiment, plus a cross-experiment summary. Every table spans the union of the domains, so a missing one shows ``-`` rather than vanishing."""
     columns = (*METRICS, "n")
@@ -390,7 +410,10 @@ def write_experiments_markdown(
     lines = [
         "# Validation results",
         "",
-        "Experiments: " + ", ".join(f"`{e}`" for e in experiments) + ".",
+        "Experiments: "
+        + ", ".join(f"`{e}`" for e in experiments)
+        + "."
+        + _seeds_note(seeds),
         "",
         f"Rows are domains (source: {source}); each cell aggregates over the seeds of that (experiment, domain) pair. `ALL` pools every seed of every domain of that experiment, `-` means no results.",
         "",
@@ -439,6 +462,8 @@ def write_experiments_markdown(
 def run_experiments(args: argparse.Namespace, experiments: list[str]) -> None:
     """Print one table per experiment and optionally write them as markdown."""
     results = {e: _collect(e, args) for e in experiments}
+    if args.seeds:
+        print(f"seeds: {format_array(sorted(args.seeds))}")
     for experiment in experiments:
         print_table(results[experiment], experiment)
     if not args.markdown:
@@ -447,7 +472,7 @@ def run_experiments(args: argparse.Namespace, experiments: list[str]) -> None:
     if not domains:
         raise SystemExit("--markdown: no results found, nothing written")
     write_experiments_markdown(
-        args.markdown, experiments, results, domains, args.source
+        args.markdown, experiments, results, domains, args.source, args.seeds
     )
 
 
@@ -465,6 +490,13 @@ def main() -> int:
     p.add_argument("--source", default="local", choices=["local", "wandb"])
     p.add_argument(
         "--domains", nargs="+", default=None, help="Restrict to these domains."
+    )
+    p.add_argument(
+        "--seeds",
+        nargs="+",
+        default=None,
+        metavar="SEED",
+        help="Restrict every experiment to these seeds, as single values and/or inclusive ranges (e.g. '--seeds 0-4'). Default: every seed found.",
     )
     p.add_argument("--log-dir", type=Path, default=LOGS_DIR)
     p.add_argument("--wandb-project", default=WANDB_PROJECT)
@@ -507,6 +539,7 @@ def main() -> int:
     add_logging_arguments(p)
     args = p.parse_args()
     configure_logging(args)
+    args.seeds = set(parse_seeds(args.seeds)) if args.seeds is not None else None
 
     experiments = list(dict.fromkeys(args.experiment))
     sweeping = args.sweep is not None or args.threshold_sweep is not None

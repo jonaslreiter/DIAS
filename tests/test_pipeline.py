@@ -51,6 +51,17 @@ class SeedTest(unittest.TestCase):
         args = SimpleNamespace(seeds=None, num_runs=3, validation_config=None)
         self.assertEqual(resolve_seeds(args), [0, 1, 2])
 
+    def test_no_runs_at_all_is_refused(self):
+        args = SimpleNamespace(seeds=None, num_runs=0, validation_config=None)
+        with self.assertRaisesRegex(SystemExit, "--num-runs"):
+            resolve_seeds(args)
+
+    def test_a_launcher_with_seeds_of_its_own_falls_back_to_them(self):
+        args = SimpleNamespace(seeds=None, num_runs=None, validation_config=None)
+        self.assertEqual(resolve_seeds(args, default=[2, 0, 1]), [0, 1, 2])
+        args.seeds = ["0-4"]
+        self.assertEqual(resolve_seeds(args, default=[0, 1, 2]), [0, 1, 2, 3, 4])
+
 
 class ArrayTest(unittest.TestCase):
     def test_consecutive_seeds_compress_to_a_range(self):

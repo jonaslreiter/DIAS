@@ -37,19 +37,23 @@ PROJECT_ROOT = SCALING_DIR.parents[1]
 
 # A domain's layout is the main pipeline's business, so it is imported, not re-derived.
 sys.path.append(str(SCALING_DIR.parent))
-from pipeline import domain_config, domain_pddl  # noqa: E402
+from pipeline import LOGS_DIR, domain_config, domain_pddl  # noqa: E402
 
 SIZES_CONFIG = SCALING_DIR / "configs" / "sizes.yaml"
 SCALING_OVERLAY = SCALING_DIR / "configs" / "scaling.yaml"
 INSTANCES_DIR = SCALING_DIR / "instances"
-DEFAULT_RESULTS_DIR = PROJECT_ROOT / "logs" / "scaling"
+
+
+def results_dir(log_dir: Path, experiment: str) -> Path:
+    """Where one experiment's benchmark points are written, one folder per domain."""
+    return Path(log_dir) / "scaling" / experiment
 
 
 def result_path(
-    results_dir: Path, experiment: str, domain: str, instance: str, seed: int
+    log_dir: Path, experiment: str, domain: str, instance: str, seed: int
 ) -> Path:
     """Where one benchmark point is written."""
-    return results_dir / experiment / domain / f"{instance}-s{seed}.json"
+    return results_dir(log_dir, experiment) / domain / f"{instance}-s{seed}.json"
 
 
 def instance_path(domain: str, instance: str) -> Path:
@@ -302,7 +306,7 @@ def main() -> int:
     p.add_argument("--experiment", default="scaling", help="Results group name.")
     p.add_argument("--warmup", type=int, default=None, help="Default: sizes.yaml.")
     p.add_argument("--measure", type=int, default=None, help="Default: sizes.yaml.")
-    p.add_argument("--results-dir", type=Path, default=DEFAULT_RESULTS_DIR)
+    p.add_argument("--log-dir", type=Path, default=LOGS_DIR)
     p.add_argument("--sizes-config", type=Path, default=SIZES_CONFIG)
     p.add_argument(
         "--accelerator", default=None, help="Override trainer.accelerator (e.g. cpu)."
@@ -325,7 +329,7 @@ def main() -> int:
     record["experiment"] = args.experiment
 
     out = args.out or result_path(
-        args.results_dir, args.experiment, args.domain, args.instance, args.seed
+        args.log_dir, args.experiment, args.domain, args.instance, args.seed
     )
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(record, indent=2) + "\n")

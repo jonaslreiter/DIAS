@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "experiments"))
 
 import launch
 import pipeline
-from support import temp_dir
+from support import temp_dir, write_run
 
 
 def plan_args(log_dir, **overrides):
@@ -29,19 +29,6 @@ def plan_args(log_dir, **overrides):
         if value is not True:
             argv.append(str(value))
     return launch.parse_args(argv)
-
-
-MAX_STEPS = 10000
-
-
-def write_run(log_dir, run_id, step=MAX_STEPS, max_steps=MAX_STEPS):
-    """A run directory as training leaves it: the config it resolved to, and both checkpoints at `step`."""
-    run_dir = log_dir / "dias" / run_id
-    checkpoints = run_dir / "checkpoints"
-    checkpoints.mkdir(parents=True)
-    run_dir.joinpath("config.yaml").write_text(f"trainer:\n  max_steps: {max_steps}\n")
-    (checkpoints / f"final-epoch=0-step={step}.ckpt").touch()
-    (checkpoints / f"best-epoch=0-step={step - 50}.ckpt").touch()
 
 
 def submitted(plan):

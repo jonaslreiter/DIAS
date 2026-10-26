@@ -1,16 +1,19 @@
 """Re-validate the checkpoints of a finished experiment at several thresholds, measuring how much P / R / N_S / N_C / N_SC depend on that choice.
 
-Per (domain, threshold) this submits one array over the seeds through the normal ``experiments/slurm/validate.sh``, no training. Checkpoints come from the source experiment's run ids; results go to a sibling ``logs/validation/<experiment>-thr<t>/``, so the originals are untouched. W&B is always off here: ``validate_runs`` mirrors metrics by resuming the training run, and a second threshold would overwrite the first's summary.
+Per (domain, threshold) this submits one array over the seeds through the normal ``experiments/slurm/validate.sh``, no training, over runs that trained to ``max_steps`` (``launch.finished_training``). Checkpoints come from the source experiment's run ids; results go to a sibling ``logs/validation/<experiment>-thr<t>/``, so the originals are untouched. W&B is always off here: ``validate_runs`` mirrors metrics by resuming the training run, and a second threshold would overwrite the first's summary.
 
 Aggregate with::
 
-    python experiments/collect_results.py --experiment dias-full --threshold-sweep
+    python experiments/collect_results.py --experiment dias-names --threshold-sweep
 
 Examples
 --------
-    # The default grid over all domains, then one domain at two thresholds, printed only.
-    python experiments/launch_threshold_validation.py --experiment dias-full --num-runs 3
-    python experiments/launch_threshold_validation.py --experiment dias-full --domains gripper --thresholds 0.1 0.9 --num-runs 3 --dry-run
+    # The default grid over all domains and seeds 0 to 4, then one domain at two thresholds, printed only.
+    python experiments/launch_threshold_validation.py --experiment dias-names --seeds 0-4
+    python experiments/launch_threshold_validation.py --experiment dias-names --domains gripper --thresholds 0.1 0.9 --seeds 0-4 --dry-run
+
+    # Continue validations that ran out of time.
+    python experiments/launch_threshold_validation.py --experiment dias-names --domains driverlog --seeds 3 --resume
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # for `import pipeline`
 
+from launch import unfinished_runs  # noqa: E402
 from pipeline import configure_logging  # noqa: E402
 from pipeline import (
     CHECKPOINTS,
@@ -53,31 +57,6 @@ def threshold_experiment_name(experiment: str, threshold: float) -> str:
     return f"{experiment}-{THRESHOLD_TAG}{threshold:g}"
 
 
-def _checkpoint_dir(logs_dir: Path, run_id: str) -> Path:
-    return logs_dir / "dias" / run_id / "checkpoints"
-
-
-def _missing_checkpoints(
-    experiment: str,
-    domains: list[str],
-    seeds: list[int],
-    logs_dir: Path,
-    checkpoint: str,
-) -> list[str]:
-    """Run ids of the (domain, seed) pairs that have no trained checkpoint."""
-    from validate_runs import run_id_for
-
-    missing = []
-    for domain in domains:
-        for seed in seeds:
-            run_id = run_id_for(experiment, domain, seed)
-            if not list(
-                _checkpoint_dir(logs_dir, run_id).glob(f"{checkpoint}-epoch*.ckpt")
-            ):
-                missing.append(run_id)
-    return missing
-
-
 def _submit_slurm(
     experiment: str,
     results_experiment: str,
@@ -102,6 +81,12 @@ def _submit_slurm(
             f"EXP_TYPE={args.experiment_type}",
             f"LOGS_DIR={logs_dir}",
             f"VALIDATION_CONFIG={args.validation_config}",
+            *(
+                [f"NUM_WORKERS={args.num_workers}"]
+                if args.num_workers is not None
+                else []
+            ),
+            *(["RESUME=1"] if args.resume else []),
         ]
     )
     cmd = [
@@ -145,6 +130,8 @@ def _run_local(
             log_wandb=False,
             threshold=threshold,
             checkpoint=args.checkpoint,
+            num_workers=args.num_workers,
+            resume=args.resume,
             results_experiment=results_experiment,
         )
 
@@ -156,7 +143,7 @@ def main() -> int:
     p.add_argument(
         "--experiment",
         required=True,
-        help="Existing experiment whose checkpoints are re-validated (e.g. dias-full).",
+        help="Existing experiment whose checkpoints are re-validated (e.g. dias-names).",
     )
     p.add_argument(
         "--thresholds",
@@ -186,6 +173,17 @@ def main() -> int:
         help="Which of each run's checkpoints to re-validate: final, the model as training left it, or best, the one with the lowest validation loss. Default: final.",
     )
     p.add_argument("--backend", default="slurm", choices=["slurm", "local"])
+    p.add_argument(
+        "--num-workers",
+        type=int,
+        default=None,
+        help="Worker processes each validation task scores states in. Default: the CPUs it is allocated.",
+    )
+    p.add_argument(
+        "--resume",
+        action="store_true",
+        help="Validation keeps the problems an earlier run on the same checkpoint scored, and continues the rest with its sample seed from their last scored state.",
+    )
     # Applied to every array, over slurm-resources-validation.yaml: the sweep is several times the usual volume, so smaller CPU-friendly asks are usually worth it.
     p.add_argument(
         "--time", default=None, help="Override --time for every array (HH:MM:SS)."
@@ -201,9 +199,9 @@ def main() -> int:
         "--dry-run", action="store_true", help="Print commands without submitting."
     )
     p.add_argument(
-        "--allow-missing",
+        "--allow-unfinished",
         action="store_true",
-        help="Submit even when some (domain, seed) has no checkpoint yet.",
+        help="Submit even for runs that stopped short of max_steps.",
     )
     add_path_arguments(p)
     add_logging_arguments(p)
@@ -226,16 +224,14 @@ def main() -> int:
                 f"--thresholds: expected a probability in (0,1), got {t:g}"
             )
 
-    missing = _missing_checkpoints(
-        args.experiment, domains, seeds, args.log_dir, args.checkpoint
-    )
-    if missing:
-        head = ", ".join(missing[:5]) + (" ..." if len(missing) > 5 else "")
-        if not args.allow_missing:
+    if not args.allow_unfinished:
+        unfinished = unfinished_runs([args.experiment], domains, seeds, args.log_dir)
+        if unfinished:
+            listed = ", ".join(unfinished[:5])
+            more = f" (and {len(unfinished) - 5} more)" if len(unfinished) > 5 else ""
             raise SystemExit(
-                f"{len(missing)} of {len(domains) * len(seeds)} runs have no {args.checkpoint}-epoch*.ckpt under {args.log_dir}/dias/: {head}\nRe-validation needs trained checkpoints; pass --allow-missing to submit anyway (those tasks will fail)."
+                f"{len(unfinished)} of {len(domains) * len(seeds)} runs did not train to max_steps: {listed}{more}. Train them first, or pass --allow-unfinished to validate them as they are."
             )
-        print(f"[warn] {len(missing)} runs have no checkpoint: {head}")
 
     print(f"source     : {args.experiment}  (validator={args.experiment_type})")
     print(
@@ -245,7 +241,7 @@ def main() -> int:
     print(
         "results    : "
         + ", ".join(
-            f"logs/validation/{threshold_experiment_name(args.experiment, t)}/"
+            f"{args.log_dir / 'validation' / threshold_experiment_name(args.experiment, t)}/"
             for t in thresholds[:2]
         )
         + (" ..." if len(thresholds) > 2 else "")

@@ -208,14 +208,21 @@ def parse_seeds(specs: list[str]) -> list[int]:
     return sorted(seeds)
 
 
-def resolve_seeds(args: argparse.Namespace) -> list[int]:
-    """The seeds a launch covers: an explicit subset, or ``0 .. num_runs-1``, counted from validation.yaml."""
+def resolve_seeds(
+    args: argparse.Namespace, default: list[int] | None = None
+) -> list[int]:
+    """The seeds a launch covers: ``--seeds``, ``0 .. num_runs-1``, or ``default``, whose own default is as many seeds as validation.yaml lists."""
     if args.seeds is not None:
         if args.num_runs is not None:
             raise SystemExit("--seeds and --num-runs are mutually exclusive")
         return parse_seeds(args.seeds)
-    num_runs = args.num_runs or len(load_yaml(args.validation_config)["seeds"])
-    return list(range(num_runs))
+    if args.num_runs is not None:
+        if args.num_runs < 1:
+            raise SystemExit(f"--num-runs: expected at least 1, got {args.num_runs}")
+        return list(range(args.num_runs))
+    if default is None:
+        return list(range(len(load_yaml(args.validation_config)["seeds"])))
+    return sorted(default)
 
 
 def format_array(seeds: list[int]) -> str:
@@ -282,18 +289,23 @@ def add_domain_arguments(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="Domain folders under pddl/ to run (default: all of them).",
     )
+    add_seed_arguments(parser, "as many as validation.yaml lists seeds")
+
+
+def add_seed_arguments(parser: argparse.ArgumentParser, default: str) -> None:
+    """``--num-runs`` / ``--seeds``, which `resolve_seeds` reads; ``default`` says which seeds a launch covers without either."""
     parser.add_argument(
         "--num-runs",
         type=int,
         default=None,
-        help="Runs (seeds 0..N-1) per domain. Default: len(validation.yaml seeds).",
+        help=f"Runs (seeds 0..N-1) per domain. Default: {default}.",
     )
     parser.add_argument(
         "--seeds",
         nargs="+",
         default=None,
         metavar="SEED",
-        help="Explicit seeds instead of 0..num-runs-1, as single values and/or inclusive ranges (e.g. '--seeds 3 7-9'). Use to re-run individual failed seeds. Mutually exclusive with --num-runs.",
+        help="Explicit seeds instead of 0..num-runs-1, as single values and/or inclusive ranges (e.g. '--seeds 0-4' or '--seeds 3 7-9'). Mutually exclusive with --num-runs.",
     )
 
 

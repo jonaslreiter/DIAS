@@ -3,17 +3,17 @@
 
 Unlike ``experiments/launch.py`` the arrays are not one-task-per-run: the sizes of one (domain, seed) share a task so the curve is measured on one card, and the ``slurm:`` block of ``sizes.yaml`` asks for a whole GPU on a pinned partition rather than a shard.
 
-Results land in ``logs/scaling/<experiment>/<domain>/<instance>-s<seed>.json``; aggregate with ``experiments/scaling/collect_scaling.py``.
+Results land in ``<log-dir>/scaling/<experiment>/<domain>/<instance>-s<seed>.json``, Slurm output in ``<log-dir>/slurm/``; aggregate with ``experiments/scaling/collect_scaling.py``. ``--seeds``, ``--num-runs``, ``--log-dir``, ``--backend`` and ``--dry-run`` mean what they mean for ``experiments/launch.py``.
 
 Examples
 --------
-    # Full grid (3 domains x 6 sizes x 3 seeds) on Slurm, or one domain, printed only.
-    python experiments/scaling/launch_scaling.py --experiment scaling-a10
-    python experiments/scaling/launch_scaling.py --domains delivery --dry-run
+    # Full grid (3 domains x 6 sizes x 5 seeds) on Slurm, or one domain, printed only.
+    python experiments/scaling/launch_scaling.py --experiment scaling --seeds 0-4
+    python experiments/scaling/launch_scaling.py --experiment scaling --domains delivery --dry-run
 
     # Re-run the seeds that died, keeping the finished points; or run here.
-    python experiments/scaling/launch_scaling.py --experiment scaling-a10 --domains blocks-3 --seeds 1 2 --skip-existing
-    python experiments/scaling/launch_scaling.py --backend local --domains blocks-3 --seeds 0 --experiment smoke
+    python experiments/scaling/launch_scaling.py --experiment scaling --domains blocks-3 --seeds 1-2 --skip-existing
+    python experiments/scaling/launch_scaling.py --experiment smoke --backend local --domains blocks-3 --seeds 0
 """
 
 from __future__ import annotations
@@ -30,12 +30,15 @@ SLURM_SCRIPT = SCALING_DIR / "slurm" / "benchmark.sh"
 
 # Appended, not prepended, so the sibling imports below are not shadowed.
 sys.path.append(str(SCALING_DIR.parent))
-from benchmark import DEFAULT_RESULTS_DIR, SIZES_CONFIG  # noqa: E402
+from benchmark import SIZES_CONFIG, results_dir  # noqa: E402
 
-# Reused, so this study's sbatch flags mean what the main pipeline's mean.
+# Reused, so this study's flags and sbatch options mean what the main pipeline's mean.
 from pipeline import (  # noqa: E402
+    LOGS_DIR,
+    add_seed_arguments,
     format_array,
     prepare_slurm_logs,
+    resolve_seeds,
     run_command,
     sbatch_output_opt,
     sbatch_resource_opts,
@@ -55,7 +58,7 @@ def _submit_domain(
             f"DIAS_ROOT={PROJECT_ROOT}",
             f"EXPERIMENT={args.experiment}",
             f"DOMAIN={domain}",
-            f"RESULTS_DIR={args.results_dir}",
+            f"LOGS_DIR={args.log_dir}",
             f"SIZES_CONFIG={args.sizes_config}",
             f"SKIP_EXISTING={1 if args.skip_existing else 0}",
         ]
@@ -65,12 +68,12 @@ def _submit_domain(
         "--parsable",
         f"--job-name=dias-scaling-{domain}",
         f"--array={format_array(seeds)}",
-        sbatch_output_opt(PROJECT_ROOT / "logs"),
+        sbatch_output_opt(args.log_dir),
         *sbatch_resource_opts(resources),
         f"--export={export}",
         str(SLURM_SCRIPT),
     ]
-    print(f"[{domain}] submit scaling array ({len(seeds)} seeds)")
+    print(f"[{domain}] submit scaling array ({len(seeds)} seeds {format_array(seeds)})")
     run_command(cmd, args.dry_run)
 
 
@@ -82,11 +85,9 @@ def main() -> int:
     p.add_argument(
         "--domains", nargs="+", default=None, help="Default: all in sizes.yaml."
     )
-    p.add_argument(
-        "--seeds", nargs="+", type=int, default=None, help="Default: sizes.yaml seeds."
-    )
+    add_seed_arguments(p, "the seeds sizes.yaml lists")
     p.add_argument("--backend", choices=["slurm", "local"], default="slurm")
-    p.add_argument("--results-dir", type=Path, default=DEFAULT_RESULTS_DIR)
+    p.add_argument("--log-dir", type=Path, default=LOGS_DIR)
     p.add_argument("--sizes-config", type=Path, default=SIZES_CONFIG)
     p.add_argument("--time", default=None, help="Override the Slurm --time.")
     p.add_argument("--mem", default=None, help="Override the Slurm --mem.")
@@ -104,7 +105,7 @@ def main() -> int:
     unknown = [d for d in domains if d not in cfg["domains"]]
     if unknown:
         raise SystemExit(f"Unknown domain(s): {unknown}. Known: {list(cfg['domains'])}")
-    seeds = sorted(args.seeds if args.seeds is not None else cfg["seeds"])
+    seeds = resolve_seeds(args, default=cfg["seeds"])
 
     resources = dict(cfg.get("slurm", {}))
     if args.time:
@@ -126,15 +127,19 @@ def main() -> int:
         )
 
     total = sum(len(instances_for(d, cfg)) for d in domains) * len(seeds)
+    print(f"experiment : {args.experiment}")
     print(
-        f"experiment={args.experiment}  backend={args.backend}  domains={domains}  seeds={seeds}  points={total}\n"
+        f"domains    : {len(domains)} x {len(seeds)} runs  (seeds={format_array(seeds)}, backend={args.backend})"
     )
+    print(f"points     : {total}")
+    print(f"results    : {results_dir(args.log_dir, args.experiment)}/\n")
 
     if args.backend == "slurm":
         if not args.dry_run:
-            prepare_slurm_logs(PROJECT_ROOT / "logs")
+            prepare_slurm_logs(args.log_dir)
         for domain in domains:
             _submit_domain(domain, seeds, resources, args)
+        print("\nDone submitting.")
         return 0
 
     failures = 0
@@ -148,10 +153,11 @@ def main() -> int:
                 seed=seed,
                 experiment=args.experiment,
                 cfg=cfg,
-                results_dir=args.results_dir,
+                log_dir=args.log_dir,
                 skip_existing=args.skip_existing,
                 accelerator=args.accelerator,
             )
+    print("\nDone.")
     return 1 if failures else 0
 
 

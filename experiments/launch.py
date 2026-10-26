@@ -333,19 +333,19 @@ def finished_training(run_dir: Path) -> bool:
 
 
 def unfinished_runs(
-    points: list[SweepPoint], domains: list[str], seeds: list[int], logs_dir: Path
+    experiments: list[str], domains: list[str], seeds: list[int], logs_dir: Path
 ) -> list[str]:
-    """Run ids among these runs that `--validate-only` has no finished training run for."""
+    """Run ids among these runs that have no finished training run to validate."""
     # Imported here, not at module scope, so that submission still needs neither torch nor pymimir.
     from validate_runs import run_id_for
 
     return [
         run_id
-        for point in points
+        for experiment in experiments
         for domain in domains
         for seed in seeds
         if not finished_training(
-            logs_dir / "dias" / (run_id := run_id_for(point.experiment, domain, seed))
+            logs_dir / "dias" / (run_id := run_id_for(experiment, domain, seed))
         )
     ]
 
@@ -405,7 +405,9 @@ def build_plan(args: argparse.Namespace) -> LaunchPlan:
 
     validate_only = args.validate_only or not trains
     if trains and validate_only and not args.allow_unfinished:
-        unfinished = unfinished_runs(points, domains, seeds, args.log_dir)
+        unfinished = unfinished_runs(
+            [point.experiment for point in points], domains, seeds, args.log_dir
+        )
         if unfinished:
             listed = ", ".join(unfinished[:5])
             more = f" (and {len(unfinished) - 5} more)" if len(unfinished) > 5 else ""
