@@ -38,42 +38,33 @@ class ScoreStatesTest(unittest.TestCase):
             {i: i + 10 for i in range(7)},
         )
 
-    def test_a_state_over_its_share_is_scored_again_alone(self):
-        # Two workers share 3 GB, so 2 GB fits only alone.
-        with self.assertLogs("dias.validation.workers", "WARNING") as logs:
-            results = run(worker_tasks.allocate, {0: 2000, 1: 10})
-        self.assertEqual(results, {0: 2000, 1: 10})
-        self.assertIn(
-            "1 state did not fit; scoring again in 1 worker of", logs.output[0]
-        )
+    def test_a_state_over_its_share_is_tried_again_with_twice_the_memory(self):
+        # Two workers share 3 GB, so 2 GB fits only in all of it.
+        self.assertEqual(run(worker_tasks.allocate, {0: 2000, 1: 10}), {0: 2000, 1: 10})
 
-    def test_states_over_their_share_get_twice_the_memory_each_round(self):
-        # Four workers share 4 GB: 1.5 GB fits two at a time, 2.5 GB only alone.
-        with self.assertLogs("dias.validation.workers", "WARNING") as logs:
+    def test_states_reserve_a_quarter_more_than_the_largest_needed(self):
+        # Two workers share 4 GB. State 0 needs 2.5 GB, so it runs alone once state 1 is done, and the states after it reserve 1.25 times its peak.
+        with self.assertLogs("dias.validation.workers", "INFO") as logs:
             results = run(
-                worker_tasks.allocate,
-                {0: 1500, 1: 1500, 2: 2500, 3: 10},
-                workers=4,
+                worker_tasks.sized,
+                {0: (2500, 0), 1: (10, 1.0), 2: (10, 0), 3: (10, 0)},
                 budget=4 * GB,
             )
-        self.assertEqual(results, {0: 1500, 1: 1500, 2: 2500, 3: 10})
-        self.assertEqual(len(logs.output), 2)
-        self.assertIn(
-            "3 states did not fit; scoring again in 2 workers of", logs.output[0]
-        )
-        self.assertIn(
-            "1 state did not fit; scoring again in 1 worker of", logs.output[1]
-        )
+        limits = {index: limit for index, (_, limit) in results.items()}
+        self.assertAlmostEqual(limits[1] / GB, 2, delta=0.1)
+        for later in (2, 3):
+            self.assertGreater(limits[later], 1.25 * 2500 * 2**20)
+            self.assertLess(limits[later], 4 * GB)
+        self.assertTrue(any("State 0 needed" in line for line in logs.output))
 
     def test_a_state_that_does_not_fit_alone_is_reported(self):
         with self.assertRaises(StateDoesNotFit) as raised:
             run(worker_tasks.allocate, {0: 10, 1: 4000})
         self.assertEqual(raised.exception.index, 1)
 
-    def test_a_single_worker_does_not_retry_what_did_not_fit(self):
-        with self.assertNoLogs("dias.validation.workers", "WARNING"):
-            with self.assertRaises(StateDoesNotFit):
-                run(worker_tasks.allocate, {0: 4000}, workers=1)
+    def test_a_single_worker_has_all_of_the_memory_from_the_start(self):
+        with self.assertRaises(StateDoesNotFit):
+            run(worker_tasks.allocate, {0: 4000}, workers=1)
 
     def test_an_aborting_worker_counts_as_out_of_memory(self):
         # What std::bad_alloc escaping pymimir does.

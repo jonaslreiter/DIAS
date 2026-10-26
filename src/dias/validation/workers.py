@@ -1,6 +1,6 @@
 """Scoring sampled states in worker processes, within the memory this process may use.
 
-One worker runs per CPU, each limited to an equal share of the memory the parent leaves. The states that do not fit their share are scored again once the others are done, in half as many workers with twice the memory each, until a state has all of it; one that does not fit then raises `StateDoesNotFit`. The limit is set before a worker imports anything, so the task's module must not import torch, whose address-space reservations alone exceed a share.
+At most one worker runs per CPU, each under a hard memory limit that it reserves out of the memory the parent leaves: an equal share of it, or a quarter more than the most any state has needed so far, whichever is larger. A worker starts only when its reservation is free. A state that does not fit is tried again with twice its reservation, until it has all of the memory; one that does not fit then raises `StateDoesNotFit`. The limit is set before a worker imports anything, so the task's module must not import torch, whose address-space reservations alone exceed a share.
 """
 
 from __future__ import annotations
@@ -22,8 +22,10 @@ logger = logging.getLogger(__name__)
 
 # Of the memory, the part kept for the parent beyond what it already uses: it receives every result.
 PARENT_RESERVE = 0.1
-# Fewer workers run when the memory would give each less than this.
+# The least a worker reserves.
 MIN_WORKER_MEMORY = 2**30
+# What a state reserves beyond the most any state has needed so far.
+HEADROOM = 1.25
 # How a worker that ran out of memory in native code ends: std::bad_alloc escaping to std::terminate, or the kernel's out-of-memory killer.
 _OUT_OF_MEMORY_SIGNALS = {signal.SIGABRT, signal.SIGKILL}
 
@@ -80,9 +82,10 @@ def _resolve(name: str) -> Callable:
 
 
 class _Worker:
-    """One worker process and the state it holds, if any."""
+    """One worker process, its memory limit, and the state it holds, if any."""
 
     def __init__(self, limit: int, task: str, initializer: str, config: Any):
+        self.limit = limit
         ours, theirs = socket.socketpair()
         # This process's import path, and one thread each: the workers are the parallelism, and every thread pool reserves address space.
         env = os.environ | {"PYTHONPATH": os.pathsep.join(p for p in sys.path if p)}
@@ -103,15 +106,15 @@ class _Worker:
         self.index = index
         self.connection.send((index, payload))
 
-    def receive(self) -> tuple[str, Any]:
-        """``("done", result)``, ``("memory", None)`` if the state did not fit, or ``("error", text)``."""
+    def receive(self) -> tuple[str, Any, int]:
+        """``("done", result, peak bytes)``, ``("memory", None, 0)`` if the state did not fit, or ``("error", text, 0)``."""
         try:
             return self.connection.recv()
         except EOFError:
             code = self.process.wait()
             if -code in _OUT_OF_MEMORY_SIGNALS:
-                return "memory", None
-            return "error", f"the worker exited with code {code}"
+                return "memory", None, 0
+            return "error", f"the worker exited with code {code}", 0
 
     def stop(self) -> None:
         try:
@@ -148,78 +151,71 @@ def score_states(
     workers = available_cpus() if workers is None else workers
     memory = available_memory() if memory is None else memory
     budget = memory - _resident() - int(PARENT_RESERVE * memory)
-    if budget <= 0:
+    if budget < MIN_WORKER_MEMORY:
         raise MemoryError(
-            f"{memory / 2**30:.1f} GB leaves nothing for workers beside this process"
+            f"{memory / 2**30:.1f} GB leaves under {MIN_WORKER_MEMORY / 2**30:.0f} GB for workers beside this process"
         )
-    workers = max(1, min(workers, len(payloads), budget // MIN_WORKER_MEMORY))
+    workers = max(1, min(workers, len(payloads)))
+    share = max(MIN_WORKER_MEMORY, budget // workers)
     logger.info(
-        "Scoring %d states in %d workers of %.1f GB each.",
+        "Scoring %d states in up to %d workers of %.1f GB each.",
         len(payloads),
         workers,
-        budget / workers / 2**30,
+        share / 2**30,
     )
     names = (_name(task), _name(initializer), config)
-    pending = list(payloads)
-    while pending:
-        failed: list[int] = []
-        yield from _round(pending, payloads, names, workers, budget, failed)
-        if failed:
-            # Twice the memory each, until a state has all of it.
-            workers = max(1, workers // 2)
-            logger.warning(
-                "%d %s did not fit; scoring again in %d %s of %.1f GB each.",
-                len(failed),
-                "state" if len(failed) == 1 else "states",
-                workers,
-                "worker" if workers == 1 else "workers",
-                budget / workers / 2**30,
-            )
-        pending = failed
+    queue = deque(payloads)
+    # What a state that did not fit must reserve next.
+    needs: dict[int, int] = {}
+    largest = 0
 
+    def reservation(index: int) -> int:
+        return min(budget, max(share, int(HEADROOM * largest), needs.get(index, 0)))
 
-def _round(
-    indices: list[int],
-    payloads: Mapping[int, Any],
-    names: tuple,
-    workers: int,
-    budget: int,
-    failed: list[int],
-) -> Iterator[tuple[int, Any]]:
-    """Score `indices` in `workers` workers sharing `budget`, collecting in `failed` those that do not fit their share."""
-    share = budget // workers
-    queue = deque(indices)
+    free = budget
     running: list[_Worker] = []
     try:
         while queue or running:
-            while queue and len(running) < workers:
-                worker = _Worker(share, *names)
+            while queue and len(running) < workers and reservation(queue[0]) <= free:
                 index = queue.popleft()
+                worker = _Worker(reservation(index), *names)
+                free -= worker.limit
                 worker.give(index, payloads[index])
                 running.append(worker)
             for connection in wait([w.connection for w in running]):
                 worker = next(w for w in running if w.connection is connection)
                 index = worker.index
-                kind, value = worker.receive()
+                kind, value, peak = worker.receive()
                 if kind == "error":
                     raise RuntimeError(f"Scoring state {index} failed: {value}")
                 if kind == "memory":
-                    if workers == 1:
+                    if worker.limit >= budget:
                         raise StateDoesNotFit(index, budget)
+                    needs[index] = min(budget, 2 * worker.limit)
                     logger.debug(
-                        "State %d did not fit in %.1f GB.", index, share / 2**30
+                        "State %d did not fit in %.1f GB.", index, worker.limit / 2**30
                     )
-                    failed.append(index)
+                    queue.appendleft(index)
                     worker.kill()
                     running.remove(worker)
+                    free += worker.limit
                     continue
+                if HEADROOM * peak > max(share, HEADROOM * largest):
+                    logger.info(
+                        "State %d needed %.1f GB, so states now reserve %.1f GB.",
+                        index,
+                        peak / 2**30,
+                        min(budget, HEADROOM * peak) / 2**30,
+                    )
+                largest = max(largest, peak)
                 # The worker's next state first, so it scores while this result is used.
-                if queue:
+                if queue and reservation(queue[0]) == worker.limit:
                     following = queue.popleft()
                     worker.give(following, payloads[following])
                 else:
                     worker.stop()
                     running.remove(worker)
+                    free += worker.limit
                 yield index, value
     finally:
         for worker in running:
@@ -238,23 +234,23 @@ def _serve(connection: Connection) -> None:
     while (message := connection.recv()) is not None:
         index, payload = message
         if ready is not None:
-            connection.send((ready, None))
+            connection.send((ready, None, 0))
             return
         try:
             result = score(payload)
         except MemoryError:
-            connection.send(("memory", None))
+            connection.send(("memory", None, 0))
             return
-        except (
-            Exception
-        ):  # noqa: BLE001 - the parent raises it with the worker's traceback
-            connection.send(("error", traceback.format_exc()))
+        # The parent raises it with the worker's traceback.
+        except Exception:  # noqa: BLE001
+            connection.send(("error", traceback.format_exc(), 0))
             return
+        peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 2**10
         try:
-            connection.send(("done", result))
+            connection.send(("done", result, peak))
         except MemoryError:
             del result
-            connection.send(("memory", None))
+            connection.send(("memory", None, 0))
             return
 
 
