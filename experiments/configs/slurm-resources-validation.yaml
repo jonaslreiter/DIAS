@@ -3,7 +3,7 @@
 # Validation runs on CPU, one worker per CPU, each limited to an equal share of `mem`. A task that runs out of time keeps the states it scored, and `launch.py --validate-only --resume` continues it.
 
 defaults:
-  time: "4-00:00:00"
+  time: "1-00:00:00"
   mem: "16G"
   cpus: "8"
 
