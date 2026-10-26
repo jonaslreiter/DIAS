@@ -1,6 +1,6 @@
 #!/usr/bin/env zsh
 # ── site configuration ────────────────────────────────────────────────────────
-# See experiments/slurm/train.sh for what this block is and how to adapt it. The partition list here names CPU partitions too: validation runs the model on CPU and spends its time in pymimir successor generation.
+# See experiments/slurm/train.sh for what this block is and how to adapt it. The partition list here names CPU partitions too: only MLP-effects validation runs a network, on the GPU shard its resources file requests.
 #SBATCH --job-name=dias-val
 #SBATCH --partition=rleap_gpu_24gb,rleap_gpu_48gb,rleap_cpu,rleap_cpu_modern
 #SBATCH --output=logs/slurm/%x-%A_%a.out
@@ -19,6 +19,9 @@ set -euo pipefail
 
 # A job past its memory allocation is ended rather than swapped out without bound; see memory_guard.sh.
 source "${DIAS_ROOT}/experiments/slurm/memory_guard.sh"
+
+# PyTorch kept within the share of the GPU this job reserved, if any; see gpu_memory_cap.sh.
+source "${DIAS_ROOT}/experiments/slurm/gpu_memory_cap.sh"
 
 SEED=${SLURM_ARRAY_TASK_ID:-0}
 echo "validate  domain=$DOMAIN  seed=$SEED  type=$EXP_TYPE"

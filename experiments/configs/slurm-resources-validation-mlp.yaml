@@ -1,11 +1,12 @@
 # Per-domain Slurm resources for the validation array of MLP-effects experiments (experiments/launch.py). Same schema as slurm-resources.yaml, resolved on its own.
 #
-# As in slurm-resources-validation.yaml, one worker per CPU, each limited to an equal share of `mem`. Cost follows how permissive the learned preconditions are, so domains whose schemas ground many actions per state get more time and memory.
+# As in slurm-resources-validation.yaml, one worker per CPU, each limited to an equal share of `mem`; the network runs on a GPU shard. Cost follows how permissive the learned preconditions are, so domains whose schemas ground many actions per state get more time and memory.
 
 defaults:
   time: "08:00:00"
   mem: "32G"
   cpus: "16"
+  gres: "shard:4"
 
 blocks-3:
   time: "2-00:00:00"
