@@ -56,6 +56,9 @@ class SeedStatusTest(unittest.TestCase):
         }
         self.assertEqual(self.status(per_problem), "out_of_memory")
 
+    def test_no_problem_scored_yet_is_partial(self):
+        self.assertEqual(self.status({}, expected=PROBLEMS), "partial")
+
     def test_no_problem_scored_is_a_failure(self):
         self.assertEqual(
             self.status({"test-1": {"error": "boom"}}), "validation_failed"
@@ -75,10 +78,16 @@ class SeedStatusTest(unittest.TestCase):
         self.assertEqual(len(collect_local("exp", self.logs)["driverlog"]), 1)
 
 
+class Killed(BaseException):
+    """What a job's time limit is to the validation: nothing it can catch."""
+
+
 class StandInValidator:
     calls: list = []
     # Problems with a state that does not fit.
     too_big: set = set()
+    # Problems whose scoring the job's time limit cuts short.
+    killed_in: set = set()
     threshold = 0.5
     learned_domain_text = "(define (domain learned))"
 
@@ -92,6 +101,8 @@ class StandInValidator:
 
     def validate(self, progress_path=None):
         StandInValidator.calls.append((self.problem, self.seed))
+        if self.problem in StandInValidator.killed_in:
+            raise Killed
         if self.problem in StandInValidator.too_big:
             raise StateDoesNotFit(7, 2**30)
         return scored(tp=50)
@@ -111,6 +122,7 @@ class ResumeTest(unittest.TestCase):
         StandInValidator.calls = []
         StandInValidator.instances = []
         StandInValidator.too_big = set()
+        StandInValidator.killed_in = set()
         patcher = mock.patch.object(
             validate_runs, "validator_class", return_value=StandInValidator
         )
@@ -159,6 +171,23 @@ class ResumeTest(unittest.TestCase):
         payload = json.loads(self.result.read_text())
         self.assertEqual(payload["status"], "ok")
         self.assertEqual(payload["checkpoint"], str(self.checkpoint))
+
+    def test_a_job_killed_during_its_first_problem_resumes_with_its_sample(self):
+        """The states it scored are kept under its sample seed, so the result must hold that seed before any problem is scored."""
+        StandInValidator.killed_in = {"test-1"}
+        with self.assertRaises(Killed):
+            self.validate(resume=False)
+        ((_, sample_seed),) = StandInValidator.calls
+        payload = json.loads(self.result.read_text())
+        self.assertEqual(payload["sample_seed"], sample_seed)
+        self.assertEqual(payload["status"], "partial")
+
+        StandInValidator.killed_in = set()
+        self.validate()
+        self.assertEqual(
+            StandInValidator.calls[1:], [(p, sample_seed) for p in PROBLEMS]
+        )
+        self.assertEqual(json.loads(self.result.read_text())["status"], "ok")
 
     def test_results_older_than_the_checkpoint_are_refused(self):
         self.write_partial()
@@ -242,6 +271,7 @@ class L1RunTest(unittest.TestCase):
         StandInValidator.calls = []
         StandInValidator.instances = []
         StandInValidator.too_big = set()
+        StandInValidator.killed_in = set()
         patcher = mock.patch.object(
             validate_runs, "validator_class", return_value=StandInValidator
         )

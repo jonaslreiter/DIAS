@@ -6,7 +6,7 @@ A run is located by its deterministic id, its problems are the domain folder's `
 
 ``--threshold`` extracts a run's learned domain anew at another binarization threshold, and ``--results-experiment`` redirects only the output directory, which together re-validate a finished experiment without touching its JSONs; see ``experiments/launch_threshold_validation.py``.
 
-Every validator scores its sampled states in worker processes, one per CPU the job was allocated (``--num-workers`` overrides), each limited to an equal share of the job's memory. A state that does not fit even alone ends the seed as ``out_of_memory``. Each state's score is recorded as it finishes, and ``--resume`` continues a seed from the problems and states an earlier run on the same checkpoint scored.
+Every validator scores its sampled states in worker processes, one per CPU the job was allocated (``--num-workers`` overrides), each limited to an equal share of the job's memory. A state that does not fit even alone ends the seed as ``out_of_memory``. The result JSON, with the sample seed, is written before the first problem and after every one, each state's score is recorded as it finishes, and ``--resume`` continues a seed from the problems and states an earlier run on the same checkpoint scored.
 """
 
 from __future__ import annotations
@@ -131,6 +131,29 @@ def validate_run(
             None if configured_seed is None else int(configured_seed)
         )
 
+    def record() -> None:
+        """Write what is scored so far, the sample seed included, so that `--resume` draws the same states."""
+        _write_json(
+            logs_dir,
+            results_experiment,
+            domain,
+            seed,
+            run_id,
+            {
+                p.stem: per_problem[p.stem]
+                for p in val_problems
+                if p.stem in per_problem
+            },
+            scored_threshold,
+            sample_seed,
+            expected=[p.stem for p in val_problems],
+            checkpoint=checkpoint_path,
+            force_injective=force_injective,
+            sampling=sampling.record(),
+        )
+
+    # Before the first problem too: a job killed during it must still leave the sample seed its states were drawn with.
+    record()
     for problem in val_problems:
         stem = problem.stem
         if stem in per_problem:
@@ -172,24 +195,7 @@ def validate_run(
                 result.get("fn", "?"),
             )
         # After every problem, so a job killed partway keeps what it finished.
-        _write_json(
-            logs_dir,
-            results_experiment,
-            domain,
-            seed,
-            run_id,
-            {
-                p.stem: per_problem[p.stem]
-                for p in val_problems
-                if p.stem in per_problem
-            },
-            scored_threshold,
-            sample_seed,
-            expected=[p.stem for p in val_problems],
-            checkpoint=checkpoint_path,
-            force_injective=force_injective,
-            sampling=sampling.record(),
-        )
+        record()
         if per_problem[stem].get("out_of_memory"):
             break
 
@@ -267,12 +273,14 @@ def _write_json(
     scored = sum(
         stem in per_problem and "error" not in per_problem[stem] for stem in expected
     )
+    failed = any("error" in result for result in per_problem.values())
     if any(result.get("out_of_memory") for result in per_problem.values()):
         status = "out_of_memory"
     elif expected and scored == len(expected):
         status = "ok"
     else:
-        status = "partial" if scored else "validation_failed"
+        # Nothing scored is a failure only once a problem failed; before that, the problems are still to be scored.
+        status = "partial" if scored or not failed else "validation_failed"
     payload = {
         "experiment": experiment,
         "domain": domain,
