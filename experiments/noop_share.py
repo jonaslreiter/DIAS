@@ -18,6 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # for `import pipeline`
 from pipeline import (  # noqa: E402
     LOGS_DIR,
+    VALIDATION_CONFIG,
     add_domain_arguments,
     add_logging_arguments,
     configure_logging,
@@ -114,6 +115,12 @@ def main() -> int:
         help="Experiment whose runs to sample again, the prefix of the run ids.",
     )
     add_domain_arguments(p)
+    p.add_argument(
+        "--validation-config",
+        type=Path,
+        default=VALIDATION_CONFIG,
+        help="The validation.yaml whose seeds are read without --seeds or --num-runs.",
+    )
     p.add_argument("--log-dir", type=Path, default=LOGS_DIR)
     p.add_argument(
         "--markdown", type=Path, default=None, help="Also write the table here."
