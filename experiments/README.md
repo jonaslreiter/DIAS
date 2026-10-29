@@ -12,6 +12,8 @@ experiments/
 ├── validate_checkpoint.py          scores one model on one problem
 ├── validate_runs.py                scores one (domain, seed); the validation jobs call it
 ├── precondition_categories.py      counts what the learned preconditions consist of
+├── schema_sizes.py                 learned vs ground-truth arity, effect and precondition counts
+├── noop_share.py                   how many sampled transitions change nothing, per action
 ├── pipeline.py                     shared paths and Slurm helpers
 ├── configs/                        validation settings and Slurm resources
 ├── l1_pddl/                        the domains the L1 baseline learned
@@ -114,6 +116,17 @@ python experiments/launch.py --experiment dias-names --sweep tau --sweep-values 
 python experiments/collect_results.py --experiment dias-names --sweep tau --seeds 0-4 --markdown experiments/results/tau.md
 ```
 
+### Learning curves
+
+`--sweep dataset-size` trains on exactly N transitions per action (N/2 for validation), N = 20 to 2000, each size as its own experiment `curve-n<N>`, once clean and once at 2 flips per transition.
+
+```bash
+python experiments/launch.py --experiment curve --sweep dataset-size --domains blocks-3 delivery gripper hanoi logistics --seeds 0-2
+python experiments/launch.py --experiment curve-f2 --experiment-type noise --sweep dataset-size --set data.init_args.noise.added_atoms=0.5 --set data.init_args.noise.removed_atoms=0.5 --domains blocks-3 delivery gripper hanoi logistics --seeds 0-2
+python experiments/collect_results.py --experiment curve --sweep dataset-size --markdown experiments/results/curve.md
+python experiments/collect_results.py --experiment curve-f2 --sweep dataset-size --include-partial --markdown experiments/results/curve-f2.md
+```
+
 ### Threshold sensitivity
 
 Re-validates seeds 0 to 4 of the finished `dias-names` runs at thresholds 0.1, 0.25, 0.5, 0.75 and 0.9, each into `dias-names-thr<T>`, without retraining:
@@ -180,3 +193,19 @@ python experiments/precondition_categories.py --experiment dias-names --markdown
 ```
 
 Sorts every precondition atom, learned and ground truth, into equalities, unary and binary static literals, and positive and negative fluent literals, per domain.
+
+## Schema sizes
+
+```bash
+python experiments/schema_sizes.py --experiment dias-names --markdown experiments/results/schema-sizes.md
+```
+
+Compares the arity, effect count and precondition count of every learned schema with the ground truth, per domain and action, beside the domain's precision and recall.
+
+## Transitions that change nothing
+
+```bash
+python experiments/noop_share.py --experiment dias-names --domains satellite satellite-recal --markdown experiments/results/noop-share.md
+```
+
+Samples each run's transitions again as it trained on them and counts, per action, those whose successor equals the state.
