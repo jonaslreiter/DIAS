@@ -1,4 +1,4 @@
-"""Tests for `_seed_precision_recall`, which turns a seed's per-problem results into one P/R pair, and for restricting a table to some seeds. Every validator emits pooled tp/fp/fn, so every column of the paper table is micro-averaged the same way."""
+"""Tests for `_seed_precision_recall`, which turns a seed's per-problem results into one P/R pair, for restricting a table to some seeds, for seeds that did not score every problem, and for reading a sweep's base value off the base runs. Every validator emits pooled tp/fp/fn, so every column of the paper table is micro-averaged the same way."""
 
 import json
 import sys
@@ -7,7 +7,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "experiments"))
 
-from collect_results import _seed_precision_recall, collect_local
+from collect_results import (
+    _seed_precision_recall,
+    collect_local,
+    coverage_local,
+    trained_values,
+)
 from support import temp_dir
 
 
@@ -111,6 +116,77 @@ class SeedRestrictionTest(unittest.TestCase):
         del payload["seed"]
         path.write_text(json.dumps(payload))
         self.assertEqual(len(collect_local("exp", self.logs, seeds={7})["gripper"]), 1)
+
+
+class PartialSeedTest(unittest.TestCase):
+    """A noise validation can run out of memory or be stopped partway; its fully scored problems still count with `include_partial`."""
+
+    def setUp(self):
+        self.logs = temp_dir(self)
+        directory = self.logs / "validation" / "exp" / "satellite"
+        directory.mkdir(parents=True)
+        results = {
+            0: ("ok", {p: problem(9, 0, 1) for p in ("test-1", "test-2", "test-3")}),
+            # Stopped during test-3: only the problems it finished carry scores.
+            1: (
+                "partial",
+                {"test-1": problem(1, 9, 0), "test-2": problem(1, 9, 0)},
+            ),
+            # Out of memory on its first problem.
+            2: (
+                "out_of_memory",
+                {"test-1": {"error": "does not fit", "out_of_memory": True}},
+            ),
+        }
+        for seed, (status, per_problem) in results.items():
+            payload = {
+                "domain": "satellite",
+                "seed": seed,
+                "status": status,
+                "per_problem": per_problem,
+            }
+            (directory / f"seed{seed}.json").write_text(json.dumps(payload))
+
+    def test_seeds_that_did_not_score_every_problem_are_left_out_by_default(self):
+        self.assertEqual(len(collect_local("exp", self.logs)["satellite"]), 1)
+
+    def test_partial_seeds_count_over_the_problems_they_scored(self):
+        prs = collect_local("exp", self.logs, include_partial=True)["satellite"]
+        self.assertEqual(sorted(prs), [(0.1, 1.0), (1.0, 0.9)])
+
+    def test_coverage_counts_which_problems_each_incomplete_seed_scored(self):
+        coverage = coverage_local("exp", self.logs)["satellite"]
+        self.assertEqual(coverage, {("test-1", "test-2"): 1, (): 1})
+
+
+class TrainedValueTest(unittest.TestCase):
+    """`collect_results --sweep` reads a value without a sub-experiment from the base runs that trained at it."""
+
+    def setUp(self):
+        self.logs = temp_dir(self)
+        for run, every, slots in (
+            ("base-gripper-s0", 500, 5),
+            ("base-tau100-gripper-s0", 100, 5),
+        ):
+            directory = self.logs / "dias" / run
+            directory.mkdir(parents=True)
+            # As Lightning saves it: the dataclass-typed schedule without its class_path / init_args wrapper.
+            (directory / "config.yaml").write_text(
+                f"model:\n  init_args:\n    num_slots: {slots}\n    precondition_tau:\n      start: 1.0\n      floor: 0.0\n      factor: 0.1\n      every: {every}\n"
+            )
+
+    def test_reads_a_plain_argument(self):
+        self.assertEqual(
+            trained_values("base", "model.init_args.num_slots", self.logs),
+            {"gripper": 5.0},
+        )
+
+    def test_reads_a_schedule_field_saved_without_its_wrapper(self):
+        values = trained_values(
+            "base", "model.init_args.precondition_tau.init_args.every", self.logs
+        )
+        # The sweep's own sub-experiment, base-tau100, is not mistaken for a base run.
+        self.assertEqual(values, {"gripper": 500.0})
 
 
 if __name__ == "__main__":

@@ -54,7 +54,7 @@ L1 trains nothing: its launch scores the domains in `l1_pddl/`, every domain but
 ### MLP effects
 
 ```bash
-python experiments/launch.py --experiment mlp-names --experiment-type mlp --seeds 0-4
+python experiments/launch.py --experiment mlp-names --experiment-type mlp
 python experiments/collect_results.py --experiment mlp-names --markdown experiments/results/mlp.md
 ```
 
@@ -64,8 +64,10 @@ python experiments/collect_results.py --experiment mlp-names --markdown experime
 
 ```bash
 python experiments/launch.py --experiment noise --experiment-type noise --sweep noise --seeds 0-4
-python experiments/collect_results.py --experiment noise --sweep noise --markdown experiments/results/noise.md
+python experiments/collect_results.py --experiment noise --sweep noise --include-partial --markdown experiments/results/noise.md
 ```
+
+Under heavy noise some learned schemas are so permissive that a held-out problem cannot be scored within the job's memory or time. `--include-partial` counts such a seed over the problems it did score, and the table ends with a list of the cells concerned.
 
 ### Ablations
 
@@ -94,6 +96,24 @@ python experiments/launch.py --experiment alpha --sweep aux-loss-alpha --seeds 0
 python experiments/collect_results.py --experiment alpha --sweep aux-loss-alpha --markdown experiments/results/alpha-sweep.md
 ```
 
+### Number of slots
+
+`dias-names` runs M = 5 slots; the sweep adds M = 7 and 9 as `dias-names-slots7` and `dias-names-slots9`, and the table reads M = 5 from `dias-names`.
+
+```bash
+python experiments/launch.py --experiment dias-names --sweep num-slots --sweep-values 7 9 --seeds 0-4
+python experiments/collect_results.py --experiment dias-names --sweep num-slots --seeds 0-4 --markdown experiments/results/slots.md
+```
+
+### τ schedule
+
+τ = 0.1^(t/T) after t steps interpolates the precondition product between the geometric mean (τ = 1) and the plain product (τ = 0). `dias-names` runs T = 500; the sweep adds T = 0 (the plain product from the start), 100, 1000 and 5000 as `dias-names-tau<T>`.
+
+```bash
+python experiments/launch.py --experiment dias-names --sweep tau --sweep-values 0 100 1000 5000 --seeds 0-4
+python experiments/collect_results.py --experiment dias-names --sweep tau --seeds 0-4 --markdown experiments/results/tau.md
+```
+
 ### Threshold sensitivity
 
 Re-validates seeds 0 to 4 of the finished `dias-names` runs at thresholds 0.1, 0.25, 0.5, 0.75 and 0.9, each into `dias-names-thr<T>`, without retraining:
@@ -118,7 +138,7 @@ See [scaling/README.md](scaling/README.md).
 | `N_SC` | seeds that are both |
 | `n` | seeds scored |
 
-`P` and `R` are shown to two decimals, and never as 1.00 unless every seed reaches 1. Precision and recall are micro-averaged per action: a successor reached by the wrong action counts against both actions. A seed whose validation did not score every problem, or ran out of memory, is left out with a warning. `--seeds` restricts every experiment to those seeds, and `--source wandb` reads W&B instead of `logs/`.
+`P` and `R` are shown to two decimals, and never as 1.00 unless every seed reaches 1. Precision and recall are micro-averaged per action: a successor reached by the wrong action counts against both actions. A seed whose validation did not score every problem, or ran out of memory, is left out, or with `--include-partial` counted over the problems it scored; the tables end with a list of such seeds per cell either way. A sweep value without a sub-experiment of its own is read from the base experiment's runs where they trained at that value. `--seeds` restricts every experiment to those seeds, and `--source wandb` reads W&B instead of `logs/`.
 
 ## Narrowing and re-running
 
