@@ -4,7 +4,7 @@
 #
 # Times and memory are sized on the camera-ready suite of October 2026, about 1,850 training runs with a median of 0.75 hours: they cover every run but two. A run's step rate can fall to a thirtieth of its domain's usual once Sinkhorn stops converging and runs to its iteration cap on every step, so the domains where that has happened (blocks-3, driverlog, gripper, hanoi and miconic, up to 20 hours where their median is under one; logistics and visitall, up to 6) get their own times. The two runs left out were a delivery and a spanner seed of the ablations, at 16.6 and 13.7 hours. A run that times out starts over. Peak RAM was 2.4 GB at most outside satellite (4.4), satellite-recal (5.6) and sokoban (26).
 #
-# A shard is a 24th of a 24 GB card (a 48th of a 48 GB one), about 940 MB, and gpu_memory_cap.sh holds PyTorch to the job's shards. Each domain gets the shards for the most PyTorch reserves when every Sinkhorn call runs all 10,000 iterations, which no training step can exceed, plus 400 MB for the CUDA context (350 measured), measured for the names, STRIPS, STRIPS+ and MLP-effects configurations with five slots. With nine slots (the slots sweep) a step holds up to a third more, which fits everywhere except n-puzzle, satellite, satellite-recal, spanner and visitall once Sinkhorn passes 70 to 80 percent of its cap (logistics only at the cap itself); such a run ends with a CUDA out-of-memory error and needs a larger `gres`.
+# A shard is a 24th of a 24 GB card (a 48th of a 48 GB one), about 940 MB, and gpu_memory_cap.sh holds PyTorch to the job's shards. Each domain gets the shards for the most PyTorch reserves when every Sinkhorn call runs all 10,000 iterations, which no training step can exceed, plus 400 MB for the CUDA context (350 measured), measured for the names, STRIPS, STRIPS+ and MLP-effects configurations with five slots, and never fewer than 4, so a 24 GB card holds six training runs at most (blocks-3, gripper and miconic would fit in 2 or 3). With nine slots (the slots sweep) a step holds up to a third more, which fits everywhere except n-puzzle, satellite, satellite-recal, spanner and visitall once Sinkhorn passes 70 to 80 percent of its cap (logistics only at the cap itself); such a run ends with a CUDA out-of-memory error and needs a larger `gres`.
 
 defaults:
   time: "03:00:00"
@@ -13,7 +13,6 @@ defaults:
   gres: "shard:4"
 
 blocks-3:
-  gres: "shard:2"
   time: "24:00:00"
 delivery:
   gres: "shard:5"
@@ -22,14 +21,12 @@ driverlog:
   gres: "shard:5"
   time: "24:00:00"
 gripper:
-  gres: "shard:3"
   time: "24:00:00"
 hanoi:
   time: "24:00:00"
 logistics:
   time: "08:00:00"
 miconic:
-  gres: "shard:3"
   time: "20:00:00"
 n-puzzle: {}
 satellite:
