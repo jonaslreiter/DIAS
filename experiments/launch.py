@@ -50,7 +50,6 @@ from pipeline import (
     EXPERIMENT_VALIDATOR,
     PROJECT_ROOT,
     SLURM_DIR,
-    SLURM_RESOURCES,
     VALIDATORS,
     add_domain_arguments,
     add_logging_arguments,
@@ -68,6 +67,7 @@ from pipeline import (
     sbatch_resource_opts,
     select_domains,
     train_problem,
+    training_resources_file,
     validation_resources_file,
 )
 
@@ -440,11 +440,17 @@ def build_plan(args: argparse.Namespace) -> LaunchPlan:
         log_dir=args.log_dir,
         train_config=args.train_config,
         validation_config=args.validation_config,
-        train_resources=load_yaml(args.slurm_resources) if on_slurm else {},
+        train_resources=(
+            load_yaml(
+                args.slurm_resources or training_resources_file(args.experiment_type)
+            )
+            if on_slurm
+            else {}
+        ),
         validation_resources=(
             load_yaml(
                 args.slurm_resources_validation
-                or validation_resources_file(EXPERIMENT_VALIDATOR[args.experiment_type])
+                or validation_resources_file(args.experiment_type)
             )
             if on_slurm
             else {}
@@ -699,12 +705,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     add_path_arguments(p, train_config=True)
     add_logging_arguments(p)
-    p.add_argument("--slurm-resources", type=Path, default=SLURM_RESOURCES)
+    p.add_argument(
+        "--slurm-resources",
+        type=Path,
+        default=None,
+        help="Default: experiments/configs/slurm-resources-noise.yaml for noise experiments, slurm-resources.yaml for the others.",
+    )
     p.add_argument(
         "--slurm-resources-validation",
         type=Path,
         default=None,
-        help="Default: experiments/configs/slurm-resources-validation-mlp.yaml for the MLP-effects validator, slurm-resources-validation.yaml for the others.",
+        help="Default: experiments/configs/slurm-resources-validation-mlp.yaml for MLP-effects experiments, slurm-resources-validation-noise.yaml for noise experiments, slurm-resources-validation.yaml for the others.",
     )
     return p.parse_args(argv)
 

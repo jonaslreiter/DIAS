@@ -33,7 +33,11 @@ PDDL_DIR = PROJECT_ROOT / "pddl"
 TRAIN_CONFIG = CONFIGS_DIR / "main.yaml"
 VALIDATION_CONFIG = PIPELINE_CONFIGS / "validation.yaml"
 SLURM_RESOURCES = PIPELINE_CONFIGS / "slurm-resources.yaml"
+SLURM_RESOURCES_NOISE = PIPELINE_CONFIGS / "slurm-resources-noise.yaml"
 SLURM_RESOURCES_VALIDATION = PIPELINE_CONFIGS / "slurm-resources-validation.yaml"
+SLURM_RESOURCES_VALIDATION_NOISE = (
+    PIPELINE_CONFIGS / "slurm-resources-validation-noise.yaml"
+)
 SLURM_RESOURCES_VALIDATION_MLP = (
     PIPELINE_CONFIGS / "slurm-resources-validation-mlp.yaml"
 )
@@ -156,13 +160,17 @@ EXPERIMENT_VALIDATOR = {"dias": "dias", "noise": "dias", "mlp": "mlp", "l1": "l1
 EXPERIMENT_TYPES = tuple(EXPERIMENT_VALIDATOR)
 
 
-def validation_resources_file(validator: str) -> Path:
-    """The resources a validator's array asks for unless told otherwise: the MLP-effects validator grounds every learned precondition, which costs far more than scoring a learned domain, so it has a file of its own."""
-    return (
-        SLURM_RESOURCES_VALIDATION_MLP
-        if validator == "mlp"
-        else SLURM_RESOURCES_VALIDATION
-    )
+def training_resources_file(experiment_type: str) -> Path:
+    """The resources an experiment type's training array asks for unless told otherwise: noise makes some domains train many times longer and others no longer at all, so it has a file of its own."""
+    return SLURM_RESOURCES_NOISE if experiment_type == "noise" else SLURM_RESOURCES
+
+
+def validation_resources_file(experiment_type: str) -> Path:
+    """The resources an experiment type's validation array asks for unless told otherwise. The MLP-effects validator grounds every learned precondition, which costs far more than scoring a learned domain, and a noisy run's learned preconditions can be loose enough that one state needs tens of GB, so each has a file of its own."""
+    return {
+        "mlp": SLURM_RESOURCES_VALIDATION_MLP,
+        "noise": SLURM_RESOURCES_VALIDATION_NOISE,
+    }.get(experiment_type, SLURM_RESOURCES_VALIDATION)
 
 
 def l1_domain(domain: str) -> Path:
@@ -247,7 +255,7 @@ def resolve_resources(slurm_cfg: dict, domain: str) -> dict:
 
 
 def sbatch_resource_opts(res: dict) -> list[str]:
-    """The sbatch flags a resolved resource block asks for. This is what the fields of the two slurm-resources files mean."""
+    """The sbatch flags a resolved resource block asks for. This is what the fields of the slurm-resources files mean."""
     opts: list[str] = []
     if "time" in res:
         opts.append(f"--time={res['time']}")

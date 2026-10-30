@@ -1,0 +1,38 @@
+# Per-domain Slurm resources for the training array of noise experiments (experiments/launch.py --experiment-type noise), in place of slurm-resources.yaml. Same schema, resolved on its own.
+#
+# Noise changes what training costs in both directions. A noisy batch is a quarter the size of a clean one (experiment-noise.yaml), so the GPU memory a step holds falls to about a quarter. Sinkhorn stops converging in more domains and more often: blocks-3, delivery, gripper, hanoi, miconic, n-puzzle and spanner have taken 6 to 15 hours where their median is 1 to 7, while the other domains train no longer than without noise. Times cover every one of the camera-ready suite's 385 noisy runs (noise sweep and noisy learning curves); memory and shards follow slurm-resources.yaml's rules, the shards measured on the 2-flip setting with the names labels.
+
+defaults:
+  time: "03:00:00"
+  mem: "4G"
+  cpus: "8"
+  gres: "shard:2"
+
+blocks-3:
+  gres: "shard:1"
+  time: "16:00:00"
+delivery:
+  time: "08:00:00"
+driverlog: {}
+gripper:
+  time: "20:00:00"
+hanoi:
+  time: "16:00:00"
+logistics: {}
+miconic:
+  time: "16:00:00"
+n-puzzle:
+  time: "20:00:00"
+satellite:
+  gres: "shard:3"
+  mem: "6G"
+satellite-recal:
+  gres: "shard:3"
+  mem: "8G"
+sokoban:
+  mem: "32G"
+sokoban-pull: {}
+spanner:
+  time: "16:00:00"
+visitall:
+  gres: "shard:3"

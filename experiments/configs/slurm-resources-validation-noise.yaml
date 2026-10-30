@@ -1,0 +1,35 @@
+# Per-domain Slurm resources for the validation array of noise experiments (experiments/launch.py --experiment-type noise), in place of slurm-resources-validation.yaml. Same schema, resolved on its own.
+#
+# Noise can loosen learned preconditions until a domain grounds orders of magnitude more actions than without it, so where that has happened a single state needs tens of GB and a problem takes hours: in the camera-ready suite of October 2026 the largest states needed 56 GB in sokoban, 36 in satellite-recal, 21 in satellite and 10 to 13 in delivery, driverlog and logistics. Those domains get the memory for that state and a day; the others score as quickly as without noise. Of the suite's 391 completed noisy validations, one exceeds this: a sokoban seed at eight flips, which took 38 hours. Validations that would take far longer were cancelled rather than scored. A task that runs out of time keeps the states it scored, and `launch.py --validate-only --resume` continues it, from a resources file with more `mem` where a state did not fit (`--slurm-resources-validation`).
+
+defaults:
+  time: "02:00:00"
+  mem: "8G"
+  cpus: "8"
+
+blocks-3: {}
+delivery:
+  time: "1-00:00:00"
+  mem: "16G"
+driverlog:
+  time: "1-00:00:00"
+  mem: "16G"
+gripper: {}
+hanoi: {}
+logistics:
+  time: "1-00:00:00"
+  mem: "16G"
+miconic: {}
+n-puzzle: {}
+satellite:
+  time: "1-00:00:00"
+  mem: "32G"
+satellite-recal:
+  time: "1-00:00:00"
+  mem: "48G"
+sokoban:
+  time: "1-00:00:00"
+  mem: "64G"
+sokoban-pull: {}
+spanner: {}
+visitall: {}

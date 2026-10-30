@@ -97,7 +97,7 @@ class ValidationThresholdTest(unittest.TestCase):
         self.assertIn("CHECKPOINT=best", self.exported(validation_checkpoint="best"))
 
 
-class ValidationResourcesTest(unittest.TestCase):
+class ResourcesTest(unittest.TestCase):
     def setUp(self):
         self.log_dir = temp_dir(self)
 
@@ -118,6 +118,36 @@ class ValidationResourcesTest(unittest.TestCase):
             for option in requested[experiment_type]:
                 self.assertIn(option, validation)
         self.assertNotEqual(requested["mlp"], requested["dias"])
+
+    def test_each_experiment_type_reads_its_own_resource_files_unless_given_others(
+        self,
+    ):
+        """Noise has files of its own for both arrays, the MLP-effects model for validation only."""
+        for experiment_type, train, validation in (
+            ("dias", pipeline.SLURM_RESOURCES, pipeline.SLURM_RESOURCES_VALIDATION),
+            (
+                "noise",
+                pipeline.SLURM_RESOURCES_NOISE,
+                pipeline.SLURM_RESOURCES_VALIDATION_NOISE,
+            ),
+            ("mlp", pipeline.SLURM_RESOURCES, pipeline.SLURM_RESOURCES_VALIDATION_MLP),
+        ):
+            plan = launch.build_plan(
+                plan_args(self.log_dir, experiment_type=experiment_type)
+            )
+            self.assertEqual(plan.train_resources, launch.load_yaml(train))
+            self.assertEqual(plan.validation_resources, launch.load_yaml(validation))
+        given = pipeline.SLURM_RESOURCES_VALIDATION_MLP
+        plan = launch.build_plan(
+            plan_args(
+                self.log_dir,
+                experiment_type="noise",
+                slurm_resources=given,
+                slurm_resources_validation=given,
+            )
+        )
+        self.assertEqual(plan.train_resources, launch.load_yaml(given))
+        self.assertEqual(plan.validation_resources, launch.load_yaml(given))
 
 
 class LabelsTest(unittest.TestCase):

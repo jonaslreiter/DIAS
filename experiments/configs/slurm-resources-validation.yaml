@@ -1,10 +1,12 @@
-# Per-domain Slurm resources for the validation array of DIAS, noise and L1 experiments (experiments/launch.py); MLP-effects experiments use slurm-resources-validation-mlp.yaml. Same schema as slurm-resources.yaml, resolved on its own.
+# Per-domain Slurm resources for the validation array of DIAS and L1 experiments (experiments/launch.py); MLP-effects and noise experiments use slurm-resources-validation-mlp.yaml and slurm-resources-validation-noise.yaml. Same schema as slurm-resources.yaml, resolved on its own.
 #
-# Validation runs on CPU, one worker per CPU, each limited to an equal share of `mem`. A task that runs out of time keeps the states it scored, and `launch.py --validate-only --resume` continues it.
+# Validation runs on CPU, one worker per CPU, each limited to an equal share of `mem`; a state that needs more than its share runs with fewer states beside it, so `mem` must hold the largest single state, and more of it buys speed. A task that runs out of time keeps the states it scored, and `launch.py --validate-only --resume` continues it.
+#
+# Sized on the camera-ready suite of October 2026, about 2,080 clean validations with a median of a minute: all fit but two hanoi ablation seeds whose learned domains ground far more than any other's, which took 18 and 20 hours. Satellite takes several hours where its schemas are permissive, and its largest state needed 9.4 GB; no other domain's needed more than 7.
 
 defaults:
-  time: "1-00:00:00"
-  mem: "16G"
+  time: "02:00:00"
+  mem: "8G"
   cpus: "8"
 
 blocks-3: {}
@@ -15,8 +17,11 @@ hanoi: {}
 logistics: {}
 miconic: {}
 n-puzzle: {}
-satellite: {}
-satellite-recal: {}
+satellite:
+  time: "08:00:00"
+  mem: "12G"
+satellite-recal:
+  time: "04:00:00"
 sokoban: {}
 sokoban-pull: {}
 spanner: {}

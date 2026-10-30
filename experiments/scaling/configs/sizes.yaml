@@ -16,10 +16,12 @@ measure_steps: 100
 # Slurm resources for one array task = one (domain, seed), which walks the whole size ladder of that domain sequentially on the same physical GPU.
 #
 # Unlike the main training arrays (experiments/configs/slurm-resources.yaml) this asks for a *whole* GPU (`gpu:1`, not a `shard:N` slice) and pins the partition: a shared GPU would put co-tenant load into the iterations/second numbers, and a free choice of partition would mix GPU models within one curve.
+#
+# A task took 12 minutes and 5 GB of RAM at most in the camera-ready runs of October 2026.
 
 slurm:
-  time: "02:00:00"
-  mem: "32G"
+  time: "01:00:00"
+  mem: "8G"
   cpus: "8"
   gres: "gpu:1"
   sbatch_extra: ["--partition=rleap_gpu_24gb"]

@@ -209,7 +209,7 @@ def main() -> int:
         "--slurm-resources-validation",
         type=Path,
         default=None,
-        help="Default: experiments/configs/slurm-resources-validation-mlp.yaml for the MLP-effects validator, slurm-resources-validation.yaml for the others.",
+        help="Default: experiments/configs/slurm-resources-validation-mlp.yaml for MLP-effects experiments, slurm-resources-validation-noise.yaml for noise experiments, slurm-resources-validation.yaml for the others.",
     )
     args = p.parse_args()
     configure_logging(args)
@@ -252,7 +252,7 @@ def main() -> int:
     val_slurm_cfg = (
         load_yaml(
             args.slurm_resources_validation
-            or validation_resources_file(EXPERIMENT_VALIDATOR[args.experiment_type])
+            or validation_resources_file(args.experiment_type)
         )
         if args.backend == "slurm"
         else {}
