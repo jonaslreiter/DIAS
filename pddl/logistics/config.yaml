@@ -2,10 +2,6 @@ data:
   init_args:
     domain_path: pddl/logistics/domain.pddl
     problem_path: pddl/logistics/train.pddl
-    min_per_action_train: 250
-    min_per_action_valid: 125
-    max_per_action_train: 1000
-    max_per_action_valid: 500
 model:
   init_args:
-    aux_loss_alpha: 0.1
+    aux_loss_alpha: 0.3
