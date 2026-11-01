@@ -42,6 +42,10 @@ class ScoreStatesTest(unittest.TestCase):
         # Two workers share 3 GB, so 2 GB fits only in all of it.
         self.assertEqual(run(worker_tasks.allocate, {0: 2000, 1: 10}), {0: 2000, 1: 10})
 
+    def test_a_state_that_used_up_its_share_is_still_tried_again(self):
+        # Its MemoryError leaves nothing free while the traceback holds what it allocated, so the worker must report after letting go of it.
+        self.assertEqual(run(worker_tasks.fill, {0: 2000, 1: 10}), {0: 2000, 1: 10})
+
     def test_states_reserve_a_quarter_more_than_the_largest_needed(self):
         # Two workers share 4 GB. State 0 needs 2.5 GB, so it runs alone once state 1 is done, and the states after it reserve 1.25 times its peak.
         with self.assertLogs("dias.validation.workers", "INFO") as logs:

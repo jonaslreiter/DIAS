@@ -16,6 +16,7 @@ import sys
 import traceback
 from collections import deque
 from multiprocessing.connection import Connection, wait
+from multiprocessing.reduction import ForkingPickler
 from typing import Any, Callable, Iterator, Mapping
 
 logger = logging.getLogger(__name__)
@@ -224,34 +225,36 @@ def score_states(
 
 def _serve(connection: Connection) -> None:
     """A worker's life: initialize, then score payloads until told to stop. A state that does not fit ends the worker."""
+    # Pickled up front: a state that did not fit can leave no memory to pickle with.
+    out_of_memory = ForkingPickler.dumps(("memory", None, 0))
     task, initializer, config = connection.recv()
     try:
         _resolve(initializer)(config)
         score = _resolve(task)
-        ready = None
+        fits = True
     except MemoryError:
-        ready = "memory"
+        fits = False
     while (message := connection.recv()) is not None:
         index, payload = message
-        if ready is not None:
-            connection.send((ready, None, 0))
-            return
-        try:
-            result = score(payload)
-        except MemoryError:
-            connection.send(("memory", None, 0))
-            return
-        # The parent raises it with the worker's traceback.
-        except Exception:  # noqa: BLE001
-            connection.send(("error", traceback.format_exc(), 0))
-            return
-        peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 2**10
-        try:
-            connection.send(("done", result, peak))
-        except MemoryError:
-            del result
-            connection.send(("memory", None, 0))
-            return
+        if fits:
+            try:
+                result = score(payload)
+            except MemoryError:
+                fits = False
+            # The parent raises it with the worker's traceback.
+            except Exception:  # noqa: BLE001
+                connection.send(("error", traceback.format_exc(), 0))
+                return
+        if fits:
+            peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 2**10
+            try:
+                connection.send(("done", result, peak))
+                continue
+            except MemoryError:
+                del result
+        # Reported out here, since inside the handler its traceback still holds what the state allocated.
+        connection.send_bytes(out_of_memory)
+        return
 
 
 if __name__ == "__main__":

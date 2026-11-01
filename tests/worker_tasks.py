@@ -19,6 +19,21 @@ def allocate(megabytes: int) -> int:
     return len(bytearray(megabytes * 2**20)) // 2**20
 
 
+def fill(megabytes: int) -> int:
+    """Allocate in ever smaller pieces until `megabytes` are held or nothing more fits, so a MemoryError leaves no memory free while its traceback holds the pieces."""
+    held, size, total = [], 2**20, 0
+    while total < megabytes * 2**20:
+        try:
+            held.append(bytearray(size))
+        except MemoryError:
+            if size == 16:
+                raise
+            size //= 16
+            continue
+        total += size
+    return megabytes
+
+
 def abort(_) -> None:
     os.abort()
 
