@@ -1,13 +1,18 @@
 
 ;; This is a plain STRIPS formulation of the standard Logistics domain.
 
-;; In this domain, there are six different types of objects: "object"
+;; In this domain, there are six different types of objects: "package"
 ;; (the packages to be transported), "truck", "airplane" and their
 ;; common supertype "vehicle", "location" and the subtype "airport",
 ;; and finally "city". Types are defined by static (in the sense that
 ;; there are no operators that change their truth value) unary predicates.
 ;; The types of objects in a problem instance must be defined by including
 ;; the appropriate typing predicates in the initial state.
+
+;; The package predicate is called "object" in the standard formulation.
+;; It is renamed here because "object" is also the name of PDDL's root
+;; type, and DIAS leaves static predicates of that name out of the state,
+;; so packages would have no predicate of their own.
 
 ;; A binary static predicate called "loc" describes the topology of the
 ;; problem instance: "(loc ?l ?c)" is true iff the location ?l is in city
@@ -18,7 +23,7 @@
   (:predicates
 
    ;; Static predicates:
-   (object ?o) (truck ?t) (airplane ?p) (vehicle ?v)
+   (package ?o) (truck ?t) (airplane ?p) (vehicle ?v)
    (location ?l) (airport ?a) (city ?c) (loc ?l ?c)
 
    ;; Non-static predicates:
@@ -32,13 +37,13 @@
   ;; would need one for each subtype of vehicle).
   (:action load
     :parameters (?o ?v ?l)
-    :precondition (and (object ?o) (vehicle ?v) (location ?l)
+    :precondition (and (package ?o) (vehicle ?v) (location ?l)
 		       (at ?v ?l) (at ?o ?l))
     :effect (and (in ?o ?v) (not (at ?o ?l))))
 
   (:action unload
     :parameters (?o ?v ?l)
-    :precondition (and (object ?o) (vehicle ?v) (location ?l)
+    :precondition (and (package ?o) (vehicle ?v) (location ?l)
 		       (at ?v ?l) (in ?o ?v))
     :effect (and (at ?o ?l) (not (in ?o ?v))))
 
@@ -60,4 +65,4 @@
     :precondition (and (airplane ?p) (airport ?a1) (airport ?a2)
 		       (at ?p ?a1) (not (at ?p ?a2)))
     :effect (and (at ?p ?a2) (not (at ?p ?a1))))
-  ) 
+  )

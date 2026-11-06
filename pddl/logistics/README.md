@@ -8,3 +8,5 @@
 | `test-3.pddl` | 8      | 8      | 8         | 8       | 8        | 8       | 48            |
 
 Generated with `logistics/logistics-generator.py` from [PDDL generators](https://github.com/AI-Planning/pddl-generators).
+
+The unary predicate that marks the packages, `object` in the standard formulation, is called `package` here, in the domain and in every instance. Under its standard name it collides with PDDL's root type `object`, which DIAS leaves out of the state, so packages would have no channel.

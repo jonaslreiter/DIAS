@@ -1,7 +1,0 @@
-data:
-  init_args:
-    domain_path: pddl/logistics-package/domain.pddl
-    problem_path: pddl/logistics-package/train.pddl
-model:
-  init_args:
-    aux_loss_alpha: 0.3

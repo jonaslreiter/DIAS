@@ -11,7 +11,7 @@ blocks-3
     ``blocksworld-3ops`` to ``blocksworld``: objects get the ``- object`` type.
 
 logistics
-    ``logistics-strips`` to ``logistics``: ``OBJ`` -> ``object``, ``in-city`` -> ``loc``, plus a ``(vehicle ?v)`` fact per truck and airplane.
+    ``logistics-strips`` to ``logistics``: ``OBJ`` -> ``package``, ``in-city`` -> ``loc``, plus a ``(vehicle ?v)`` fact per truck and airplane.
 
 delivery
     Already the repo's domain, so only the problem name changes. It needs `tarski`, so it runs from a throwaway venv under ``experiments/scaling/.venv-delivery``; its CLI seeds nothing and emits a whole tree at once, so a wrapper seeds ``random`` first and the needed instances are picked out.
@@ -236,7 +236,7 @@ def _rewrite_logistics(text: str, num_objects: int) -> str:
         name, args = parts[0], parts[1:]
         lowered = name.lower()
         if lowered == "obj":
-            name = "object"  # the repo domain calls the package type `object`
+            name = "package"  # the repo domain calls the package type `package`
         elif lowered == "in-city":
             name = "loc"  # ... and the city topology `loc`
         elif lowered in ("truck", "airplane"):
