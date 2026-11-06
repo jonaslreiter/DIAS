@@ -1,11 +1,11 @@
 ; https://github.com/potassco/pddl-instances/tree/master/ipc-2002/domains/driverlog-strips-automatic
 (define (domain driverlog)
-  (:requirements :typing) 
+  (:requirements :typing)
   (:types         location locatable - object
 		driver truck obj - locatable
-  
+
   )
-  (:predicates 
+  (:predicates
 		(at ?obj - locatable ?loc - location)
 		(in ?obj1 - obj ?obj - truck)
 		(driving ?d - driver ?v - truck)
@@ -14,7 +14,7 @@
   )
 
 
-  (:action LOAD-TRUCK
+  (:action load-truck
     :parameters
     (?obj - obj
       ?truck - truck
@@ -24,7 +24,7 @@
     :effect
     (and (not (at ?obj ?loc)) (in ?obj ?truck)))
 
-  (:action UNLOAD-TRUCK
+  (:action unload-truck
     :parameters
     (?obj - obj
       ?truck - truck
@@ -34,7 +34,7 @@
     :effect
     (and (not (in ?obj ?truck)) (at ?obj ?loc)))
 
-  (:action BOARD-TRUCK
+  (:action board-truck
     :parameters
     (?driver - driver
       ?truck - truck
@@ -44,7 +44,7 @@
     :effect
     (and (not (at ?driver ?loc)) (driving ?driver ?truck) (not (empty ?truck))))
 
-  (:action DISEMBARK-TRUCK
+  (:action disembark-truck
     :parameters
     (?driver - driver
       ?truck - truck
@@ -54,7 +54,7 @@
     :effect
     (and (not (driving ?driver ?truck)) (at ?driver ?loc) (empty ?truck)))
 
-  (:action DRIVE-TRUCK
+  (:action drive-truck
     :parameters
     (?truck - truck
       ?loc-from - location
@@ -66,7 +66,7 @@
     :effect
     (and (not (at ?truck ?loc-from)) (at ?truck ?loc-to)))
 
-  (:action WALK
+  (:action walk
     :parameters
     (?driver - driver
       ?loc-from - location
@@ -76,5 +76,5 @@
     :effect
     (and (not (at ?driver ?loc-from)) (at ?driver ?loc-to)))
 
- 
+
 )
