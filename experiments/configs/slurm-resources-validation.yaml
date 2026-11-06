@@ -18,6 +18,7 @@ hanoi:
   time: "16:00:00"
   mem: "32G"
 logistics: {}
+logistics-package: {}
 miconic: {}
 n-puzzle: {}
 satellite:

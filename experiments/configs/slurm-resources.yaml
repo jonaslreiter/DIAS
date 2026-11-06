@@ -26,6 +26,8 @@ hanoi:
   time: "36:00:00"
 logistics:
   time: "08:00:00"
+logistics-package:
+  time: "08:00:00"
 miconic:
   time: "20:00:00"
 n-puzzle: {}

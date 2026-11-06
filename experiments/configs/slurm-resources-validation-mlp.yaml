@@ -18,6 +18,8 @@ gripper: {}
 hanoi: {}
 logistics:
   gres: "shard:2"
+logistics-package:
+  gres: "shard:2"
 miconic: {}
 n-puzzle: {}
 satellite:

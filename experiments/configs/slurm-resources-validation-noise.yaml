@@ -20,6 +20,9 @@ hanoi:
 logistics:
   time: "08:00:00"
   mem: "16G"
+logistics-package:
+  time: "08:00:00"
+  mem: "16G"
 miconic: {}
 n-puzzle: {}
 satellite:
