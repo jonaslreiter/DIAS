@@ -1,4 +1,4 @@
-# Blocks World
+# Blocks-3
 
 | File          | Blocks | Total objects |
 | ------------- | ------ | ------------- |

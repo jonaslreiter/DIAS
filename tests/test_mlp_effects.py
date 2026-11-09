@@ -77,10 +77,7 @@ class MlpEffectsTest(unittest.TestCase):
         self.assertEqual(result["total"], NUM_SAMPLES)
 
     def test_the_reported_counts_are_the_per_action_counts(self):
-        """One measure, not two views that have to be kept in agreement.
-
-        `tp`/`fp`/`fn` are the sums of `action_stats`: a successor reached under the wrong operator is an error, and a successor two operators both reach is two predictions. There is no second, union-level count beside them to be confused with them.
-        """
+        """`tp`, `fp` and `fn` are the sums of `action_stats`."""
         result = self.validate()
         stats = result["action_stats"].values()
 
@@ -160,10 +157,7 @@ class MlpEffectsTest(unittest.TestCase):
 
 
 class BoundObjectGridTest(unittest.TestCase):
-    """Predicting on the grid of bound objects must match `apply_schema` on the whole instance.
-
-    The untrained effect MLP predicts almost nothing, which would make agreement trivial, so its last layer is scaled until successors flip often; bindings repeat objects and leave slots inactive, the two cases the small grid handles differently.
-    """
+    """Predicting on the grid of bound objects matches `apply_schema` on the whole instance, with an effect MLP scaled to flip many atoms and bindings that repeat objects and leave slots inactive."""
 
     NUM_OBJECTS = 9
     NUM_GROUNDINGS = 4000

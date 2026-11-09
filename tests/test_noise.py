@@ -87,7 +87,7 @@ class ExpectedCountNoiseTest(unittest.TestCase):
         self.assertLess(removed, 4 * len(states))
 
     def test_a_static_relation_shares_the_budget_unless_left_out(self):
-        """The paper's runs noised the statics too, so that is the default."""
+        """Static relations share the budget unless `fluents_only`."""
         states = self.pool()
         measured = stats(states, is_fluent=(True, False))
         touched = ExpectedCount(20.0, 20.0).corrupt(

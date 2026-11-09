@@ -1,8 +1,6 @@
-# Satellite with recalibration
+# Satellite-recal
 
-Satellite with two changes that make every transition change some atom: take_image uses up the calibration (deletes `calibrated ?i`), so an instrument is recalibrated before every image, and calibrate requires the instrument not to be calibrated yet. In the original, calibrating a calibrated instrument and imaging what was already imaged change nothing. Only calibrate becomes well-formed: take_image can still add a `have_image` that already holds, and switch_on still deletes `calibrated ?i` whether or not it holds. The instances are satellite's.
-
-It exists because the precondition gate refutes a literal only where a transition changes something: on satellite, without the applicability term (`model.init_args.use_applicability_loss`), calibrate learns to forbid the `calibrated` it adds and take_image the `have_image`, since no transition that violates them changes anything. L1 never learned it, so the L1 comparison leaves it out.
+Satellite in which take_image deletes `calibrated ?i` and calibrate requires `(not (calibrated ?i))`, on Satellite's instances.
 
 | File          | Satellites | Instruments | Modes | Ground stations | Targets | Total objects |
 | ------------- | ---------- | ----------- | ----- | --------------- | ------- | ------------- |

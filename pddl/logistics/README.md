@@ -1,6 +1,6 @@
 # Logistics
 
-| File          | Cities | Trucks | Airplanes | Offices | Airports | Packets | Total objects |
+| File          | Cities | Trucks | Airplanes | Offices | Airports | Packages | Total objects |
 | ------------- | ------ | ------ | --------- | ------- | -------- | ------- | ------------- |
 | `train.pddl`  | 2      | 3      | 2         | 4       | 2        | 2       | 15            |
 | `test-1.pddl` | 4      | 4      | 4         | 4       | 4        | 4       | 24            |
@@ -9,4 +9,4 @@
 
 Generated with `logistics/logistics-generator.py` from [PDDL generators](https://github.com/AI-Planning/pddl-generators).
 
-The unary predicate that marks the packages, `object` in the standard formulation, is called `package` here, in the domain and in every instance. Under its standard name it collides with PDDL's root type `object`, which DIAS leaves out of the state, so packages would have no channel.
+The unary predicate marking the packages is `package`, where the standard formulation writes `object`.

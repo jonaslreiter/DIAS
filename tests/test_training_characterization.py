@@ -1,12 +1,6 @@
-"""Golden tests pinning the DIAS training path.
+"""Golden of the model: forward passes, losses and three training steps against tests/fixtures/golden.pt.
 
-A full forward pass and a full three-step training trajectory against a stored fixture, which is the guard for "this change computes the same thing". The training-step golden sees what a forward-only one cannot: RNG order during construction, loss-term order, drift in the PCGrad projection.
-
-To regenerate after an intended change:
-
-    DIAS_REGENERATE_GOLDEN=1 pytest tests/test_training_characterization.py
-
-and review the resulting fixture diff.
+Regenerate after an intended change with ``DIAS_REGENERATE_GOLDEN=1 pytest tests/test_training_characterization.py`` and review the fixture diff.
 """
 
 import os

@@ -1,7 +1,4 @@
-"""End-to-end coverage for the PDDL validator, which compares two PDDL domains directly.
-
-A domain validated against itself must score perfectly, pinning the whole path: untyping, merging, reflexive-atom injection, grounding and the successor comparison. Removing one precondition from the learned copy must lower the score, and spelling equality or the types another way must not change it.
-"""
+"""The PDDL validator end to end: a domain scored against itself is perfect, a missing precondition costs precision, and spelling equality or types otherwise changes nothing."""
 
 import random
 import re

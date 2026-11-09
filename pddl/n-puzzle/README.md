@@ -1,4 +1,4 @@
-# Cell N-Puzzle
+# N-Puzzle
 
 | File          | Grid | Cells | Tiles | Total objects |
 | ------------- | ---- | ----- | ----- | ------------- |
