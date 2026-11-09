@@ -1,1 +1,1 @@
-"""Turning model state into something a human or W&B can read."""
+"""Logging the learned schema to W&B as heatmaps."""

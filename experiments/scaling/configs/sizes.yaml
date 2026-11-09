@@ -12,7 +12,6 @@ slurm:
   mem: "8G"
   cpus: "8"
   gres: "gpu:1"
-  sbatch_extra: ["--partition=rleap_gpu_24gb"]
 
 # Per domain, the instance in instances/<domain>/ for each target number of objects.
 domains:
