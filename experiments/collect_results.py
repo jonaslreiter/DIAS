@@ -188,6 +188,8 @@ def configured_values(param: str, domains: list[str]) -> dict[str, float]:
     """Per domain, the value its config.yaml gives the dotted `param`, if any."""
     configured = {}
     for domain in domains:
+        if not domain_config(domain).is_file():
+            continue
         node = load_yaml(domain_config(domain))
         for key in param.split("."):
             node = node.get(key) if isinstance(node, dict) else None
