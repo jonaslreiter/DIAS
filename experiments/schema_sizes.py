@@ -1,12 +1,9 @@
-"""Compare the size of an experiment's learned action schemas with the ground truth: arity, effects and preconditions per action, beside the experiment's precision and recall.
+"""Compare the arity, effect count and precondition count of an experiment's learned action schemas with the original ones, per domain and action, beside the experiment's precision and recall.
 
-Learned schemas are read as ``precondition_categories.py`` reads them, through ``dias.schema.export.read_learned_schemas``; ground truth is parsed off ``pddl/<domain>/domain.pddl`` with its helpers. Counts are distinct lifted atoms, ``(not (p ...))`` counting as one. Equalities between parameters are left out on both sides: binding is injective by assumption, so a learned domain states the distinctness of its parameters wholesale rather than as learned literals. A type in a ground-truth ``:parameters`` is not a precondition and is not counted, while DIAS has a channel for the type's unary predicate and its learned preconditions include it.
+Schemas are read as in ``precondition_categories.py``, equalities left out on both sides. The match counts are over (domain, action, seed).
 
-Arity is the number of parameters of a schema, learned or ground truth. The summary counts the ``(domain, action, seed)`` triples whose learned arity, or effect count, equals the ground truth's.
-
-Usage:
+Example:
     python experiments/schema_sizes.py --experiment dias-names --markdown experiments/results/schema-sizes.md
-    python experiments/schema_sizes.py --experiment dias-names --domains satellite --seeds 0-2
 """
 
 from __future__ import annotations
@@ -17,10 +14,8 @@ import logging
 import sys
 from pathlib import Path
 
-sys.path.insert(
-    0, str(Path(__file__).resolve().parent)
-)  # for `import precondition_categories`
-from collect_results import _seed_precision_recall  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from collect_results import seed_precision_recall  # noqa: E402
 from dias.pddl import text as pddl_text
 from pipeline import (  # noqa: E402
     CHECKPOINTS,
@@ -47,7 +42,7 @@ SIZES = ("arity", "effects", "preconditions")
 
 
 def parameter_count(block: str) -> int:
-    """The number of parameters an action block declares, types left out."""
+    """The number of parameters of an action block."""
     index = block.find(":parameters")
     if index == -1:
         return 0
@@ -57,7 +52,7 @@ def parameter_count(block: str) -> int:
 
 
 def ground_truth_sizes(domain: str) -> dict[str, dict[str, int]]:
-    """Per action, as lower-case name, the ground-truth arity, effect count and precondition count."""
+    """Per action, the original arity, effect count and precondition count."""
     text = strip_comments(domain_pddl(domain).read_text())
     sizes = {}
     for block in pddl_text.extract_action_blocks(text):
@@ -78,7 +73,7 @@ def ground_truth_sizes(domain: str) -> dict[str, dict[str, int]]:
 def learned_sizes(
     run_id: str, log_dir: Path, threshold: float, checkpoint: str
 ) -> dict[str, dict[str, int]]:
-    """Per action, as lower-case name, one run's learned arity, effect count and precondition count. Raises FileNotFoundError if the run has no checkpoint."""
+    """Per action, a run's learned arity, effect count and precondition count."""
     from dias.schema.export import read_learned_schemas
     from dias.validation.checkpoint import load_run
 
@@ -102,18 +97,18 @@ def learned_sizes(
 def precision_recall(
     experiment: str, domain: str, seed: int, log_dir: Path
 ) -> tuple[float, float] | None:
-    """One seed's validated precision and recall, if its validation scored every problem."""
+    """A seed's precision and recall, if its validation scored every problem."""
     path = log_dir / "validation" / experiment / domain / f"seed{seed}.json"
     if not path.is_file():
         return None
     payload = json.loads(path.read_text())
-    if payload.get("status", "ok") != "ok":
+    if payload["status"] != "ok":
         return None
-    return _seed_precision_recall(payload.get("per_problem", {}))
+    return seed_precision_recall(payload["per_problem"])
 
 
 def measure_domain(domain: str, seeds: list[int], args: argparse.Namespace) -> dict:
-    """One domain's ground truth and, per seed read, its learned sizes and validated precision and recall."""
+    """A domain's original sizes and, per seed, its learned sizes, precision and recall."""
     truth = ground_truth_sizes(domain)
     learned, rates = {}, {}
     for seed in seeds:
@@ -142,7 +137,7 @@ def mean(values) -> float:
 
 
 def action_rows(result: dict) -> list[tuple[str, dict[str, float], dict[str, float]]]:
-    """Per action: ground truth, and the learned sizes averaged over the seeds read."""
+    """Per action, the original sizes and the learned ones averaged over seeds."""
     rows = []
     for action, truth in result["truth"].items():
         runs = [
@@ -154,7 +149,7 @@ def action_rows(result: dict) -> list[tuple[str, dict[str, float], dict[str, flo
 
 
 def domain_row(result: dict) -> dict:
-    """A domain averaged over its actions: ground truth, learned sizes, mean precision and recall over its seeds."""
+    """A domain's sizes averaged over its actions, and its mean precision and recall."""
     rows = action_rows(result)
     rates = list(result["rates"].values())
     return {
@@ -169,7 +164,7 @@ def domain_row(result: dict) -> dict:
 
 
 def matches(results: dict) -> dict[str, tuple[int, int]]:
-    """Over every (domain, action, seed) triple, how many learned arities and effect counts equal the ground truth's."""
+    """How many (domain, action, seed) have the original arity and effect count, out of how many."""
     counts = {"arity": [0, 0], "effects": [0, 0]}
     for result in results.values():
         for sizes in result["learned"].values():
@@ -182,63 +177,54 @@ def matches(results: dict) -> dict[str, tuple[int, int]]:
     return {key: tuple(value) for key, value in counts.items()}
 
 
-def size_cell(truth: float, learned: float) -> str:
-    return f"{truth:.3g} → {learned:.3g}"
+SIZE_HEADER = [f"{key} {side}" for key in SIZES for side in ("GT", "L")]
 
 
-def print_report(results: dict) -> None:
-    print(
-        f"\n{'domain':<16} {'act':>3} {'n':>3}  {'arity GT→L':>14}  {'#eff GT→L':>14}  {'#pre GT→L':>14}  {'P':>6} {'R':>6}"
-    )
+def tables(results: dict) -> list[tuple[str, list[str], list[list[str]]]]:
+    """Per domain, per action, and the match counts, each as (heading, header, rows)."""
+    domains = []
+    actions = []
     for domain, result in results.items():
         row = domain_row(result)
-        cells = "  ".join(
-            f"{size_cell(row['truth'][k], row['learned'][k]):>14}" for k in SIZES
+        sizes = [f"{row[side][k]:.3g}" for k in SIZES for side in ("truth", "learned")]
+        domains.append(
+            [
+                domain,
+                str(row["actions"]),
+                str(row["seeds"]),
+                *sizes,
+                f"{row['P']:.3f}",
+                f"{row['R']:.3f}",
+            ]
         )
-        print(
-            f"{domain:<16} {row['actions']:>3} {row['seeds']:>3}  {cells}  {row['P']:>6.3f} {row['R']:>6.3f}"
-        )
-    hits = matches(results)
-    print(
-        f"learned arity equals the ground truth in {hits['arity'][0]} of {hits['arity'][1]} (domain, action, seed) triples, the effect count in {hits['effects'][0]} of {hits['effects'][1]}"
-    )
-
-
-def write_markdown(path: Path, results: dict, args: argparse.Namespace) -> None:
-    hits = matches(results)
-    lines = [
-        f"# Learned vs. ground-truth schema sizes (`{args.experiment}`)",
-        "",
-        f"Per domain, the arity, effect count and precondition count of its action schemas, averaged over its actions; learned values are also averaged over the seeds read (`n`). `P` and `R` are the mean validated precision and recall over the seeds whose validation scored every problem. Learned arity equals the ground truth in {hits['arity'][0]} of {hits['arity'][1]} (domain, action, seed) triples, and the learned effect count in {hits['effects'][0]} of {hits['effects'][1]}.",
-        "",
-        "## How the numbers were produced",
-        "",
-        f"- `python experiments/schema_sizes.py --experiment {args.experiment} --markdown {path}`.",
-        f"- Learned schemas were read from the `{args.checkpoint}` checkpoints through `dias.schema.export.read_learned_schemas` at threshold {args.threshold:g}, as `precondition_categories.py` reads them; ground truth was parsed from `pddl/<domain>/domain.pddl`.",
-        "- Distinct lifted atoms, `(not (p ...))` counting as one. Equalities between parameters are left out on both sides, since binding is injective by assumption. A type in a ground-truth `:parameters` is not counted as a precondition, while DIAS learns the type's unary predicate as one.",
-        "",
-        "| domain | actions | n | arity (GT → learned) | #eff (GT → learned) | #pre (GT → learned) | P | R |",
-        "|---|--:|--:|---|---|---|--:|--:|",
-    ]
-    for domain, result in results.items():
-        row = domain_row(result)
-        cells = " | ".join(size_cell(row["truth"][k], row["learned"][k]) for k in SIZES)
-        lines.append(
-            f"| {domain} | {row['actions']} | {row['seeds']} | {cells} | {row['P']:.3f} | {row['R']:.3f} |"
-        )
-    lines += [
-        "",
-        "## Per action",
-        "",
-        "| domain | action | arity (GT → learned) | #eff (GT → learned) | #pre (GT → learned) |",
-        "|---|---|---|---|---|",
-    ]
-    for domain, result in results.items():
         for i, (action, truth, learned) in enumerate(action_rows(result)):
-            cells = " | ".join(size_cell(truth[k], learned[k]) for k in SIZES)
-            lines.append(f"| {domain if i == 0 else ''} | {action} | {cells} |")
+            sizes = [f"{v[k]:.3g}" for k in SIZES for v in (truth, learned)]
+            actions.append([domain if i == 0 else "", action, *sizes])
+    hits = matches(results)
+    return [
+        ("Per domain", ["domain", "actions", "n", *SIZE_HEADER, "P", "R"], domains),
+        ("Per action", ["domain", "action", *SIZE_HEADER], actions),
+        (
+            "Learned as the original",
+            ["", "matching", "total"],
+            [[key, str(n), str(total)] for key, (n, total) in hits.items()],
+        ),
+    ]
+
+
+def write_markdown(path: Path, experiment: str, tables_) -> None:
+    lines = [f"# Schema sizes, {experiment}", ""]
+    for heading, header, rows in tables_:
+        lines += [
+            f"## {heading}",
+            "",
+            "| " + " | ".join(header) + " |",
+            "|" + "---|" * len(header),
+        ]
+        lines += ["| " + " | ".join(row) + " |" for row in rows]
+        lines.append("")
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines) + "\n")
+    path.write_text("\n".join(lines))
     print(f"\nwrote {path}")
 
 
@@ -249,27 +235,27 @@ def main() -> int:
     p.add_argument(
         "--experiment",
         required=True,
-        help="Experiment whose runs to read, the prefix of the run ids.",
+        help="Experiment whose runs to read.",
     )
     add_domain_arguments(p)
     p.add_argument(
         "--validation-config",
         type=Path,
         default=VALIDATION_CONFIG,
-        help="The validation.yaml whose seeds are read without --seeds or --num-runs.",
+        help="Its seeds are the default.",
     )
     p.add_argument("--log-dir", type=Path, default=LOGS_DIR)
     p.add_argument(
         "--threshold",
         type=float,
         default=0.5,
-        help="Binarization threshold handed to derive_schema (default: 0.5, schema_threshold's default).",
+        help="Derivation threshold (default: 0.5).",
     )
     p.add_argument(
         "--checkpoint",
         default="final",
         choices=CHECKPOINTS,
-        help="Which of each run's checkpoints to read (default: final, the one validation scores).",
+        help="The checkpoint to read: final (default) or best.",
     )
     p.add_argument(
         "--markdown", type=Path, default=None, help="Also write the tables here."
@@ -288,9 +274,13 @@ def main() -> int:
         results[domain] = result
     if not results:
         raise SystemExit(f"no runs of {args.experiment} found under {args.log_dir}")
-    print_report(results)
+    tables_ = tables(results)
+    for heading, header, rows in tables_:
+        print(f"\n{heading}")
+        for row in [header, *rows]:
+            print("\t".join(row))
     if args.markdown:
-        write_markdown(args.markdown, results, args)
+        write_markdown(args.markdown, args.experiment, tables_)
     return 0
 
 

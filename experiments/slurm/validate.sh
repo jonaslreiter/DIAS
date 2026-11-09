@@ -1,53 +1,28 @@
 #!/usr/bin/env zsh
 # ── site configuration ────────────────────────────────────────────────────────
-# See experiments/slurm/train.sh for what this block is and how to adapt it. The partition list here names CPU partitions too: only MLP-effects validation runs a network, on the GPU shard its resources file requests.
 #SBATCH --job-name=dias-val
 #SBATCH --partition=rleap_gpu_24gb,rleap_gpu_48gb,rleap_cpu,rleap_cpu_modern
 #SBATCH --output=logs/slurm/%x-%A_%a.out
-#
+# See train.sh.
 : ${DIAS_ENV_SETUP:="source ~/.zshrc && conda activate dias"}
 # ── end site configuration ────────────────────────────────────────────────────
 #
-# DIAS validation array task. Do NOT run directly; submit via
-#   python experiments/launch.py ...
-# which submits this array with --dependency=aftercorr on the training array (task i validates the checkpoint from training task i) and exports the DIAS_ROOT/EXPERIMENT/DOMAIN/EXP_TYPE/paths below.
-#
-# experiments/launch_threshold_validation.py reuses this same script to re-validate already-trained checkpoints, exporting the three optional variables below.
+# A validation array task, submitted by experiments/launch.py, which exports DIAS_ROOT, EXPERIMENT, DOMAIN, EXP_TYPE, LOGS_DIR and VALIDATION_CONFIG, and the optional variables below.
 
 eval "$DIAS_ENV_SETUP"
 set -euo pipefail
 
-# A job past its memory allocation is ended rather than swapped out without bound; see memory_guard.sh.
-source "${DIAS_ROOT}/experiments/slurm/memory_guard.sh"
-
-# PyTorch kept within the share of the GPU this job reserved, if any; see gpu_memory_cap.sh.
-source "${DIAS_ROOT}/experiments/slurm/gpu_memory_cap.sh"
-
 SEED=${SLURM_ARRAY_TASK_ID:-0}
 echo "validate  domain=$DOMAIN  seed=$SEED  type=$EXP_TYPE"
 
-# Optional: re-validation knobs (unset => plain validation of a fresh run).
 EXTRA=()
-if [[ -n "${THRESHOLD:-}" ]]; then
-  EXTRA+=(--threshold "$THRESHOLD")
-fi
-if [[ -n "${CHECKPOINT:-}" ]]; then
-  EXTRA+=(--checkpoint "$CHECKPOINT")
-fi
-if [[ -n "${RESULTS_EXPERIMENT:-}" ]]; then
-  EXTRA+=(--results-experiment "$RESULTS_EXPERIMENT")
-fi
-if [[ "${NO_WANDB:-0}" == "1" ]]; then
-  EXTRA+=(--no-wandb)
-fi
-if [[ -n "${NUM_WORKERS:-}" ]]; then
-  EXTRA+=(--num-workers "$NUM_WORKERS")
-fi
-if [[ "${RESUME:-0}" == "1" ]]; then
-  EXTRA+=(--resume)
-fi
+[[ -n "${THRESHOLD:-}" ]] && EXTRA+=(--threshold "$THRESHOLD")
+[[ -n "${CHECKPOINT:-}" ]] && EXTRA+=(--checkpoint "$CHECKPOINT")
+[[ -n "${RESULTS_EXPERIMENT:-}" ]] && EXTRA+=(--results-experiment "$RESULTS_EXPERIMENT")
+[[ "${NO_WANDB:-0}" == "1" ]] && EXTRA+=(--no-wandb)
+[[ -n "${NUM_WORKERS:-}" ]] && EXTRA+=(--num-workers "$NUM_WORKERS")
+[[ "${RESUME:-0}" == "1" ]] && EXTRA+=(--resume)
 
-# DIAS_ROOT rather than a relative path: Slurm runs the batch script from a spool copy, so nothing here may assume the submission directory.
 python "${DIAS_ROOT}/experiments/validate_runs.py" \
   --experiment "$EXPERIMENT" \
   --domain "$DOMAIN" \

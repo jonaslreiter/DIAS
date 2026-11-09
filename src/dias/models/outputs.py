@@ -1,7 +1,4 @@
-"""What the prediction module returns.
-
-Schema tensors hold three mutually exclusive states per cell, softmaxed over the last axis: ignore the atom, assert it, negate it. Effects read that as ignore / add / delete and preconditions as ignore / positive / negative.
-"""
+"""What the model returns. Schema tensors have three channels per cell, softmaxed: ignore, positive and negative, read as add and delete for effects."""
 
 from __future__ import annotations
 
@@ -36,33 +33,33 @@ class SchemaPrediction:
     """One forward pass: the successor state, and everything it was built from."""
 
     adjacency: torch.Tensor
-    """Predicted successor ``A' = A + pre * delta``, per relation."""
+    """The predicted successor ``A'``."""
 
     input_adjacency: torch.Tensor
     """The state the action was applied to."""
 
     delta: torch.Tensor
-    """The change the action would make, before precondition gating."""
+    """The change the action makes, before gating by `p_pre`."""
 
     effects: Channels
     preconditions: Channels
 
     selection: torch.Tensor
-    """Soft slot-to-object assignment, ``(batch, slots, objects)``."""
+    """``S̃^a``, ``(B, M, O)``."""
 
     correspondence: torch.Tensor
-    """Assignment scores before Sinkhorn, with the slack row appended."""
+    """``C^a`` with the slack row."""
 
     precondition_satisfaction: torch.Tensor
-    """Relaxed measure of whether the preconditions hold, one per sample."""
+    """``p_pre``, one per transition."""
 
     precondition_product: torch.Tensor
-    """The unrelaxed product, detached: a diagnostic, never a training signal."""
+    """The product at tau = 0, detached."""
 
 
 @dataclass(frozen=True)
 class SchemaLogits:
-    """A trained model's lifted schema, masked and detached. `effects` is None when they are predicted from the state."""
+    """A model's lifted schema logits, masked and detached; `effects` is None for MLP effects."""
 
     preconditions: torch.Tensor
     effects: torch.Tensor | None

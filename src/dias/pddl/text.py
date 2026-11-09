@@ -1,4 +1,4 @@
-"""Parsing and rewriting of PDDL source text. Strings in, strings out: nothing here touches the filesystem or pymimir."""
+"""Parsing and rewriting PDDL text."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ EQUALITY_REQUIREMENT = ":equality"
 TYPES_PATTERN = re.compile(r"\(:types(.*?)\)", re.DOTALL)
 REQUIREMENTS_PATTERN = re.compile(r"\(:requirements([^)]*)\)", re.IGNORECASE)
 COMMENT_PATTERN = re.compile(r";[^\n]*")
-# Equality written as an ordinary predicate, which can be declared, asserted in a problem and changed by an effect.
+# Equality as an ordinary predicate, which validation writes it as.
 EQUALITY_PREDICATE = "equal"
 EQUALITY_PREDICATE_NAMES = frozenset({"eq", EQUALITY_PREDICATE})
 EQUALITY_LITERAL_PATTERN = re.compile(
@@ -18,7 +18,7 @@ EQUALITY_LITERAL_PATTERN = re.compile(
 
 
 def find_balanced_expr(text: str, start_idx: int) -> tuple[str, int]:
-    """The first parenthesised expression at or after `start_idx`, and the index past its closing paren."""
+    """The first parenthesised expression at or after `start_idx`, and the index past it."""
     left = text.find("(", start_idx)
     if left == -1:
         raise ValueError("Expected balanced expression but found no '('")
@@ -36,7 +36,7 @@ def find_balanced_expr(text: str, start_idx: int) -> tuple[str, int]:
 
 
 def extract_blocks(text: str, opener: str) -> list[str]:
-    """Return every balanced block starting with `opener`, e.g. ``(:action``."""
+    """Every balanced block starting with `opener`, e.g. ``(:action``."""
     blocks: list[str] = []
     index = 0
     while True:
@@ -86,7 +86,7 @@ def parse_typed_parameters(
 
 
 def parse_type_groups(domain_text: str) -> list[tuple[list[str], str]]:
-    """The domain's ``(:types ...)`` as ``(children, parent)`` groups, in order, a type declared without a parent being a child of ``object``. Kept grouped rather than flattened: callers that emit text need children and parent adjacent."""
+    """The domain's ``(:types ...)`` as ``(children, parent)`` groups in order, ``object`` the parent where none is given."""
     match = TYPES_PATTERN.search(domain_text)
     if match is None:
         return []
@@ -98,7 +98,7 @@ def parse_type_groups(domain_text: str) -> list[tuple[list[str], str]]:
 
 
 def type_parents(domain_text: str) -> dict[str, str]:
-    """Map each declared child type to its parent."""
+    """Each declared type's parent."""
     return {
         child: parent
         for children, parent in parse_type_groups(domain_text)
@@ -112,7 +112,7 @@ def domain_uses_equality(domain_text: str) -> bool:
 
 
 def declared_predicates(domain_text: str) -> dict[str, int]:
-    """Each predicate the domain's ``(:predicates ...)`` declares, with its arity, as written."""
+    """The predicates the domain declares, with their arities."""
     text = COMMENT_PATTERN.sub("", domain_text)
     start = text.find("(:predicates")
     if start == -1:
@@ -125,7 +125,7 @@ def declared_predicates(domain_text: str) -> dict[str, int]:
 
 
 def is_equality_predicate(name: str, arity: int) -> bool:
-    """PDDL's `=`, or a binary predicate named `eq` or `equal`, which a domain without :equality writes it as."""
+    """PDDL's `=`, or a binary predicate named `eq` or `equal`."""
     return name == "=" or (name.lower() in EQUALITY_PREDICATE_NAMES and arity == 2)
 
 
@@ -139,7 +139,7 @@ def equality_predicates(domain_text: str) -> list[str]:
 
 
 def equality_as_predicate(domain_text: str) -> str:
-    """The domain with equality, however it spells it, written as the declared predicate `equal`."""
+    """The domain with `=`, `eq` or `equal` written as the declared predicate `equal`."""
     declared = equality_predicates(domain_text)
     start = domain_text.find("(:predicates")
     block, end = find_balanced_expr(domain_text, start)
@@ -162,7 +162,7 @@ def equality_as_predicate(domain_text: str) -> str:
 
 
 def force_distinct_parameters(domain_text: str) -> str:
-    """The domain, with equality written as `equal`, with every action requiring each two of its parameters to be distinct and saying nothing else about equality: the `equal` literals it had are dropped."""
+    """The domain, equality written as `equal`, with every action's `equal` literals replaced by the distinctness of every two parameters."""
     text = domain_text
     for block in extract_action_blocks(domain_text):
         variables, _ = parse_typed_parameters(

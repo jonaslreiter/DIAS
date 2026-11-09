@@ -1,4 +1,4 @@
-"""Binary schema tensors to lifted PDDL action schemas."""
+"""Binarized schema tensors to lifted action schemas."""
 
 from __future__ import annotations
 
@@ -10,10 +10,7 @@ from dias.schema.action import ActionSchema, LiftedAtom
 
 
 class PDDLTranspiler:
-    """Reads action schemas off binarized effect/precondition tensors.
-
-    Each is ``(actions, predicates, slots, slots)`` of 0/1. A set cell means action ``a`` asserts predicate ``r`` over slots ``s1``, ``s2``, truncated to the predicate's arity, which is why atoms are deduplicated: for a unary predicate the ``s2`` axis is redundant.
-    """
+    """Action schemas from 0/1 effect and precondition tensors ``(A, R, M, M)``; a unary predicate reads its slot off the diagonal."""
 
     def __init__(
         self,
@@ -70,7 +67,6 @@ class PDDLTranspiler:
         self.delete_effects = delete_effects
         self.positive_preconditions = positive_preconditions
         self.negative_preconditions = negative_preconditions
-        # Copied: declare_predicate extends these, and callers keep using their lists.
         self.predicate_names = list(predicate_names)
         self.predicate_arities = list(predicate_arities)
         self.action_names = action_names
@@ -107,14 +103,14 @@ class PDDLTranspiler:
         return self.action_schemas
 
     def declare_predicate(self, name: str, arity: int) -> None:
-        """Declare a predicate the tensors have no channel for, so a generated domain can use it. Declaring one twice is a no-op."""
+        """Declare a predicate the tensors have no channel for."""
         if name not in self.predicate_names:
             self.predicate_names.append(name)
             self.predicate_arities.append(arity)
             self.num_predicates += 1
 
     def require_distinct(self, predicate_name: str) -> None:
-        """Require each two parameters of every schema to be bound to different objects, as ``(not (predicate_name ?a ?b))``."""
+        """Require every two parameters of every schema to differ, as ``(not (predicate_name ?a ?b))``."""
         self.declare_predicate(predicate_name, 2)
         for schema in self.action_schemas:
             for x, y in combinations(schema.parameters, 2):

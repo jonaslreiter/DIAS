@@ -1,6 +1,6 @@
-"""Scoring sampled states in worker processes, within the memory this process may use.
+"""Scoring states in worker processes within the memory this process may use.
 
-At most one worker runs per CPU, each under a hard memory limit that it reserves out of the memory the parent leaves: an equal share of it, or a quarter more than the most any state has needed so far, whichever is larger. A worker starts only when its reservation is free. A state that does not fit is tried again with twice its reservation, until it has all of the memory; one that does not fit then raises `StateDoesNotFit`. The limit is set before a worker imports anything, so the task's module must not import torch, whose address-space reservations alone exceed a share.
+At most one worker runs per CPU, under an address-space limit reserved out of the memory the parent leaves: an equal share of it, or a quarter more than the most a state has needed so far, whichever is larger. A state that does not fit is tried again with twice its reservation, up to all of the memory, and then raises `StateDoesNotFit`. The task's module must not import torch.
 """
 
 from __future__ import annotations
@@ -21,18 +21,18 @@ from typing import Any, Callable, Iterator, Mapping
 
 logger = logging.getLogger(__name__)
 
-# Of the memory, the part kept for the parent beyond what it already uses: it receives every result.
+# The share of the memory kept for the parent beyond what it uses.
 PARENT_RESERVE = 0.1
 # The least a worker reserves.
 MIN_WORKER_MEMORY = 2**30
 # What a state reserves beyond the most any state has needed so far.
 HEADROOM = 1.25
-# How a worker that ran out of memory in native code ends: std::bad_alloc escaping to std::terminate, or the kernel's out-of-memory killer.
+# How a worker that ran out of memory in native code ends.
 _OUT_OF_MEMORY_SIGNALS = {signal.SIGABRT, signal.SIGKILL}
 
 
 class StateDoesNotFit(MemoryError):
-    """A state that ran out of memory even alone, with all of it."""
+    """A state that does not fit in all of the memory."""
 
     def __init__(self, index: int, memory: int):
         super().__init__(f"state {index} does not fit in {memory / 2**30:.1f} GB")
@@ -41,7 +41,7 @@ class StateDoesNotFit(MemoryError):
 
 
 def available_cpus() -> int:
-    """The CPUs this process may use: the affinity mask a Slurm job is pinned to, or the machine's count."""
+    """The CPUs this process may use."""
     try:
         return len(os.sched_getaffinity(0))
     except AttributeError:
@@ -88,7 +88,7 @@ class _Worker:
     def __init__(self, limit: int, task: str, initializer: str, config: Any):
         self.limit = limit
         ours, theirs = socket.socketpair()
-        # This process's import path, and one thread each: the workers are the parallelism, and every thread pool reserves address space.
+        # This process's import path, and one thread each.
         env = os.environ | {"PYTHONPATH": os.pathsep.join(p for p in sys.path if p)}
         env |= dict.fromkeys(
             ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"), "1"
@@ -108,7 +108,7 @@ class _Worker:
         self.connection.send((index, payload))
 
     def receive(self) -> tuple[str, Any, int]:
-        """``("done", result, peak bytes)``, ``("memory", None, 0)`` if the state did not fit, or ``("error", text, 0)``."""
+        """``("done", result, peak bytes)``, ``("memory", None, 0)``, or ``("error", text, 0)``."""
         try:
             return self.connection.recv()
         except EOFError:
@@ -143,10 +143,7 @@ def score_states(
     workers: int | None = None,
     memory: int | None = None,
 ) -> Iterator[tuple[int, Any]]:
-    """Yield ``(index, task(payload))`` for every payload, in the order they finish.
-
-    Each worker runs `initializer(config)` once, then `task` on one payload after another. `workers` defaults to the CPUs available and `memory` to the bytes available; both functions must be importable by name, from modules that do not import torch.
-    """
+    """``(index, task(payload))`` for every payload, in the order they finish. Each worker runs `initializer(config)` once; both functions are imported by name. `workers` and `memory` default to the CPUs and bytes available."""
     if not payloads:
         return
     workers = available_cpus() if workers is None else workers
@@ -166,7 +163,6 @@ def score_states(
     )
     names = (_name(task), _name(initializer), config)
     queue = deque(payloads)
-    # What a state that did not fit must reserve next.
     needs: dict[int, int] = {}
     largest = 0
 
@@ -209,7 +205,6 @@ def score_states(
                         min(budget, HEADROOM * peak) / 2**30,
                     )
                 largest = max(largest, peak)
-                # The worker's next state first, so it scores while this result is used.
                 if queue and reservation(queue[0]) == worker.limit:
                     following = queue.popleft()
                     worker.give(following, payloads[following])
@@ -224,8 +219,8 @@ def score_states(
 
 
 def _serve(connection: Connection) -> None:
-    """A worker's life: initialize, then score payloads until told to stop. A state that does not fit ends the worker."""
-    # Pickled up front: a state that did not fit can leave no memory to pickle with.
+    """Initialize, then score payloads until told to stop; a state that does not fit ends the worker."""
+    # Pickled while there is memory to pickle with.
     out_of_memory = ForkingPickler.dumps(("memory", None, 0))
     task, initializer, config = connection.recv()
     try:
@@ -241,7 +236,6 @@ def _serve(connection: Connection) -> None:
                 result = score(payload)
             except MemoryError:
                 fits = False
-            # The parent raises it with the worker's traceback.
             except Exception:  # noqa: BLE001
                 connection.send(("error", traceback.format_exc(), 0))
                 return
@@ -252,14 +246,13 @@ def _serve(connection: Connection) -> None:
                 continue
             except MemoryError:
                 del result
-        # Reported out here, since inside the handler its traceback still holds what the state allocated.
+        # Outside the handler, whose traceback holds the state's memory.
         connection.send_bytes(out_of_memory)
         return
 
 
 if __name__ == "__main__":
     descriptor, limit = int(sys.argv[1]), int(sys.argv[2])
-    # A worker that runs out of memory may abort, and its core dump would be as large as its share.
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
     _serve(Connection(descriptor))

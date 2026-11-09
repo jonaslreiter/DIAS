@@ -38,7 +38,7 @@ SAMPLING = WalkSampling(num_samples=NUM_SAMPLES, walk_length=20, min_walks=2)
 class MlpEffectsTest(unittest.TestCase):
     def setUp(self):
         self.directory = temp_dir(self)
-        model, hparams = build_model(state_dependent_effects=True)
+        model, hparams = build_model(mlp_effects=True)
         self.model_id = save(self.directory, model, hparams)
 
     def validate(self, progress_path=None, seed=SAMPLE_SEED, **kwargs) -> dict:
@@ -115,15 +115,15 @@ class MlpEffectsTest(unittest.TestCase):
         )
 
     def learned_groundings(
-        self, legacy: bool, force_injective: bool = False
+        self, equality: bool, force_injective: bool = False
     ) -> list[tuple[int, ...]]:
         # Every slot on, so the actions have parameters to repeat; the untrained preconditions decode to none.
         directory = temp_dir(self)
-        model, hparams = build_model(legacy=legacy, state_dependent_effects=True)
+        model, hparams = build_model(equality=equality, mlp_effects=True)
         with torch.no_grad():
             model.predictor.selector.slot_weight_logits.fill_(10.0)
         validation = MlpEffectsValidator(
-            save(directory, model, hparams, legacy=legacy),
+            save(directory, model, hparams, equality=equality),
             str(directory),
             str(TEST_PROBLEM),
             force_injective=force_injective,
@@ -141,10 +141,10 @@ class MlpEffectsTest(unittest.TestCase):
     def test_groundings_repeat_an_object_only_where_equality_was_learned(self):
         """The planted schema requires nothing, so repeats are applicable unless the distinctness holds, which needs the equality facts to survive the rebuilt state."""
         repeats = lambda groundings: [g for g in groundings if len(set(g)) < len(g)]
-        self.assertTrue(repeats(self.learned_groundings(legacy=True)))
+        self.assertTrue(repeats(self.learned_groundings(equality=True)))
         for groundings in (
-            self.learned_groundings(legacy=False),
-            self.learned_groundings(legacy=True, force_injective=True),
+            self.learned_groundings(equality=False),
+            self.learned_groundings(equality=True, force_injective=True),
         ):
             self.assertTrue(any(len(g) > 1 for g in groundings))
             self.assertEqual(repeats(groundings), [])
@@ -153,7 +153,7 @@ class MlpEffectsTest(unittest.TestCase):
         directory = temp_dir(self)
         model, hparams = build_model()
         model_id = save(directory, model, hparams)
-        with self.assertRaisesRegex(ValueError, "state_dependent_effects"):
+        with self.assertRaisesRegex(ValueError, "mlp_effects"):
             MlpEffectsValidator(
                 model_id, str(directory), problem_path=str(TEST_PROBLEM)
             )
@@ -169,7 +169,7 @@ class BoundObjectGridTest(unittest.TestCase):
     NUM_GROUNDINGS = 4000
 
     def setUp(self):
-        self.model, hparams = build_model(state_dependent_effects=True)
+        self.model, hparams = build_model(mlp_effects=True)
         self.model.retarget(self.NUM_OBJECTS)
         self.model.eval()
         last = self.model.predictor.effects.mlp[5]

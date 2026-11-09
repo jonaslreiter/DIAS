@@ -1,10 +1,10 @@
-"""Lifted action schemas and the atoms they are built from, serialising to PDDL. Slot indices are the parameter identity: an atom refers to ``?x{slot}``, and the parameter list is the union of the slots its atoms mention unless given."""
+"""Lifted action schemas and their atoms, written as PDDL over the parameters ``?x<slot>``."""
 
 from __future__ import annotations
 
 
 class LiftedAtom:
-    """One (possibly negated) atom over slot indices, e.g. ``(not (on ?x0 ?x1))``."""
+    """A lifted atom over slots, e.g. ``(not (on ?x0 ?x1))``."""
 
     def __init__(
         self, predicate_name: str, arity: int, slots: list[int], positive: bool
@@ -40,7 +40,7 @@ class LiftedAtom:
 
 
 class ActionSchema:
-    """A named action with lifted preconditions and effects."""
+    """An action schema; its parameters are the slots its atoms use unless given."""
 
     def __init__(
         self,

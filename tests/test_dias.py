@@ -7,7 +7,7 @@ from torch_geometric.data import Batch, Data
 from dias.models.dias import DIAS
 from dias.models.outputs import IGNORE, NEGATE
 from dias.schedules import Exponential
-from dias.schema.decoding import derive_schema
+from dias.schema.derivation import derive_schema
 
 
 def make_batch(action_args=(0, 1), changed=False):
@@ -44,7 +44,6 @@ class DIASModelTest(unittest.TestCase):
             "num_slots": 2,
             "action_arities": [2],
             "action_arg_positions": [[0, 1]],
-            "successor_relations": True,
         }
         defaults.update(kwargs)
         return DIAS(**defaults)
@@ -116,7 +115,7 @@ class DIASModelTest(unittest.TestCase):
         self.assertTrue(torch.isfinite(long_output.adjacency).all())
 
     def test_forward_without_successor_batch_uses_reverse_edges_only(self):
-        model = self.make_model(successor_relations=False, random_node_embeddings=False)
+        model = self.make_model(random_node_features=False)
         model.eval()
         batch_state, _ = make_batch(action_args=(-1, -1))
         output = model(batch_state)
@@ -124,7 +123,7 @@ class DIASModelTest(unittest.TestCase):
         self.assertTrue(torch.isfinite(output.adjacency).all())
 
     def test_step_and_eval_steps_return_losses(self):
-        model = self.make_model(successor_relations=False)
+        model = self.make_model()
         model.eval()
         batch = (*make_batch(changed=True), torch.tensor([0]))
         losses = model.step(batch)
@@ -132,7 +131,7 @@ class DIASModelTest(unittest.TestCase):
             set(losses.logged(model.aux_loss_alpha)),
             {
                 "loss",
-                "loss_adjacency",
+                "loss_main",
                 "loss_aux",
                 "hamming_distance",
                 "precondition_satisfaction",
@@ -168,7 +167,7 @@ class DIASModelTest(unittest.TestCase):
                 model.predictor.preconditions.logits[0, 0, 0, 0] = torch.tensor(
                     [0.0, 0.0, 2.0]
                 )
-            model.step(batch).primary.backward()
+            model.step(batch).main.backward()
             gradients[use_applicability_loss] = (
                 model.predictor.preconditions.logits.grad[0, 0, 0, 0, NEGATE].item()
             )

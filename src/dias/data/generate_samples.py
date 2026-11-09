@@ -1,21 +1,19 @@
-"""Generate (state, action, next_state) samples from PDDL domains via pymimir."""
+"""Sampling ``(s, a, s')`` transitions from a PDDL problem by random walk (paper, App. C.2)."""
 
 import logging
 import random
 import time
-from collections import deque
 from typing import Any, NamedTuple
 
 from dias.schema.domain import tensor_relations
 
 logger = logging.getLogger(__name__)
 
-# How often a long exploration says where it is. Anything shorter stays silent, so short runs are not narrated.
 PROGRESS_INTERVAL_SECONDS = 10.0
 
 
 class _Progress:
-    """Report at most every ``PROGRESS_INTERVAL_SECONDS``, and only if asked twice."""
+    """Logs at most every ``PROGRESS_INTERVAL_SECONDS``, the first time after that long."""
 
     def __init__(self, message: str):
         self.message = message
@@ -29,21 +27,18 @@ class _Progress:
         logger.info(self.message, *values)
 
 
-def state_to_groundings(state, include_statics=False):
-    """pymimir State -> {predicate_name: [[object_index, ...], ...]}."""
+def state_to_groundings(state):
+    """A pymimir state as ``{predicate: [[object index, ...], ...]}``."""
     result: dict[str, list[list[int]]] = {}
     for atom in state.get_atoms():
-        pred = atom.get_predicate()
-        if not include_statics and pred.is_static():
-            continue
-        result.setdefault(pred.get_name(), []).append(
+        result.setdefault(atom.get_predicate().get_name(), []).append(
             [t.get_index() for t in atom.get_terms()]
         )
     return result
 
 
 def _groundings_by_action(actions):
-    """List of ground actions -> {action_name: [(object_index, ...), ...]}."""
+    """Ground actions as ``{action: [(object index, ...), ...]}``."""
     groundings: dict[str, list[tuple[int, ...]]] = {}
     for ground_action in actions:
         groundings.setdefault(ground_action.get_action().get_name(), []).append(
@@ -53,7 +48,7 @@ def _groundings_by_action(actions):
 
 
 def _require_injective(groundings_by_action: dict) -> None:
-    """Refuse a state in which an action applies with one object in two parameters. The model binds injectively, so such a domain is outside what DIAS learns; no domain in pddl/ has one."""
+    """Refuse a state in which an action applies with one object in two parameters, since DIAS assumes injective bindings."""
     for name, groundings in groundings_by_action.items():
         for objects in groundings:
             if len(set(objects)) < len(objects):
@@ -62,21 +57,20 @@ def _require_injective(groundings_by_action: dict) -> None:
                 )
 
 
-def _make_sample(state, ground_action, successor, include_statics):
-    # The executed action is one of the applicable ones, so checking those covers it.
+def _make_sample(state, ground_action, successor):
     applicable = _groundings_by_action(state.generate_applicable_actions())
     _require_injective(applicable)
     return {
-        "state": state_to_groundings(state, include_statics),
+        "state": state_to_groundings(state),
         "action": ground_action.get_action().get_name(),
         "action_args": [o.get_index() for o in ground_action.get_objects()],
-        "next_state": state_to_groundings(successor, include_statics),
+        "next_state": state_to_groundings(successor),
         "applicable_actions": applicable,
     }
 
 
 class WalkStep(NamedTuple):
-    """One step of `random_walk`: the state it was taken in, that state's applicable ground actions, and the action taken with its successor. At a dead end the last two are None and the walk goes back to the initial state."""
+    """One step of `random_walk`: the state, its applicable ground actions, and the action taken with its successor, both None at a dead end."""
 
     state: Any
     applicable: list
@@ -85,10 +79,7 @@ class WalkStep(NamedTuple):
 
 
 def random_walk(problem, rng=random):
-    """The walk training and validation both sample from: from the initial state, a uniformly random applicable ground action per step, and back to the initial state at a dead end. It never ends; the caller takes as many steps as it needs.
-
-    `rng` is anything with a `choice`; training draws from the global `random` that its seed sets, validation from a generator of its own.
-    """
+    """An endless random walk from the initial state: a uniformly drawn applicable ground action per step, and back to the initial state at a dead end. `rng` is anything with a `choice`."""
     initial = problem.get_initial_state()
     current = initial
     while True:
@@ -108,10 +99,8 @@ def generate_random_walk(
     min_total_samples: int = 0,
     min_per_action: int = 0,
     max_steps: int = 1_000_000,
-    only_unseen_states: bool = True,
-    include_statics: bool = False,
 ):
-    """Random walk until ``min_total_samples`` and the per-action quota are met."""
+    """The transitions of a random walk until it has ``min_total_samples`` and ``min_per_action`` of each action, or ``max_steps``."""
     initial = problem.get_initial_state()
     if not list(initial.generate_applicable_actions()):
         raise ValueError("initial state has no applicable actions.")
@@ -120,7 +109,6 @@ def generate_random_walk(
     walk = random_walk(problem)
     samples: list[dict] = []
     per_action: dict[str, int] = {}
-    seen: set[int] = set()
     deadlocks = 0
 
     def quota_met() -> bool:
@@ -143,14 +131,9 @@ def generate_random_walk(
             deadlocks += 1
             continue
 
-        sid = step.state.get_index()
-        if (not only_unseen_states) or sid not in seen:
-            seen.add(sid)
-            samples.append(
-                _make_sample(step.state, step.action, step.successor, include_statics)
-            )
-            name = step.action.get_action().get_name()
-            per_action[name] = per_action.get(name, 0) + 1
+        samples.append(_make_sample(step.state, step.action, step.successor))
+        name = step.action.get_action().get_name()
+        per_action[name] = per_action.get(name, 0) + 1
 
         if quota_met():
             break
@@ -180,53 +163,13 @@ def generate_random_walk(
     return samples
 
 
-def reachable_states(problem, limit: int) -> list:
-    """Up to `limit` distinct states reachable from the initial one, breadth first."""
-    initial = problem.get_initial_state()
-    visited = {initial.get_index(): initial}
-    queue = deque([initial])
-    progress = _Progress("Reachable states: %d of at most %d, %d still to expand.")
-    while queue and len(visited) < limit:
-        progress.report(len(visited), limit, len(queue))
-        current = queue.popleft()
-        for action in current.generate_applicable_actions():
-            successor = action.apply(current)
-            if successor.get_index() in visited:
-                continue
-            visited[successor.get_index()] = successor
-            queue.append(successor)
-            if len(visited) >= limit:
-                break
-
-    logger.info("BFS reached %d distinct states.", len(visited))
-    return list(visited.values())
-
-
-def generate_bfs(problem, num_states: int, include_statics: bool = False):
-    """One sample per applicable action of each state a BFS reaches."""
-    return [
-        _make_sample(state, action, action.apply(state), include_statics)
-        for state in reachable_states(problem, num_states)
-        for action in state.generate_applicable_actions()
-    ]
-
-
-def samples_to_tensors(
-    samples,
-    metadata,
-    include_statics: bool = False,
-    default_statics: list[str] = ["number", "object"],
-    include_equality: bool = False,
-):
-    """Convert samples to adjacency-matrix tensors of shape [N, R, O, O]."""
-    # Here rather than at the top: validation workers walk and ground with this module and must not load torch.
+def samples_to_tensors(samples, metadata, include_equality: bool = False):
+    """Samples as adjacency tensors ``[N, R, O, O]`` with their action labels."""
+    # Not at the top: validation workers import this module and must not import torch.
     import torch
 
     relation_info = tensor_relations(
-        metadata["predicates"],
-        include_statics=include_statics,
-        include_equality=include_equality,
-        default_statics=default_statics,
+        metadata["predicates"], include_equality=include_equality
     )
     relation_names = [r["name"] for r in relation_info]
     relation_arities = [r["arity"] for r in relation_info]

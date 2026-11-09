@@ -1,24 +1,12 @@
-# Instance-size ladder for the runtime / GPU-memory scaling study.
-#
-# Consumed by experiments/scaling/generate_instances.py (to build the instances), experiments/scaling/launch_scaling.py + experiments/scaling/run_scaling.py (to run them) and experiments/scaling/collect_scaling.py (to aggregate).
-#
-# Each size entry lists the *generator* parameters; the resulting object count is derived from them (see experiments/scaling/generate_instances.py::OBJECT_COUNT) and becomes the instance id, e.g. `n0068` -> experiments/scaling/instances/<domain>/n0068.pddl. generate_instances.py cross-checks that count against the parsed instance and fails if the two disagree, so the ids stay trustworthy.
-#
-# `target` is the rung of the shared ladder that entry belongs to. The three domains scale in different units (blocks / cities x locations / grid cells), so they cannot all hit the same object count exactly: logistics lands on 21, 38, 67, 103, 147 against targets 20, 40, 68, 100, 150. The target is what aligns the columns of experiments/scaling/collect_scaling.py; the exact counts are reported in their own table there. Targets must be unique within a domain.
+# The scaling study, read by launch_scaling.py, run_scaling.py and collect_scaling.py.
 
-# Per (domain, size). The seed drives model init and transition sampling; the instance itself is fixed, generated once and committed.
 seeds: [0, 1, 2, 3, 4]
 
-# The first `warmup_steps` steps are discarded (CUDA context, cuDNN autotuning, allocator warm-up), the peak-memory counters are reset right after them, and the throughput is taken over the remaining `measure_steps`.
+# Steps discarded before measuring, and steps measured.
 warmup_steps: 20
 measure_steps: 100
 
-# Slurm resources for one array task = one (domain, seed), which walks the whole size ladder of that domain sequentially on the same physical GPU.
-#
-# Unlike the main training arrays (experiments/configs/slurm-resources.yaml) this asks for a *whole* GPU (`gpu:1`, not a `shard:N` slice) and pins the partition: a shared GPU would put co-tenant load into the iterations/second numbers, and a free choice of partition would mix GPU models within one curve.
-#
-# A task took 12 minutes and 5 GB of RAM at most in the camera-ready runs of October 2026.
-
+# Slurm resources of one task, which runs a domain's instances for one seed on a whole GPU.
 slurm:
   time: "01:00:00"
   mem: "8G"
@@ -26,38 +14,8 @@ slurm:
   gres: "gpu:1"
   sbatch_extra: ["--partition=rleap_gpu_24gb"]
 
+# Per domain, the instance in instances/<domain>/ for each target number of objects.
 domains:
-  blocks-3:
-    generator: blocksworld
-    generator_seed: 1
-    sizes:
-      - {target: 12, blocks: 12}
-      - {target: 20, blocks: 20}
-      - {target: 40, blocks: 40}
-      - {target: 68, blocks: 68}
-      - {target: 100, blocks: 100}
-      - {target: 150, blocks: 150}
-
-  logistics:
-    generator: logistics
-    generator_seed: 1
-    # Trucks are left at the generator default (= number of cities).
-    sizes:
-      - {target: 12, cities: 2, city_size: 2, packages: 2, airplanes: 2}
-      - {target: 20, cities: 3, city_size: 3, packages: 4, airplanes: 2}
-      - {target: 40, cities: 5, city_size: 4, packages: 6, airplanes: 2}
-      - {target: 68, cities: 7, city_size: 6, packages: 8, airplanes: 3}
-      - {target: 100, cities: 9, city_size: 8, packages: 10, airplanes: 3}
-      - {target: 150, cities: 11, city_size: 10, packages: 12, airplanes: 3}
-
-  delivery:
-    generator: delivery
-    generator_seed: 1
-    # The generator always emits exactly one truck.
-    sizes:
-      - {target: 12, grid: 3, packages: 2}
-      - {target: 20, grid: 4, packages: 3}
-      - {target: 40, grid: 6, packages: 3}
-      - {target: 68, grid: 8, packages: 3}
-      - {target: 100, grid: 10, packages: 4}
-      - {target: 150, grid: 12, packages: 5}
+  blocks-3: {12: n0012, 20: n0020, 40: n0040, 68: n0068, 100: n0100, 150: n0150}
+  logistics: {12: n0012, 20: n0021, 40: n0038, 68: n0067, 100: n0103, 150: n0147}
+  delivery: {12: n0012, 20: n0020, 40: n0040, 68: n0068, 100: n0105, 150: n0150}

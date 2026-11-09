@@ -1,4 +1,4 @@
-"""Sampling states and scoring a learned domain against the original one, behaviourally: the learned schemas are correct to the extent that they generate the same successor states."""
+"""Drawing test states and scoring the successors a learned domain generates against the original's (paper, App. C.3)."""
 
 from __future__ import annotations
 
@@ -9,27 +9,26 @@ import random
 from collections import Counter, defaultdict
 from itertools import islice
 from pathlib import Path
-from typing import ClassVar, Iterable, Mapping
+from typing import Iterable, Mapping
 
 from tqdm import tqdm
 
-from dias.data.generate_samples import random_walk, reachable_states
+from dias.data.generate_samples import random_walk
 from dias.pddl.states import state_fluents, transfer_state
 
 logger = logging.getLogger(__name__)
 
-# Learned actions are merged into the original domain under this prefix, which is what tells the two apart when scoring.
+# The prefix of the learned actions in a domain holding both.
 LEARNED_ACTION_PREFIX = "learned_"
 
-# One state's successors, expected and produced, each keyed by action name.
+# One state's successors, expected and produced, by action name.
 SuccessorSets = tuple[Mapping[str, set], Mapping[str, set]]
 
-# A bound on the walks `sample_walk_states` adds while some action schema is short of its share, for a problem in which a schema never applies. At validation.yaml's settings no domain in pddl/ needs more than 20 (Hanoi, and Sokoban test-1).
 MAX_WALKS = 100
 
 
 def resolve_sample_seed(seed: int | None) -> int:
-    """The seed to draw with, drawn itself when the caller named none. It is recorded in the result, so passing it back reproduces those exact states."""
+    """`seed`, or a freshly drawn one."""
     return random.randrange(2**32) if seed is None else seed
 
 
@@ -40,9 +39,9 @@ def sample_walk_states(
     min_walks: int,
     seed: int,
 ) -> list:
-    """Draw `num_samples` distinct states of `problem` from independent random walks, an equal share for each action schema.
+    """`num_samples` distinct states of `problem`, an equal share for each action schema.
 
-    Each walk is the one training samples from (`generate_samples.random_walk`), `walk_length` steps from the initial state. At least `min_walks` are taken, and more until every action schema is applicable in at least its share of the distinct states visited, as training walks until each action name has its quota; a walk caught where an action can no longer apply (a box pushed into a corner) is followed by a fresh one. Each schema's share is then drawn uniformly from the visited states in which it applies, so recall is scored on every schema, and the sample is filled up uniformly from the rest if a share runs short. The generator is seeded with `seed` and is nobody else's.
+    Walks of `walk_length` steps from the initial state are repeated at least `min_walks` and at most `MAX_WALKS` times, until every action schema is applicable in its share of the distinct states visited. Each schema's share is drawn uniformly from the visited states in which it applies, and any shortfall from the remaining ones.
     """
     rng = random.Random(seed)
     action_names = sorted(a.get_name() for a in problem.get_domain().get_actions())
@@ -51,7 +50,7 @@ def sample_walk_states(
         for i, name in enumerate(action_names)
     }
 
-    # State index -> (state, the action schemas applicable in it), in the order first visited.
+    # State index -> (state, the action schemas applicable in it).
     visited: dict[int, tuple] = {}
     applicable_in: Counter = Counter()
 
@@ -108,57 +107,10 @@ def sample_walk_states(
     return list(chosen.values())
 
 
-def sample_reachable_states(
-    problem,
-    num_samples: int,
-    sample_population: int,
-    seed: int,
-) -> list:
-    """Draw `num_samples` distinct states from a BFS over `problem`, from a generator of its own rather than the global one."""
-    if num_samples > sample_population:
-        logger.warning(
-            "num_samples (%d) exceeds the population, clamping to %d.",
-            num_samples,
-            sample_population,
-        )
-        num_samples = sample_population
-
-    population = reachable_states(problem, sample_population)
-    if num_samples > len(population):
-        logger.warning(
-            "num_samples (%d) exceeds the reachable states (%d), clamping.",
-            num_samples,
-            len(population),
-        )
-        num_samples = len(population)
-
-    logger.info(
-        "Sampling %d of the %d reachable states found, seeded %d.",
-        num_samples,
-        len(population),
-        seed,
-    )
-    return random.Random(seed).sample(population, num_samples)
-
-
-class Sampling:
-    """How a validator draws its states from a held-out problem: one of the dataclasses below, named in validation.yaml's `sampling` block by its `strategy`."""
-
-    strategy: ClassVar[str]
-
-    def draw(self, problem, seed: int) -> list:
-        raise NotImplementedError
-
-    def record(self) -> dict:
-        """The settings as results record them and validation.yaml states them; `sampling_from_record` reads them back."""
-        return {"strategy": self.strategy, **dataclasses.asdict(self)}
-
-
 @dataclasses.dataclass(frozen=True)
-class WalkSampling(Sampling):
-    """`sample_walk_states`: training's random walk on the held-out problem, an equal share of the states for each action schema."""
+class WalkSampling:
+    """How validation draws a problem's test states: `sample_walk_states` with these settings."""
 
-    strategy: ClassVar[str] = "walks"
     num_samples: int = 500
     walk_length: int = 2000
     min_walks: int = 5
@@ -168,42 +120,23 @@ class WalkSampling(Sampling):
             problem, self.num_samples, self.walk_length, self.min_walks, seed
         )
 
-
-@dataclasses.dataclass(frozen=True)
-class BfsSampling(Sampling):
-    """`sample_reachable_states`, the paper's draw: `num_samples` of the first `sample_population` states a breadth-first search reaches. It stays within a few actions of the initial state on the larger problems, and never makes satellite's take_image applicable, nor spanner's tighten_nut on test-2 and test-3."""
-
-    strategy: ClassVar[str] = "bfs"
-    num_samples: int = 250
-    sample_population: int = 500
-
-    def draw(self, problem, seed: int) -> list:
-        return sample_reachable_states(
-            problem, self.num_samples, self.sample_population, seed
-        )
+    def record(self) -> dict:
+        return dataclasses.asdict(self)
 
 
-SAMPLINGS = {sampling.strategy: sampling for sampling in (WalkSampling, BfsSampling)}
-
-# What a result recording no sampling was drawn with: before the walks there was only the breadth-first draw, and validation.yaml never changed its settings.
-UNRECORDED_SAMPLING = BfsSampling()
-
-
-def sampling_from_record(record: Mapping) -> Sampling:
-    """The sampling a `Sampling.record()`, or validation.yaml's `sampling` block, describes; settings it leaves out take their defaults."""
+def sampling_from_record(record: Mapping) -> WalkSampling:
+    """The sampling a `WalkSampling.record()` or validation.yaml's `sampling` block describes, settings left out at their defaults."""
     settings = dict(record)
-    strategy = settings.pop("strategy", None)
-    if strategy not in SAMPLINGS:
+    if settings.pop("strategy", "walks") != "walks":
         raise ValueError(
-            f"sampling strategy {strategy!r} is none of {sorted(SAMPLINGS)}"
+            f"validation samples by walks only, not {record['strategy']!r}"
         )
-    sampling = SAMPLINGS[strategy]
-    known = {field.name for field in dataclasses.fields(sampling)}
+    known = {field.name for field in dataclasses.fields(WalkSampling)}
     if set(settings) - known:
         raise ValueError(
-            f"{strategy} sampling takes {sorted(known)}, not {sorted(set(settings) - known)}"
+            f"sampling takes {sorted(known)}, not {sorted(set(settings) - known)}"
         )
-    return sampling(**settings)
+    return WalkSampling(**settings)
 
 
 def transfer_states(states: list, target_problem, source_domain, target_domain) -> list:
@@ -226,12 +159,7 @@ def transfer_states(states: list, target_problem, source_domain, target_domain) 
 
 
 def score_successors(per_state: Iterable[SuccessorSets]) -> dict:
-    """Score produced successors against expected ones, state by state.
-
-    The one scorer for every validator: a successor is a pymimir state index or a signature of the cells it flips, and all they must agree on is that equal successors compare equal.
-
-    Counts are attributed to actions, so a successor reached under the wrong operator is a false positive there and a false negative under the right one. ``matches`` keeps the state-level view: the two successor sets agreed exactly. Micro-averaged over every state and action.
-    """
+    """tp, fp and fn of the produced successors against the expected ones, per action and summed; a successor reached by the wrong action counts against both. ``matches`` counts the states whose successor sets agree."""
     states = 0
     matches = 0
     action_tp: dict[str, int] = defaultdict(int)
@@ -256,7 +184,7 @@ def score_successors(per_state: Iterable[SuccessorSets]) -> dict:
 
 
 def combine_scores(scores: Iterable[dict]) -> dict:
-    """`score_successors` over the union of disjoint state sets, from each set's own result: every count is a sum over states."""
+    """`score_successors` over several disjoint sets of states, from their results."""
     states = 0
     matches = 0
     action_tp: dict[str, int] = defaultdict(int)
@@ -274,7 +202,7 @@ def combine_scores(scores: Iterable[dict]) -> dict:
 
 
 def successor_sets(state, learned_action_prefix: str) -> SuccessorSets:
-    """One state of a merged domain, which carries the learned actions beside the original ones: apply all of them and sort the successors' state indices by which kind of action reached them."""
+    """The successors of `state` in a domain holding the original and the learned actions, by action, original and learned apart."""
     prefix_length = len(learned_action_prefix)
     expected: dict[str, set] = defaultdict(set)
     produced: dict[str, set] = defaultdict(set)
@@ -289,7 +217,7 @@ def successor_sets(state, learned_action_prefix: str) -> SuccessorSets:
 
 
 def read_progress(path: Path, header: dict) -> dict[int, dict]:
-    """The state scores an interrupted run with this `header` left in `path`, rewritten to hold just those; a file with another header is started over."""
+    """The state scores recorded in `path` under `header`; a file with another header is started over."""
     lines = path.read_text().splitlines() if path.exists() else []
     scores: dict[int, dict] = {}
     if lines and lines[0] == json.dumps(header):
@@ -306,7 +234,7 @@ def read_progress(path: Path, header: dict) -> dict[int, dict]:
 
 
 def append_progress(path: Path, index: int, score: dict) -> None:
-    """Record one state's score as soon as it is known, so a killed run keeps it."""
+    """Record one state's score."""
     with path.open("a") as progress:
         progress.write(json.dumps({"state": index, "score": score}) + "\n")
 
@@ -323,7 +251,6 @@ def _summary(
         "accuracy": matches / states if states else 0.0,
         "precision": _ratio(tp_total, fp_total),
         "recall": _ratio(tp_total, fn_total),
-        # Totals (the sums of `action_stats`), so problems can be micro-averaged downstream.
         "tp": tp_total,
         "fp": fp_total,
         "fn": fn_total,

@@ -1,4 +1,4 @@
-"""Loading a trained run: its model, its datamodule settings, its domain."""
+"""Loading a trained run: its model, data settings and domain metadata."""
 
 from __future__ import annotations
 
@@ -10,18 +10,6 @@ import torch
 from dias.models.dias import DIAS
 from dias.schema import DomainSchema
 from dias.schema.export import learned_domain
-
-# Sampling parameters PddlGraphDataModule no longer accepts; dropped so older checkpoints still load.
-RETIRED_HPARAMS = frozenset(
-    {
-        "method",
-        "num_val",
-        "num_test",
-        "balanced_min_per_label",
-        "balanced_max_steps",
-        "inapplicable_actions_ratio",
-    }
-)
 
 
 @dataclass(frozen=True)
@@ -39,10 +27,7 @@ class TrainedRun:
 
 
 def resolve_checkpoint(checkpoint_dir: Path, name: str = "final") -> Path:
-    """The ``<name>-epoch*.ckpt`` most recently written in `checkpoint_dir`: ``final`` is the model as training left it, ``best`` the one with the lowest validation loss.
-
-    Re-running a seed reuses the directory and Lightning keeps the old file under a ``-v1`` suffix, so mtime picks the current attempt rather than an arbitrary glob hit.
-    """
+    """The newest ``<name>-epoch*.ckpt`` in `checkpoint_dir`: ``final`` is the model at the end of training, ``best`` the one with the lowest validation loss."""
     matches = list(checkpoint_dir.glob(f"{name}-epoch*.ckpt"))
     if not matches:
         raise FileNotFoundError(
@@ -61,12 +46,11 @@ def load_run(model_id: str, logs_path: str, checkpoint: str = "final") -> Traine
     hparams = {
         key: value
         for key, value in checkpoint["datamodule_hyper_parameters"].items()
-        if not key.startswith("_") and key not in RETIRED_HPARAMS
+        if not key.startswith("_")
     }
-    # Paths in a checkpoint are relative to the repository root, where the run was launched.
-    for key in ("domain_path", "problem_path", "pt_file"):
-        if hparams.get(key) is not None:
-            hparams[key] = str(Path(hparams[key]).resolve())
+    # Relative to the directory the run was launched from.
+    for key in ("domain_path", "problem_path"):
+        hparams[key] = str(Path(hparams[key]).resolve())
 
     model = DIAS.load_from_checkpoint(str(checkpoint_path), map_location="cpu")
     model.to("cpu")
@@ -76,18 +60,17 @@ def load_run(model_id: str, logs_path: str, checkpoint: str = "final") -> Traine
         checkpoint_path=str(checkpoint_path),
         model=model,
         datamodule_hparams=hparams,
-        # In the order the model was trained on, which the domain file alone no longer fixes for every run.
         schema=DomainSchema.from_run(hparams, model.hparams["relation_arities"]),
     )
 
 
 def learned_pddl(run: TrainedRun, threshold: float | None = None) -> tuple[str, float]:
-    """The run's learned domain and the threshold it was binarized at: the one written beside its checkpoint, unless a `threshold` is given or none was written, which extracts it anew."""
+    """The run's learned domain and its derivation threshold: the domain written beside the checkpoint, or derived anew at `threshold` if given."""
     written = Path(run.checkpoint_path).with_suffix(".pddl")
     if threshold is None and written.exists():
-        return written.read_text(), run.model.hparams.schema_threshold
+        return written.read_text(), run.model.hparams.derivation_threshold
     if threshold is None:
-        threshold = run.model.hparams.schema_threshold
+        threshold = run.model.hparams.derivation_threshold
     return (
         learned_domain(run.model, run.schema, run.datamodule_hparams, threshold),
         threshold,

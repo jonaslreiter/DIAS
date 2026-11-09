@@ -83,8 +83,8 @@ def run(overlays: list[str]) -> dict:
         ),
         "split": digest(torch.tensor(data._train_idx), torch.tensor(data._valid_idx)),
         "noise": digest(*noisy) if noisy else None,
-        "loss_main": float(losses.adjacency),
-        "loss_aux": float(losses.auxiliary),
+        "loss_main": float(losses.main),
+        "loss_aux": float(losses.aux),
         "parameters": float(
             sum(p.detach().double().abs().sum() for p in model.parameters())
         ),

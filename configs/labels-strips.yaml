@@ -1,4 +1,4 @@
-# Full STRIPS actions: each transition is labelled with the action and all its arguments.
+# Transitions labelled with full STRIPS actions, one slot per argument.
 data:
   init_args:
     action_arguments: true

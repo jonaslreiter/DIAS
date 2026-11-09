@@ -1,4 +1,4 @@
-"""Tests for a seed's result JSON: its status, what `collect_results` reads of it, and resuming from it. A seed is one number per held-out problem, so a seed missing one is re-run, never averaged beside the others."""
+"""A seed's result JSON: its status, what `collect_results` reads of it, and resuming from it."""
 
 import json
 import os
@@ -11,7 +11,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "experiments"))
 
 import validate_runs
-from collect_results import collect_local
+from collect_results import collect
 from dias.validation.workers import StateDoesNotFit
 from support import temp_dir
 from validate_runs import _write_json, validate_run
@@ -64,18 +64,13 @@ class SeedStatusTest(unittest.TestCase):
             self.status({"test-1": {"error": "boom"}}), "validation_failed"
         )
 
-    def test_the_collector_reads_only_complete_seeds(self):
+    def test_the_collector_reads_partial_seeds_unless_told_otherwise(self):
         self.status({p: scored() for p in PROBLEMS}, seed=0)
         self.status({"test-1": scored(), "test-2": {"error": "OOM"}}, seed=1)
-        self.assertEqual(len(collect_local("exp", self.logs)["driverlog"]), 1)
-
-    def test_the_collector_still_reads_results_without_a_status(self):
-        path = self.logs / "validation" / "exp" / "driverlog"
-        path.mkdir(parents=True)
-        (path / "seed0.json").write_text(
-            json.dumps({"domain": "driverlog", "per_problem": {"test-1": scored()}})
+        self.assertEqual(len(collect("exp", self.logs)["driverlog"]), 2)
+        self.assertEqual(
+            len(collect("exp", self.logs, exclude_partial=True)["driverlog"]), 1
         )
-        self.assertEqual(len(collect_local("exp", self.logs)["driverlog"]), 1)
 
 
 class Killed(BaseException):
@@ -108,7 +103,7 @@ class StandInValidator:
         return scored(tp=50)
 
 
-SAMPLING = {"strategy": "walks", "num_samples": 5, "walk_length": 10, "min_walks": 2}
+SAMPLING = {"num_samples": 5, "walk_length": 10, "min_walks": 2}
 
 
 class ResumeTest(unittest.TestCase):
@@ -144,7 +139,7 @@ class ResumeTest(unittest.TestCase):
         )
 
     def write_partial(self, **fields):
-        """Two problems scored and the third failed, written after the checkpoint."""
+        """Two problems scored and the third failed, on the current checkpoint."""
         self.result.parent.mkdir(parents=True)
         per_problem = {"test-1": scored(tp=1), "test-2": scored(tp=2)}
         per_problem["test-3"] = {"error": "CUDA out of memory"}
@@ -156,12 +151,12 @@ class ResumeTest(unittest.TestCase):
                     "force_injective": False,
                     "sampling": SAMPLING,
                     "per_problem": per_problem,
+                    "checkpoint": str(self.checkpoint),
+                    "checkpoint_mtime": self.checkpoint.stat().st_mtime,
                     **fields,
                 }
             )
         )
-        past = time.time() - 3600
-        os.utime(self.checkpoint, (past, past))
 
     def test_only_the_failed_problem_is_scored_again_with_the_same_sample(self):
         self.write_partial()
@@ -173,7 +168,6 @@ class ResumeTest(unittest.TestCase):
         self.assertEqual(payload["checkpoint"], str(self.checkpoint))
 
     def test_a_job_killed_during_its_first_problem_resumes_with_its_sample(self):
-        """The states it scored are kept under its sample seed, so the result must hold that seed before any problem is scored."""
         StandInValidator.killed_in = {"test-1"}
         with self.assertRaises(Killed):
             self.validate(resume=False)
@@ -189,7 +183,7 @@ class ResumeTest(unittest.TestCase):
         )
         self.assertEqual(json.loads(self.result.read_text())["status"], "ok")
 
-    def test_results_older_than_the_checkpoint_are_refused(self):
+    def test_results_on_a_rewritten_checkpoint_are_refused(self):
         self.write_partial()
         future = time.time() + 3600
         os.utime(self.checkpoint, (future, future))
@@ -202,7 +196,6 @@ class ResumeTest(unittest.TestCase):
             self.validate()
 
     def test_results_scored_otherwise_are_refused(self):
-        """Forcing distinct parameters changes the domain scored, so the problems left must not be scored under the other reading."""
         self.write_partial(force_injective=True)
         with self.assertRaisesRegex(SystemExit, "force_injective"):
             self.validate()
@@ -239,21 +232,9 @@ class ResumeTest(unittest.TestCase):
         )
 
     def test_results_sampled_otherwise_are_refused(self):
-        """The problems left must draw their states as the scored ones did, or a seed's three numbers would come from two samplings."""
         self.write_partial(sampling={**SAMPLING, "walk_length": 20})
         with self.assertRaisesRegex(SystemExit, "sampled"):
             self.validate()
-
-    def test_results_from_before_the_sampling_key_were_sampled_breadth_first(self):
-        """As the paper drew them, so they resume under that draw and under nothing else."""
-        self.write_partial()
-        payload = json.loads(self.result.read_text())
-        del payload["sampling"]
-        self.result.write_text(json.dumps(payload))
-        with self.assertRaisesRegex(SystemExit, "bfs"):
-            self.validate()
-        self.validate(sampling={"strategy": "bfs"})
-        self.assertEqual(StandInValidator.calls, [("test-3", 3449441584)])
 
     def test_the_result_records_its_sampling(self):
         self.validate(resume=False)

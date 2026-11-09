@@ -2,7 +2,7 @@
 
 import unittest
 
-from dias.data.quota import SampleQuota
+from dias.data.datamodule import SampleQuota
 
 
 class QuotaValidationTest(unittest.TestCase):
@@ -49,37 +49,6 @@ class QuotaValidationTest(unittest.TestCase):
         SampleQuota(
             min_per_action_train=2, min_per_action_valid=1, num_train=200, num_valid=100
         )
-
-
-class QuotaFloorTest(unittest.TestCase):
-    """Floors raise the smallest per-action minimum and never lower any."""
-
-    def floored(self, train, valid, **floors) -> SampleQuota:
-        return SampleQuota.with_floors(
-            min_per_action_train=train, min_per_action_valid=valid, **floors
-        )
-
-    def test_a_value_below_its_floor_is_raised(self):
-        quota = self.floored(
-            20, 10, min_per_action_train_floor=200, min_per_action_valid_floor=100
-        )
-        self.assertEqual(quota.split_weights, (200, 100))
-
-    def test_a_value_above_its_floor_is_left_alone(self):
-        quota = self.floored(
-            1000, 500, min_per_action_train_floor=200, min_per_action_valid_floor=100
-        )
-        self.assertEqual(quota.split_weights, (1000, 500))
-
-    def test_a_run_sampling_by_num_has_no_minimum_to_raise(self):
-        quota = SampleQuota.with_floors(
-            min_per_action_train_floor=200,
-            min_per_action_valid_floor=100,
-            num_train=6,
-            num_valid=3,
-        )
-        self.assertFalse(quota.has_min)
-        self.assertEqual(quota.split_weights, (6, 3))
 
 
 class QuotaArithmeticTest(unittest.TestCase):

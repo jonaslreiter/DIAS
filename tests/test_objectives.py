@@ -55,7 +55,7 @@ class DiasObjectiveTest(unittest.TestCase):
     def test_a_perfect_prediction_costs_almost_nothing(self):
         target = torch.tensor([[[[1.0, 0.0], [0.0, 0.0]], [[0.0, 1.0], [0.0, 0.0]]]])
         losses = self.losses(target.clone(), target)
-        self.assertLess(losses.adjacency.item(), 1e-5)
+        self.assertLess(losses.main.item(), 1e-5)
         self.assertEqual(losses.hamming_distance.item(), 0)
 
     def test_the_hamming_distance_counts_cells_on_the_wrong_side_of_a_half(self):
@@ -72,7 +72,7 @@ class DiasObjectiveTest(unittest.TestCase):
         adjacency = torch.full((1, 2, 2, 2), 0.5)
         target = torch.zeros(1, 2, 2, 2)
         both, effects_only, preconditions_only, neither = (
-            self.losses(adjacency, target, self.objective(**flags)).auxiliary
+            self.losses(adjacency, target, self.objective(**flags)).aux
             for flags in (
                 {},
                 {"use_precondition_loss": False},
@@ -94,7 +94,7 @@ class DiasObjectiveTest(unittest.TestCase):
         inactive = self.losses(
             adjacency, target, objective, torch.full((1, NUM_SLOTS), 0.1)
         )
-        self.assertGreater(inactive.auxiliary.item(), active.auxiliary.item())
+        self.assertGreater(inactive.aux.item(), active.aux.item())
 
     def test_the_normalizer_counts_the_schema_once_per_auxiliary_term(self):
         # 3**1 + 3**2 slot tuples, for the effects and the preconditions.
@@ -107,29 +107,30 @@ class DiasObjectiveTest(unittest.TestCase):
         applicable = self.objective(use_applicability_loss=True)
         self.assertEqual(applicable._normalizer(adjacency), 16 + 12 * 2 * 2 + 2)
 
-    def test_the_primary_loss_is_the_adjacency_loss_by_default(self):
+    def test_the_applicability_term_is_off_by_default(self):
         losses = self.losses(torch.full((1, 2, 2, 2), 0.5), torch.zeros(1, 2, 2, 2))
         self.assertIsNone(losses.applicability)
-        self.assertIs(losses.primary, losses.adjacency)
         self.assertNotIn("loss_applicability", losses.logged(1.0))
 
-    def test_the_applicability_term_joins_the_primary_loss(self):
-        """One cross-entropy per transition, of its precondition satisfaction against one, on the adjacency term's scale."""
+    def test_the_applicability_term_joins_the_main_loss(self):
+        """One cross-entropy per transition, of its precondition satisfaction against one."""
         adjacency = torch.full((1, 2, 2, 2), 0.5)
         target = torch.zeros(1, 2, 2, 2)
         objective = self.objective(use_applicability_loss=True)
         losses = self.losses(adjacency, target, objective)
         normalizer = objective._normalizer(adjacency)
+        plain = self.objective()
+        cross_entropy = self.losses(adjacency, target, plain).main * plain._normalizer(
+            adjacency
+        )
         # The hand-built prediction's preconditions hold to 0.25.
         torch.testing.assert_close(
             losses.applicability, -torch.log(torch.tensor(0.25)) / normalizer
         )
         torch.testing.assert_close(
-            losses.primary, losses.adjacency + losses.applicability
+            losses.main, cross_entropy / normalizer + losses.applicability
         )
-        torch.testing.assert_close(
-            losses.total(0.5), losses.primary + 0.5 * losses.auxiliary
-        )
+        torch.testing.assert_close(losses.total(0.5), losses.main + 0.5 * losses.aux)
         self.assertIn("loss_applicability", losses.logged(1.0))
 
     def test_without_observation_noise_the_loss_is_the_plain_cross_entropy(self):
@@ -137,7 +138,7 @@ class DiasObjectiveTest(unittest.TestCase):
         target = torch.tensor([[[[1.0, 0.0], [1.0, 1.0]], [[0.0, 1.0], [1.0, 0.0]]]])
         plain = self.losses(adjacency, target)
         explicit = self.losses(adjacency, target, self.objective(observation_noise=0.0))
-        self.assertTrue(torch.equal(plain.adjacency, explicit.adjacency))
+        self.assertTrue(torch.equal(plain.main, explicit.main))
 
     def test_observation_noise_bounds_what_a_contradicted_cell_costs(self):
         """A cell observed true against a certain prediction of false costs -log(noise), not the clamp's -log(1e-7); the agreeing cells cost -log(1 - noise) each."""
@@ -148,7 +149,7 @@ class DiasObjectiveTest(unittest.TestCase):
         losses = self.losses(adjacency, target, objective)
         normalizer = objective._normalizer(adjacency)
         expected = (-math.log(0.01) - 7 * math.log(0.99)) / normalizer
-        self.assertAlmostEqual(losses.adjacency.item(), expected, places=6)
+        self.assertAlmostEqual(losses.main.item(), expected, places=6)
         self.assertEqual(losses.hamming_distance.item(), 1)
 
     def test_observation_noise_must_leave_the_observation_informative(self):

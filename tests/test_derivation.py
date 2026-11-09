@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 import torch
 
-from dias.schema.decoding import derive_schema
+from dias.schema.derivation import derive_schema
 
 
 class ProcessModelLogitsTest(unittest.TestCase):

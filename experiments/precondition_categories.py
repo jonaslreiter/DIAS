@@ -1,25 +1,9 @@
-"""Sort the precondition atoms of an experiment's learned schemas, and of the ground-truth domains, into categories.
+"""Count the precondition literals of an experiment's learned schemas and of the original schemas by class, per domain: equalities, unary and binary static literals, and positive and negative fluent literals.
 
-Every ``(domain, seed)`` checkpoint is read through ``dias.schema.export.read_learned_schemas``, the function a run's learned domain is written with (``load_run``, then ``DIAS.schema_logits()``, then ``derive_schema`` at ``--threshold``, then ``PDDLTranspiler``), less the parameter distinctness that domain writes when equality was not learned. Ground truth is parsed out of the ``:precondition`` conjunctions of ``pddl/<domain>/domain.pddl``.
+Learned schemas are derived from each run's checkpoint, without the distinctness of parameters the learned domain adds; the original ones are parsed off ``pddl/<domain>/domain.pddl``, without the parameter types. A static predicate is one no action changes. Literals are counted as distinct lifted atoms, learned ones as a mean over seeds.
 
-Each atom lands in exactly one class:
-
-  eq      equalities between action parameters: the built-in ``=`` under :equality, or the ordinary reflexive predicate a domain declares in its place (``eq``)
-  stat1   unary literals over static predicates, either polarity
-  stat2   binary literals over static predicates, either polarity
-  pos     positive fluent literals
-  neg     negative fluent literals
-
-A static predicate is one that occurs in no action's effect, which is also what pymimir's ``Predicate.is_static()`` reports and therefore the flag DIAS itself is given; the two are compared per domain and a disagreement is a warning.
-
-The paper quotes a four-way split with no class for ``stat2``, folding those literals into ``pos`` / ``neg`` by polarity. Both groupings are always reported, since the four-way one is what the text quotes and the five-way one is what the class names mean.
-
-Atoms are counted after de-duplication, as distinct lifted atoms, with ``(not (p ...))`` counting as one. Type-derived unary predicates are excluded from the ground-truth counts, since a ``?t - truck`` in ``:parameters`` is not a precondition. DIAS does get a channel for them (pymimir materialises them, and ``include_statics`` defaults to true), which is what the ``stat1`` column measures.
-
-Usage:
-    python experiments/precondition_categories.py --experiment dias-full
-    python experiments/precondition_categories.py --experiment dias-full --domains gripper satellite -v
-    python experiments/precondition_categories.py --experiment dias-full --markdown experiments/results/precondition-categories-dias-full.md
+Example:
+    python experiments/precondition_categories.py --experiment dias-names --markdown experiments/results/precondition-categories.md
 """
 
 from __future__ import annotations
@@ -33,7 +17,7 @@ from pathlib import Path
 
 from dias.pddl import text as pddl_text
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))  # for `import validate_runs`
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pipeline import (  # noqa: E402
     CHECKPOINTS,
     LOGS_DIR,
@@ -51,40 +35,20 @@ logger = logging.getLogger(__name__)
 
 EQUALITY_NAMES = frozenset({"=", *pddl_text.EQUALITY_PREDICATE_NAMES})
 
-# Atoms are counted per (class, polarity), because the two reported groupings cut across the pair differently.
 KINDS = ("eq", "stat1", "stat2", "flu")
 KEYS = tuple(f"{kind}{sign}" for kind in KINDS for sign in "+-")
-
-# What each grouping's columns hold, in report order.
-FIVE_WAY = {
+# The reported classes: equalities, unary and binary static literals, positive and negative fluent literals.
+CLASSES = {
     "eq": ("eq+", "eq-"),
     "stat1": ("stat1+", "stat1-"),
     "stat2": ("stat2+", "stat2-"),
     "pos": ("flu+",),
     "neg": ("flu-",),
 }
-FOUR_WAY = {
-    "eq": ("eq+", "eq-"),
-    "stat1": ("stat1+", "stat1-"),
-    "pos": ("flu+", "stat2+"),
-    "neg": ("flu-", "stat2-"),
-}
-LABELS = {
-    "eq": "equalities between action parameters",
-    "stat1": "unary literals over static predicates",
-    "stat2": "binary literals over static predicates",
-    "pos": "positive fluent literals",
-    "neg": "negative fluent literals",
-}
-FOUR_WAY_LABELS = {
-    **LABELS,
-    "pos": "positive fluent literals, plus positive binary static literals",
-    "neg": "negative fluent literals, plus negative binary static literals",
-}
 
 
 def classify(predicate: str, arity: int, positive: bool, statics: set[str]) -> str:
-    """The ``(class, polarity)`` key one atom belongs to. `statics` also names the equality predicate, so the first test wins."""
+    """The ``(class, polarity)`` of an atom."""
     sign = "+" if positive else "-"
     if predicate in EQUALITY_NAMES:
         return f"eq{sign}"
@@ -94,19 +58,14 @@ def classify(predicate: str, arity: int, positive: bool, statics: set[str]) -> s
 
 
 def regroup(counts, grouping: dict) -> dict[str, float]:
-    """Sum the per-(class, polarity) counts into one grouping's columns."""
+    """The counts summed into the classes of `grouping`."""
     return {
         column: sum(counts[key] for key in keys) for column, keys in grouping.items()
     }
 
 
-# ── the ground-truth domain ───────────────────────────────────────────────────
-#
-# Parsed from the PDDL text rather than through pymimir, because what is wanted is the atoms the domain *writes*: pymimir has already turned the `:parameters` types into unary predicates, and those are exactly what the counting convention excludes.
-
-
 def strip_comments(text: str) -> str:
-    """PDDL line comments, dropped before anything counts parentheses: a comment may hold an unbalanced one."""
+    """`text` without PDDL comments."""
     return "\n".join(line.split(";")[0] for line in text.splitlines())
 
 
@@ -131,7 +90,7 @@ def parse_sexpr(expr: str):
 
 
 def atoms_of(expr: str) -> list[tuple[str, tuple[str, ...], bool]]:
-    """Flatten a conjunction into ``(predicate, arguments, positive)`` triples, in the order written."""
+    """The ``(predicate, arguments, positive)`` atoms of a conjunction."""
     if not expr.strip():
         return []
     found: list[tuple[str, tuple[str, ...], bool]] = []
@@ -164,7 +123,7 @@ def section(block: str, keyword: str) -> str:
 
 
 def declared_predicates(domain_text: str) -> dict[str, int]:
-    """``name -> arity`` from the ``(:predicates ...)`` block, type annotations removed."""
+    """The declared predicates with their arities."""
     expr, _ = pddl_text.find_balanced_expr(
         domain_text, domain_text.index("(:predicates")
     )
@@ -196,7 +155,7 @@ def format_atom(atom) -> str:
 
 
 def ground_truth(domain: str) -> tuple[Counter, int, set[str]]:
-    """One domain's ground-truth class counts, its action count, and its static predicates."""
+    """The original schemas' counts per (class, polarity), their number, and the static predicates."""
     text = strip_comments(domain_pddl(domain).read_text())
     blocks = pddl_text.extract_action_blocks(text)
     declared = declared_predicates(text)
@@ -222,25 +181,21 @@ def ground_truth(domain: str) -> tuple[Counter, int, set[str]]:
 
 
 def pymimir_statics(domain: str) -> set[str]:
-    """The predicates pymimir reports static, which is the map DIAS is given. Includes the ones materialised out of ``:types``."""
+    """The predicates pymimir reports static, the types included."""
     import pymimir
 
     parsed = pymimir.Domain(domain_pddl(domain))
     return {p.get_name() for p in parsed.get_predicates() if p.is_static()}
 
 
-# ── the learned schemas ───────────────────────────────────────────────────────
-
-
 def learned_counts(
     domain: str, run_id: str, log_dir: Path, threshold: float, checkpoint: str
 ) -> Counter:
-    """One run's precondition atoms, classified. Raises FileNotFoundError if the run has no checkpoint."""
+    """A run's precondition counts per (class, polarity)."""
     from dias.schema.export import read_learned_schemas
     from dias.validation.checkpoint import load_run
 
     run = load_run(run_id, str(log_dir), checkpoint)
-    # As learned: the distinctness a learned domain writes would count as learned equalities.
     transpiler = read_learned_schemas(
         run.model, run.schema, run.datamodule_hparams, threshold
     )
@@ -264,7 +219,7 @@ def learned_counts(
 def count_domain(
     domain: str, seeds: list[int], args: argparse.Namespace
 ) -> dict | None:
-    """One domain's per-seed learned means and ground-truth counts, or None if no run was readable."""
+    """A domain's learned counts as means over seeds and its original counts, or None without runs."""
     gt, num_actions, text_statics = ground_truth(domain)
 
     declared = set(declared_predicates(strip_comments(domain_pddl(domain).read_text())))
@@ -298,11 +253,8 @@ def count_domain(
     }
 
 
-# ── reporting ─────────────────────────────────────────────────────────────────
-
-
 def rows(results: dict) -> list[tuple[str, dict]]:
-    """One row per domain, then a pooled ALL row. Learned values are already per-seed means, so pooling is a sum."""
+    """One row per domain and an ALL row summing them."""
     pooled = {
         "learned": {key: 0.0 for key in KEYS},
         "gt": {key: 0 for key in KEYS},
@@ -321,85 +273,33 @@ def rows(results: dict) -> list[tuple[str, dict]]:
     return out
 
 
-def print_table(results: dict, experiment: str, grouping: dict, title: str) -> None:
-    columns = list(grouping)
-    header = f"{'domain':<16} {'act':>4} {'n':>3} " + " ".join(
-        f"{c + ' L':>9} {c + ' GT':>8}" for c in columns
-    )
-    print(f"\n{title} ({experiment}; L = per-seed mean, GT = ground truth)")
-    print(header)
-    print("-" * len(header))
-    for label, result in rows(results):
-        if label == "ALL":
-            print("-" * len(header))
-        learned = regroup(result["learned"], grouping)
-        gt = regroup(result["gt"], grouping)
-        cells = " ".join(f"{learned[c]:>9.1f} {gt[c]:>8.0f}" for c in columns)
-        print(f"{label:<16} {result['actions']:>4} {result['seeds']:>3} {cells}")
-
-
-def markdown_table(results: dict, grouping: dict) -> list[str]:
-    columns = list(grouping)
-    lines = [
-        "| domain | act | n | " + " | ".join(f"{c} L | {c} GT" for c in columns) + " |",
-        "|" + "---|" * (2 * len(columns) + 3),
+def table(results: dict) -> tuple[list[str], list[list[str]]]:
+    """Per domain, its actions, the seeds read, and per class the learned (L) and original (GT) count."""
+    header = [
+        "domain",
+        "actions",
+        "n",
+        *(f"{c} {side}" for c in CLASSES for side in ("L", "GT")),
     ]
+    body = []
     for label, result in rows(results):
-        learned = regroup(result["learned"], grouping)
-        gt = regroup(result["gt"], grouping)
-        values = [v for c in columns for v in (f"{learned[c]:.1f}", f"{gt[c]:.0f}")]
-        if label == "ALL":
-            values = [f"**{v}**" for v in values]
-            lines.append(
-                f"| **ALL** | **{result['actions']}** | **{result['seeds']}** | "
-                + " | ".join(values)
-                + " |"
-            )
-        else:
-            lines.append(
-                f"| {label} | {result['actions']} | {result['seeds']} | "
-                + " | ".join(values)
-                + " |"
-            )
-    lines.append("")
-    return lines
+        learned = regroup(result["learned"], CLASSES)
+        gt = regroup(result["gt"], CLASSES)
+        values = [v for c in CLASSES for v in (f"{learned[c]:.1f}", f"{gt[c]:.0f}")]
+        body.append([label, str(result["actions"]), str(result["seeds"]), *values])
+    return header, body
 
 
-def write_markdown(
-    path: Path, results: dict, experiment: str, threshold: float, checkpoint: str
-) -> None:
+def write_markdown(path: Path, experiment: str, header, body) -> None:
     lines = [
-        f"# Learned vs. ground-truth precondition categories (`{experiment}`)",
+        f"# Precondition literals, {experiment}",
         "",
-        f"Every precondition atom of every `{experiment}` action schema, learned and ground truth, sorted into classes. `act` is the domain's action count and `n` the seeds read; `L` columns are per-seed means and `GT` columns count each action's schema once, which is the unit on which the two are comparable.",
-        "",
-        "## How the numbers were produced",
-        "",
-        f"- `python experiments/precondition_categories.py --experiment {experiment} --markdown {path}`.",
-        f"- Learned schemas were read from `logs/dias/{experiment}-<domain>-s<seed>/checkpoints/{checkpoint}-epoch*.ckpt` through `dias.schema.export.read_learned_schemas`, the function a run's learned domain is written with: `load_run`, then `DIAS.schema_logits()`, then `derive_schema(threshold={threshold:g})`, then `PDDLTranspiler`.",
-        "- Ground-truth schemas were parsed from the `:precondition` conjunction of `pddl/<domain>/domain.pddl`.",
-        "- Distinct lifted atoms after de-duplication; `(not (p ...))` counts as one atom; type-derived unary predicates are excluded from the ground-truth counts, since a `?t - truck` in `:parameters` is not a precondition.",
-        "- A static predicate is one that occurs in no action's effect, which is also what `pymimir`'s `Predicate.is_static()` reports and so the flag DIAS is given. `pymimir` additionally marks static the unary predicates it materialises out of a `:types` declaration, and `include_statics` defaults to true, so DIAS does get a channel for `(truck ?x)` and its kind while a ground-truth schema states that guard in `:parameters` instead. That asymmetry is what the `stat1` column measures.",
-        "",
-        "## Five classes",
-        "",
-        "| Class | Meaning |",
-        "| --- | --- |",
-        *(f"| {c} | {LABELS[c]} |" for c in FIVE_WAY),
-        "",
-        *markdown_table(results, FIVE_WAY),
-        "## Four classes",
-        "",
-        "The grouping the paper quotes. It has no class for binary static literals (`link`, `adjacent`, `above`, `loc`, `on_board` and their kind), which land in `pos` or `neg` by their polarity, so these two columns are not what their names say; the five-class table above splits them out.",
-        "",
-        "| Class | Meaning |",
-        "| --- | --- |",
-        *(f"| {c} | {FOUR_WAY_LABELS[c]} |" for c in FOUR_WAY),
-        "",
-        *markdown_table(results, FOUR_WAY),
+        "| " + " | ".join(header) + " |",
+        "|" + "---|" * len(header),
+        *("| " + " | ".join(row) + " |" for row in body),
     ]
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines))
+    path.write_text("\n".join(lines) + "\n")
     print(f"\nwrote {path}")
 
 
@@ -407,11 +307,7 @@ def main() -> int:
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    p.add_argument(
-        "--experiment",
-        default="dias-full",
-        help="Experiment whose runs to read, the prefix of the run ids (default: dias-full).",
-    )
+    p.add_argument("--experiment", required=True, help="Experiment whose runs to read.")
     add_domain_arguments(p)
     p.add_argument("--validation-config", type=Path, default=VALIDATION_CONFIG)
     p.add_argument("--log-dir", type=Path, default=LOGS_DIR)
@@ -419,19 +315,19 @@ def main() -> int:
         "--threshold",
         type=float,
         default=0.5,
-        help="Binarization threshold handed to derive_schema (default: 0.5, schema_threshold's default, noise runs included; the paper's noise runs used 0.75).",
+        help="Derivation threshold (default: 0.5).",
     )
     p.add_argument(
         "--checkpoint",
         default="final",
         choices=CHECKPOINTS,
-        help="Which of each run's checkpoints to read: final, the model as training left it, or best, the one with the lowest validation loss. Default: final.",
+        help="The checkpoint to read: final (default) or best.",
     )
     p.add_argument(
         "--markdown",
         type=Path,
         default=None,
-        help="Also write both tables to this markdown file.",
+        help="Also write the table to this file.",
     )
     add_logging_arguments(p)
     args = p.parse_args()
@@ -448,12 +344,12 @@ def main() -> int:
     if not results:
         raise SystemExit(f"no runs of {args.experiment} found under {args.log_dir}")
 
-    print_table(results, args.experiment, FIVE_WAY, "five classes")
-    print_table(results, args.experiment, FOUR_WAY, "four classes, as the paper quotes")
+    header, body = table(results)
+    print("\t".join(header))
+    for row in body:
+        print("\t".join(row))
     if args.markdown:
-        write_markdown(
-            args.markdown, results, args.experiment, args.threshold, args.checkpoint
-        )
+        write_markdown(args.markdown, args.experiment, header, body)
     return 0
 
 

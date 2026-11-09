@@ -1,4 +1,4 @@
-"""Scoring a checkpoint whose effects are predicted from the state by an MLP. There is no lifted effect tensor to write into PDDL, so only the preconditions become a learned domain, and the successors themselves come from the model."""
+"""Scoring an MLP-effects run: its learned preconditions are grounded as PDDL, and its network predicts each grounding's successor (paper, App. C.5)."""
 
 from __future__ import annotations
 
@@ -22,12 +22,11 @@ from dias.pddl.untype import (
 )
 from dias.schema.action import ActionSchema, LiftedAtom
 
-from .artifacts import PddlWorkspace
 from .checkpoint import learned_pddl, load_run
 from .grounding import ground_state, init_worker, signature_from_words, successor_keys
+from .pddl import PddlWorkspace
 from .successors import (
     LEARNED_ACTION_PREFIX,
-    Sampling,
     WalkSampling,
     append_progress,
     combine_scores,
@@ -44,7 +43,7 @@ logger = logging.getLogger(__name__)
 
 
 def _unreachable_action(predicates: list[tuple[str, int]]) -> ActionSchema:
-    """An action that never applies, with an effect on every predicate but `equal`: with every learned effect empty, pymimir would otherwise take them all for static."""
+    """An action that never applies, with an effect on every predicate but `equal`, so that pymimir takes none of them for static."""
     return ActionSchema(
         name="dummy_action_unreachable",
         preconditions=[LiftedAtom(UNREACHABLE_GUARD, 0, [], True)],
@@ -89,7 +88,7 @@ class MlpEffectsValidator:
 
         if self.model.schema_logits().effects is not None:
             raise ValueError(
-                "MlpEffectsValidator expects a model trained with state_dependent_effects=True. A model with lifted effects is scored by DiasValidator."
+                "MlpEffectsValidator scores a model trained with mlp_effects; DiasValidator scores the others."
             )
 
         self.learned_domain_text, self.threshold = learned_pddl(run, threshold)
@@ -112,7 +111,7 @@ class MlpEffectsValidator:
         self.action_names = list(self.schema.action_names)
         self.num_slots = int(self.model.num_slots)
 
-        # A learned action's parameters are its active slots, named ?x{slot}; grounding reads bindings back through them.
+        # A learned action's parameters are its active slots, ?x<slot>.
         blocks = {
             re.match(r"\(\s*:action\s+(\S+)", block).group(1): block
             for block in pddl_text.extract_action_blocks(learned_domain_text)
@@ -183,7 +182,6 @@ class MlpEffectsValidator:
         self.model.retarget(self.num_objects)
         self.model.eval()
 
-        # Adjacencies index objects as the training tensors did, and workers read learned bindings by the same indices.
         object_indices = {
             o.get_name(): o.get_index() for o in self.original_problem.get_objects()
         }
@@ -200,7 +198,7 @@ class MlpEffectsValidator:
 
     def setup(
         self,
-        sampling: Sampling = WalkSampling(),
+        sampling: WalkSampling = WalkSampling(),
         seed: int | None = None,
     ):
         self.sample_seed = resolve_sample_seed(seed)
@@ -215,12 +213,9 @@ class MlpEffectsValidator:
         self.state_pairs = list(zip(original_states, learned_states))
 
     def validate(self, progress_path: str | Path | None = None) -> dict:
-        """Score every sampled state: ground it in a worker, predict its successors here, compare.
-
-        With `progress_path`, each state's score is appended as it finishes, and a later run for the same checkpoint, problem, sample seed and sampling skips those states.
-        """
+        """Score every sampled state: grounded in a worker, its successors predicted here. Each score is recorded in `progress_path`, where a later run on the same checkpoint, problem, sample seed and sampling finds it."""
         if self.state_pairs is None:
-            raise RuntimeError("\033[91mCall setup() before validate().\033[0m")
+            raise RuntimeError("Call setup() before validate().")
 
         payloads = [state_atoms(original) for original, _ in self.state_pairs]
         config = {
@@ -277,7 +272,7 @@ class MlpEffectsValidator:
         return combine_scores(scores[i] for i in range(len(payloads)))
 
     def _predict(self, adjacency, actions, slot_objects, keys, channels) -> dict:
-        """The successor signatures the model predicts for one state's groundings, keyed by action name."""
+        """The successor signatures the model predicts for one state's groundings, by action."""
         state = torch.from_numpy(adjacency).to(keys.device, dtype=torch.float32)
         produced: dict[str, set[int]] = defaultdict(set)
         with torch.no_grad():
@@ -297,10 +292,7 @@ class MlpEffectsValidator:
         return produced
 
     def _successor_words(self, state, actions, slot_objects, keys, channels):
-        """Signature words ``(B, 2)`` for a batch of groundings of `state`.
-
-        `apply_schema` runs on the ``K x K`` grid of bound objects instead of the whole instance: the projected effect is zero outside those cells, so it is the same computation. A slot repeating an earlier slot's object shares its row and column, so both accumulate in one cell as on the full grid.
-        """
+        """Signature words ``(B, 2)`` for a batch of groundings of `state`, computed on the grid of each grounding's bound objects, outside which the effects are zero."""
         objects = torch.from_numpy(slot_objects.astype(np.int64)).to(state.device)
         batch, num_slots = objects.shape
         active = objects >= 0

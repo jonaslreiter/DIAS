@@ -1,31 +1,12 @@
-"""Launch DIAS experiments: per domain, a training array plus a validation array that depends on it.
+"""Launch an experiment: per domain, a Slurm array training one run per seed, and a validation array whose task i waits for training task i.
 
-Array task id = seed, so ``--dependency=aftercorr`` pairs training task i with validation task i, and ``--seeds`` becomes a sparse spec such as ``--array=3,7-8``. Runs are identified by a deterministic ``<experiment>-<domain>-s<seed>`` (``validate_runs.run_id_for``), so the two arrays need no id handoff.
+A run's config is ``configs/main.yaml``, ``pddl/<domain>/config.yaml``, the ``--experiment-type``, ``--labels`` and ``--ablation`` overlays and the ``--set`` and sweep overrides, in this order; its id is ``<experiment>-<domain>-s<seed>``. ``--sweep AXIS`` launches every value of an axis as an experiment ``<experiment>-<tag><value>``; the ``threshold`` axis validates the existing runs of ``--experiment`` at each derivation threshold. ``--validate-only`` validates runs that finished training, and ``--backend local`` runs everything here.
 
-Config chain: ``configs/main.yaml`` -> ``pddl/<domain>/config.yaml`` -> ``--experiment-type`` overlay -> ``--labels`` overlay -> ``--ablation`` overlay -> ``--set`` overrides. The experiment type also picks the validator. ``--sweep AXIS`` submits the whole grid once per value of that axis, each into its own sub-experiment. ``--validate-only`` submits the validation array alone, over runs that already trained to ``max_steps``; ``--experiment-type l1`` does nothing else, since L1's learned domains have no training run.
-
-Examples
---------
-    # All domains, 10 seeds each: action names, then full STRIPS actions.
+Examples:
     python experiments/launch.py --experiment dias-names
     python experiments/launch.py --experiment dias-strips --labels strips
-
-    # 8 flips per transition.
-    python experiments/launch.py --experiment noise-f8 --experiment-type noise --set data.init_args.noise.added_atoms=2 --set data.init_args.noise.removed_atoms=2
-
-    # An ablation, and a sweep into the experiments alpha-aux0.01 .. alpha-aux1.
-    python experiments/launch.py --experiment ablation-no-pcgrad --ablation no-pcgrad
     python experiments/launch.py --experiment alpha --sweep aux-loss-alpha --seeds 0-4
-
-    # The L1 baseline.
-    python experiments/launch.py --experiment l1 --experiment-type l1
-
-    # Re-run seeds into the same experiment, or only their validation.
-    python experiments/launch.py --experiment dias-names --domains gripper --seeds 3 7-8
-    python experiments/launch.py --experiment dias-names --domains visitall --validate-only
-
-    # Print without submitting, or run here instead of on Slurm.
-    python experiments/launch.py --experiment dias-names --domains gripper --dry-run
+    python experiments/launch.py --experiment dias-names --sweep threshold --seeds 0-4
     python experiments/launch.py --experiment smoke --backend local --domains gripper --num-runs 1 --no-wandb
 """
 
@@ -40,7 +21,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))  # for `import pipeline`
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from pipeline import configure_logging  # noqa: E402
 from pipeline import (
@@ -49,6 +30,7 @@ from pipeline import (
     EXPERIMENT_TYPES,
     EXPERIMENT_VALIDATOR,
     PROJECT_ROOT,
+    SLURM_CONFIG,
     SLURM_DIR,
     VALIDATORS,
     add_domain_arguments,
@@ -67,30 +49,27 @@ from pipeline import (
     sbatch_resource_opts,
     select_domains,
     train_problem,
-    training_resources_file,
-    validation_resources_file,
+    training_resources,
+    validation_resources,
 )
 
 EXPERIMENT_OVERLAYS = {
     "mlp": CONFIGS_DIR / "experiment-mlp.yaml",
     "noise": CONFIGS_DIR / "experiment-noise.yaml",
 }
-# What a transition is labelled with; action names need no overlay.
 LABEL_OVERLAYS = {
     "strips": CONFIGS_DIR / "labels-strips.yaml",
     "strips-plus": CONFIGS_DIR / "labels-strips-plus.yaml",
 }
 LABELS = ("names", *LABEL_OVERLAYS)
-# Orthogonal to --experiment-type, composed after it; all use the DIAS validator.
 ABLATION_OVERLAYS = {
     "no-slot-weights": CONFIGS_DIR / "ablation-no-slot-weights.yaml",
     "no-precondition-loss": CONFIGS_DIR / "ablation-no-precondition-loss.yaml",
     "no-effect-loss": CONFIGS_DIR / "ablation-no-effect-loss.yaml",
     "no-aux-loss": CONFIGS_DIR / "ablation-no-aux-loss.yaml",
     "no-pcgrad": CONFIGS_DIR / "ablation-no-pcgrad.yaml",
-    "no-random-embeddings": CONFIGS_DIR / "ablation-no-random-embeddings.yaml",
+    "no-random-features": CONFIGS_DIR / "ablation-no-random-features.yaml",
 }
-# The tau schedule is a typed dataclass, so its fields are ordinary dotted keys.
 SCHEDULE_KEY = "model.init_args.precondition_tau"
 
 TRAIN_SCRIPT = SLURM_DIR / "train.sh"
@@ -99,36 +78,28 @@ VALIDATE_SCRIPT = SLURM_DIR / "validate.sh"
 
 @dataclass(frozen=True)
 class SweepAxis:
-    """One hyperparameter axis that ``--sweep`` varies over the full grid.
-
-    ``values`` is the bare flag's default grid and ``tag`` the sub-experiment infix. A value sets ``param`` to ``value * scale``, and ``linked`` gives further overrides that move with it. All are appended last, so they beat the domain config and the overlays, and all are rejected as ``--set`` targets.
-    """
+    """A hyperparameter ``--sweep`` varies: each value sets `param` to ``value * scale``, `linked` the further overrides that move with it, into the experiment ``<experiment>-<tag><value>``. A `validation` axis is the derivation threshold, which validates existing runs."""
 
     param: str
     tag: str
     values: tuple[float, ...]
     scale: float = 1.0
     linked: Callable[[float], dict[str, float]] | None = None
+    validation: bool = False
 
 
 def _dataset_size_overrides(value: float) -> dict[str, int]:
-    """Sampling knobs that move with ``min_per_action_train`` on the size axis.
-
-    Pinning the caps to the same N makes the dataset size exact rather than a lower bound, and pinning the ``*_floor`` knobs keeps any floor a run sets from raising it.
-    """
+    """Exactly N training and N/2 validation transitions per action."""
     n = int(value)
     half = max(1, n // 2)
     return {
         "data.init_args.max_per_action_train": n,
         "data.init_args.min_per_action_valid": half,
         "data.init_args.max_per_action_valid": half,
-        "data.init_args.min_per_action_train_floor": n,
-        "data.init_args.min_per_action_valid_floor": half,
     }
 
 
 SWEEP_AXES: dict[str, SweepAxis] = {
-    # Grid covers every value currently tuned in pddl/<domain>/config.yaml.
     "aux-loss-alpha": SweepAxis(
         param="model.init_args.aux_loss_alpha",
         tag="aux",
@@ -139,20 +110,20 @@ SWEEP_AXES: dict[str, SweepAxis] = {
         tag="slots",
         values=(5, 7, 9),
     ),
-    # 0 means tau sits at its floor from step 0; with the default floor of 0 that is the exact precondition product rather than a relaxation. Exponential handles the degenerate case.
+    # T in tau = 0.1^(t/T); T = 0 is the plain product from the start.
     "tau": SweepAxis(
         param=f"{SCHEDULE_KEY}.init_args.every",
         tag="tau",
         values=(0, 100, 500, 1000, 5000),
     ),
-    # Training-set size, in transitions per action schema (N train + N/2 valid). The grid brackets every tuned per-domain minimum, so each domain is scaled both down and up relative to its own default.
+    # N training and N/2 validation transitions per action.
     "dataset-size": SweepAxis(
         param="data.init_args.min_per_action_train",
         tag="n",
         values=(20, 50, 100, 200, 500, 1000, 2000),
         linked=_dataset_size_overrides,
     ),
-    # Flips per transition. Both states of a transition are corrupted, each by a quarter of the flips as added and a quarter as removed atoms; needs --experiment-type noise.
+    # Flips per transition: a quarter added and a quarter removed in each state.
     "noise": SweepAxis(
         param="data.init_args.noise.added_atoms",
         tag="f",
@@ -160,17 +131,23 @@ SWEEP_AXES: dict[str, SweepAxis] = {
         scale=0.25,
         linked=lambda flips: {"data.init_args.noise.removed_atoms": flips / 4},
     ),
+    "threshold": SweepAxis(
+        param="model.init_args.derivation_threshold",
+        tag="thr",
+        values=(0.1, 0.25, 0.5, 0.75, 0.9),
+        validation=True,
+    ),
 }
 
 
 def _axis_params(axis: SweepAxis) -> list[str]:
-    """Every Lightning key an axis pins (the axis parameter plus its linked ones)."""
+    """The keys an axis sets."""
     linked = axis.linked(axis.values[0]) if axis.linked else {}
     return [axis.param, *linked]
 
 
 def sweep_experiment_name(experiment: str, axis: SweepAxis, value: float) -> str:
-    """Sub-experiment name for one point of a sweep; ``collect_results.py`` imports it to rebuild these."""
+    """The experiment of one value of a sweep."""
     return f"{experiment}-{axis.tag}{value:g}"
 
 
@@ -182,33 +159,31 @@ def _axis_grid_help() -> str:
 
 
 def _sweep_override_args(axis: SweepAxis, value: float) -> list[str]:
-    """Lightning args pinning ``axis`` to ``value`` (appended last, so they win)."""
+    """The overrides setting `axis` to `value`."""
     extra = axis.linked(value) if axis.linked else {}
     linked = [f"--{k}={v:g}" for k, v in extra.items()]
     return [f"--{axis.param}={value * axis.scale:g}", *linked]
 
 
-# ── the launch, resolved ──────────────────────────────────────────────────────
-
-
 @dataclass(frozen=True)
 class SweepPoint:
-    """One value of the swept axis: its sub-experiment and the args pinning it. Without a sweep, one point carrying the launch's own name."""
+    """One experiment of a launch: the runs it trains or validates under `experiment`, with `overrides`, validated into `results` at derivation `threshold` (None: the run's own)."""
 
     experiment: str
+    results: str
     overrides: list[str]
+    threshold: float | None = None
 
 
 @dataclass(frozen=True)
 class LaunchPlan:
-    """Everything a launch does, decided before anything is submitted: every ``SystemExit`` lives in `build_plan`, so an invalid launch fails before the first sbatch."""
+    """Everything a launch does, resolved and checked before anything runs."""
 
     experiment: str
     experiment_type: str
     labels: str
     ablation: str | None
     validator: str
-    threshold: float | None
     checkpoint: str
     domains: list[str]
     seeds: list[int]
@@ -230,11 +205,10 @@ class LaunchPlan:
     validation_resources: dict
 
     def train_args(self, point: SweepPoint, domain: str) -> list[str]:
-        """Seed-independent Lightning args shared by all runs of a domain."""
+        """The Lightning arguments of every run of `domain` in `point`."""
         args = ["--config", str(self.train_config)]
         for path in [domain_config(domain), *self.overlays]:
             args += ["--config", str(path)]
-        # Absolute and appended last: a Slurm job does not run from the repository root.
         args += [
             "--data.init_args.domain_path",
             str(domain_pddl(domain)),
@@ -249,16 +223,12 @@ class LaunchPlan:
                 str(self.log_dir),
             ]
         else:
-            # Without a logger the run directory comes from default_root_dir; see run_directory_args.
             args += ["--trainer.logger=false"]
         return args + point.overrides
 
 
 def run_directory_args(run_id: str, logs_dir: Path, log_wandb: bool) -> list[str]:
-    """Per-seed args putting this run's checkpoints where validation looks.
-
-    ``load_run`` resolves ``<logs>/dias/<run_id>/checkpoints``: the logger's own path with W&B, and ``default_root_dir`` without one. Mirrored in experiments/slurm/train.sh.
-    """
+    """The arguments that put a run's checkpoints into ``<logs>/dias/<run_id>/checkpoints``, as experiments/slurm/train.sh does."""
     if not log_wandb:
         return ["--trainer.default_root_dir", str(logs_dir / "dias" / run_id)]
     return [
@@ -270,7 +240,7 @@ def run_directory_args(run_id: str, logs_dir: Path, log_wandb: bool) -> list[str
 
 
 def _sweep_points(args: argparse.Namespace) -> tuple:
-    """``(points, axis, axis_name, values)``; without ``--sweep``, the single point named by ``--experiment``."""
+    """``(points, axis, axis_name, values)``; without ``--sweep``, the one point of ``--experiment``."""
     overrides = []
     for override in args.overrides:
         if "=" not in override:
@@ -282,7 +252,7 @@ def _sweep_points(args: argparse.Namespace) -> tuple:
     if args.sweep is None:
         if args.sweep_values:
             raise SystemExit("--sweep-values requires --sweep")
-        return [SweepPoint(args.experiment, overrides)], None, None, []
+        return [SweepPoint(args.experiment, args.experiment, overrides)], None, None, []
 
     axis_name = args.sweep
     axis = SWEEP_AXES[axis_name]
@@ -290,25 +260,38 @@ def _sweep_points(args: argparse.Namespace) -> tuple:
     for param in _axis_params(axis):
         if any(o.startswith(f"{param}=") for o in args.overrides):
             raise SystemExit(f"--set {param}=... conflicts with --sweep {axis_name}")
+    if axis.validation:
+        if overrides:
+            raise SystemExit(
+                f"--sweep {axis_name} validates existing runs; --set has nothing to act on"
+            )
+        points = [
+            SweepPoint(
+                args.experiment,
+                sweep_experiment_name(args.experiment, axis, value),
+                [],
+                value,
+            )
+            for value in values
+        ]
+        return points, axis, axis_name, values
     if axis_name == "noise" and args.experiment_type != "noise":
         raise SystemExit("--sweep noise needs --experiment-type noise")
     if axis_name == "aux-loss-alpha" and args.ablation == "no-aux-loss":
         raise SystemExit(
             "--ablation no-aux-loss disables the auxiliary losses, so sweeping their alpha has no effect"
         )
-    # The override is appended last so it beats the per-domain config.
-    points = [
-        SweepPoint(
-            sweep_experiment_name(args.experiment, axis, value),
-            overrides + _sweep_override_args(axis, value),
+    points = []
+    for value in values:
+        name = sweep_experiment_name(args.experiment, axis, value)
+        points.append(
+            SweepPoint(name, name, overrides + _sweep_override_args(axis, value))
         )
-        for value in values
-    ]
     return points, axis, axis_name, values
 
 
 def _last_step(run_dir: Path) -> int | None:
-    """The step the ``final-`` checkpoint was last written at, or None if there is none."""
+    """The step of the ``final-`` checkpoint, or None."""
     steps = [
         int(match.group(1))
         for path in (run_dir / "checkpoints").glob("final-epoch*.ckpt")
@@ -318,10 +301,7 @@ def _last_step(run_dir: Path) -> int | None:
 
 
 def finished_training(run_dir: Path) -> bool:
-    """Whether this run reached the ``max_steps`` its own saved config resolved to.
-
-    Neither checkpoint name says on its own that a run finished: ``main.py`` registers ``final-`` unmonitored and ``best-`` on ``valid/loss_adjacency``, so both are rewritten throughout the run and a run killed at half its steps leaves both behind. What does say it is how far the ``final-`` one got, against the ``max_steps`` in ``<run_dir>/config.yaml``, which is per-run and so already accounts for the config chain, a sweep and any ``--set``.
-    """
+    """Whether the run's ``final-`` checkpoint reached the ``max_steps`` of its saved config."""
     config = run_dir / "config.yaml"
     if not config.exists():
         return False
@@ -335,8 +315,7 @@ def finished_training(run_dir: Path) -> bool:
 def unfinished_runs(
     experiments: list[str], domains: list[str], seeds: list[int], logs_dir: Path
 ) -> list[str]:
-    """Run ids among these runs that have no finished training run to validate."""
-    # Imported here, not at module scope, so that submission still needs neither torch nor pymimir.
+    """The ids of these runs that did not finish training."""
     from validate_runs import run_id_for
 
     return [
@@ -351,7 +330,7 @@ def unfinished_runs(
 
 
 def build_plan(args: argparse.Namespace) -> LaunchPlan:
-    """Resolve command-line arguments into a launch, or refuse them."""
+    """The launch the arguments describe, or `SystemExit` if they are inconsistent."""
     domains = select_domains(args.domains)
     trains = VALIDATORS[EXPERIMENT_VALIDATOR[args.experiment_type]].from_checkpoint
     if not trains:
@@ -362,7 +341,6 @@ def build_plan(args: argparse.Namespace) -> LaunchPlan:
                 ("--ablation", args.ablation is not None),
                 ("--sweep", args.sweep is not None),
                 ("--set", bool(args.overrides)),
-                ("--validation-threshold", args.validation_threshold is not None),
                 ("--validation-checkpoint", args.validation_checkpoint != "final"),
             )
             if given
@@ -379,7 +357,7 @@ def build_plan(args: argparse.Namespace) -> LaunchPlan:
             raise SystemExit(
                 f"L1 learned no domain for {', '.join(unlearned)}; experiments/l1_pddl/ holds {', '.join(learned)}"
             )
-    # One learned domain per domain: a seed only draws another sample of states.
+    # L1 has one learned domain per domain; a seed only draws other test states.
     seeds = (
         resolve_seeds(args)
         if trains or args.seeds is not None or args.num_runs is not None
@@ -395,18 +373,17 @@ def build_plan(args: argparse.Namespace) -> LaunchPlan:
     if args.ablation is not None:
         overlays.append(ABLATION_OVERLAYS[args.ablation])
 
-    threshold = args.validation_threshold
-    if threshold is not None and not 0.0 < threshold < 1.0:
-        raise SystemExit(
-            f"--validation-threshold: expected a probability in (0,1), got {threshold:g}"
-        )
-
     points, axis, axis_name, values = _sweep_points(args)
 
-    validate_only = args.validate_only or not trains
+    validate_only = (
+        args.validate_only or not trains or (axis is not None and axis.validation)
+    )
     if trains and validate_only and not args.allow_unfinished:
         unfinished = unfinished_runs(
-            [point.experiment for point in points], domains, seeds, args.log_dir
+            list(dict.fromkeys(point.experiment for point in points)),
+            domains,
+            seeds,
+            args.log_dir,
         )
         if unfinished:
             listed = ", ".join(unfinished[:5])
@@ -415,14 +392,13 @@ def build_plan(args: argparse.Namespace) -> LaunchPlan:
                 f"--validate-only: {len(unfinished)} of {len(points) * len(domains) * len(seeds)} runs did not train to max_steps: {listed}{more}. Train them first, or pass --allow-unfinished to validate them as they are."
             )
 
-    on_slurm = args.backend == "slurm"
+    slurm_config = load_yaml(args.slurm_config) if args.backend == "slurm" else None
     return LaunchPlan(
         experiment=args.experiment,
         experiment_type=args.experiment_type,
         labels=args.labels,
         ablation=args.ablation,
         validator=EXPERIMENT_VALIDATOR[args.experiment_type],
-        threshold=threshold,
         checkpoint=args.validation_checkpoint,
         domains=domains,
         seeds=seeds,
@@ -441,27 +417,21 @@ def build_plan(args: argparse.Namespace) -> LaunchPlan:
         train_config=args.train_config,
         validation_config=args.validation_config,
         train_resources=(
-            load_yaml(
-                args.slurm_resources or training_resources_file(args.experiment_type)
-            )
-            if on_slurm
+            training_resources(slurm_config, args.experiment_type)
+            if slurm_config
             else {}
         ),
         validation_resources=(
-            load_yaml(
-                args.slurm_resources_validation
-                or validation_resources_file(args.experiment_type)
-            )
-            if on_slurm
+            validation_resources(slurm_config, args.experiment_type)
+            if slurm_config
             else {}
         ),
     )
 
 
 def describe(plan: LaunchPlan) -> None:
-    """Print what is about to happen, before it happens."""
     print(
-        f"experiment : {plan.experiment}  (type={plan.experiment_type}, labels={plan.labels}, ablation={plan.ablation or 'none'}, validator={plan.validator}, threshold={'default' if plan.threshold is None else f'{plan.threshold:g}'})"
+        f"experiment : {plan.experiment}  (type={plan.experiment_type}, labels={plan.labels}, ablation={plan.ablation or 'none'}, validator={plan.validator})"
     )
     print(
         f"domains    : {len(plan.domains)} x {len(plan.seeds)} runs  (seeds={format_array(plan.seeds)}, backend={plan.backend})"
@@ -476,14 +446,9 @@ def describe(plan: LaunchPlan) -> None:
         print(f"overlay    : {overlay}")
 
 
-# ── backends ──────────────────────────────────────────────────────────────────
-
-
 def submit_domain(plan: LaunchPlan, point: SweepPoint, domain: str) -> None:
-    """Submit one domain's training array plus its dependent validation array, or under `--validate-only` the second alone."""
+    """Submit one domain's training array and its validation array, or the latter alone."""
     array = format_array(plan.seeds)
-
-    # Single tokens via --export; the Lightning config chain goes positionally, so sbatch preserves argv exactly.
     train_vars = [
         "ALL",
         f"DIAS_ROOT={PROJECT_ROOT}",
@@ -502,9 +467,12 @@ def submit_domain(plan: LaunchPlan, point: SweepPoint, domain: str) -> None:
     ]
     if not plan.log_wandb:
         train_vars.append("NO_WANDB=1")
+    if not plan.log_wandb or point.results != point.experiment:
         val_vars.append("NO_WANDB=1")
-    if plan.threshold is not None:
-        val_vars.append(f"THRESHOLD={plan.threshold:g}")
+    if point.results != point.experiment:
+        val_vars.append(f"RESULTS_EXPERIMENT={point.results}")
+    if point.threshold is not None:
+        val_vars.append(f"THRESHOLD={point.threshold:g}")
     if plan.checkpoint != "final":
         val_vars.append(f"CHECKPOINT={plan.checkpoint}")
     if plan.num_workers is not None:
@@ -535,7 +503,6 @@ def submit_domain(plan: LaunchPlan, point: SweepPoint, domain: str) -> None:
         "--parsable",
         f"--job-name=dias-val-{domain}",
         f"--array={array}",
-        # Nothing to wait for when the checkpoints already exist.
         *([f"--dependency=aftercorr:{dep}"] if dep is not None else []),
         sbatch_output_opt(plan.log_dir),
         *sbatch_resource_opts(resolve_resources(plan.validation_resources, domain)),
@@ -548,8 +515,7 @@ def submit_domain(plan: LaunchPlan, point: SweepPoint, domain: str) -> None:
 
 
 def run_domain(plan: LaunchPlan, point: SweepPoint, domain: str) -> None:
-    """Train and validate one domain's seeds here, one after another; under `--validate-only`, only validate."""
-    # Imported here so Slurm submission never needs torch/pymimir.
+    """Train and validate one domain's seeds here, one after another, or only validate."""
     from validate_runs import run_id_for, validate_run
 
     val_cfg = load_yaml(plan.validation_config)
@@ -560,14 +526,12 @@ def run_domain(plan: LaunchPlan, point: SweepPoint, domain: str) -> None:
                 "dias",
                 "fit",
                 *plan.train_args(point, domain),
-                # The datamodule's seed follows this one unless a config gave it one.
                 "--seed_everything",
                 str(seed),
                 *run_directory_args(run_id, plan.log_dir, plan.log_wandb),
             ]
             print(f"\n[{domain} seed={seed}] train  (run_id={run_id})", flush=True)
             try:
-                # Not captured: this step takes hours, and its output is the only sign of progress.
                 run_command(train_cmd, plan.dry_run, capture=False)
             except subprocess.CalledProcessError as error:
                 print(
@@ -586,8 +550,9 @@ def run_domain(plan: LaunchPlan, point: SweepPoint, domain: str) -> None:
             val_cfg=val_cfg,
             logs_dir=plan.log_dir,
             run_id=run_id,
-            log_wandb=plan.log_wandb,
-            threshold=plan.threshold,
+            log_wandb=plan.log_wandb and point.results == point.experiment,
+            threshold=point.threshold,
+            results_experiment=point.results,
             checkpoint=plan.checkpoint,
             num_workers=plan.num_workers,
             resume=plan.resume,
@@ -606,9 +571,6 @@ def execute(plan: LaunchPlan) -> None:
             backend(plan, point, domain)
 
 
-# ── command line ──────────────────────────────────────────────────────────────
-
-
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -616,7 +578,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument(
         "--experiment",
         default=f"run-{datetime.now():%Y%m%d-%H%M%S}",
-        help="Experiment name = W&B group = results dir. Defaults to a timestamp.",
+        help="Experiment name, also the W&B group. Default: a timestamp.",
     )
     p.add_argument(
         "--experiment-type", default="dias", choices=sorted(EXPERIMENT_TYPES)
@@ -631,14 +593,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--ablation",
         default=None,
         choices=sorted(ABLATION_OVERLAYS),
-        help="Model ablation overlay, composed on top of the experiment type (uses the DIAS validator). Default: none (full model).",
+        help="An ablation of the model. Default: none.",
     )
     add_domain_arguments(p)
     p.add_argument(
         "--sweep",
         default=None,
         choices=sorted(SWEEP_AXES),
-        help="Sweep this hyperparameter: submit the full domain x seed grid once per value, each into sub-experiment <experiment>-<tag><value>. Default grids: "
+        help="Launch every value of this axis as the experiment <experiment>-<tag><value>; threshold validates the existing runs of --experiment. Default values: "
         + _axis_grid_help()
         + ".",
     )
@@ -648,42 +610,35 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=float,
         default=None,
         metavar="V",
-        help="Values for --sweep instead of that axis' default grid.",
-    )
-    p.add_argument(
-        "--validation-threshold",
-        type=float,
-        default=None,
-        metavar="T",
-        help="Extract each run's learned domain anew at this schema-derivation threshold for validation. Default: score the one written beside the checkpoint, at the run's schema_threshold.",
+        help="Values for --sweep instead of its defaults.",
     )
     p.add_argument(
         "--validation-checkpoint",
         default="final",
         choices=CHECKPOINTS,
-        help="Which of each run's checkpoints validation scores: final, the model as training left it, or best, the one with the lowest validation loss. Default: final.",
+        help="The checkpoint validation scores: final (at the end of training, default) or best (at the lowest validation loss).",
     )
     p.add_argument("--backend", default="slurm", choices=["slurm", "local"])
     p.add_argument(
         "--validate-only",
         action="store_true",
-        help="Skip training and only (re-)run the validation step, over the checkpoints of runs that already trained to max_steps.",
+        help="Only validate runs that finished training.",
     )
     p.add_argument(
         "--num-workers",
         type=int,
         default=None,
-        help="Worker processes each validation task scores states in. Default: the CPUs it is allocated.",
+        help="Worker processes per validation. Default: one per CPU.",
     )
     p.add_argument(
         "--resume",
         action="store_true",
-        help="Validation keeps the problems an earlier run on the same checkpoint scored, and continues the rest with its sample seed from their last scored state.",
+        help="Continue validations from the problems and states they scored.",
     )
     p.add_argument(
         "--allow-unfinished",
         action="store_true",
-        help="With --validate-only, submit even for runs that stopped short of max_steps.",
+        help="Validate runs that did not finish training too.",
     )
     p.add_argument(
         "--set",
@@ -691,38 +646,31 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="append",
         default=[],
         metavar="key=value",
-        help="Extra Lightning override, repeatable (no commas in value).",
+        help="A Lightning override, repeatable; no commas in the value.",
     )
     p.add_argument(
         "--dry-run",
         action="store_true",
-        help="Print commands without submitting/running.",
+        help="Print the commands without running them.",
     )
     p.add_argument(
         "--no-wandb",
         action="store_true",
-        help="Log neither training nor validation to W&B (both backends).",
+        help="Log nothing to W&B.",
     )
     add_path_arguments(p, train_config=True)
     add_logging_arguments(p)
     p.add_argument(
-        "--slurm-resources",
+        "--slurm-config",
         type=Path,
-        default=None,
-        help="Default: experiments/configs/slurm-resources-noise.yaml for noise experiments, slurm-resources.yaml for the others.",
-    )
-    p.add_argument(
-        "--slurm-resources-validation",
-        type=Path,
-        default=None,
-        help="Default: experiments/configs/slurm-resources-validation-mlp.yaml for MLP-effects experiments, slurm-resources-validation-noise.yaml for noise experiments, slurm-resources-validation.yaml for the others.",
+        default=SLURM_CONFIG,
+        help="Slurm resources per job kind and domain.",
     )
     return p.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    # The local backend runs both steps in this process, so their log lines need a handler.
     configure_logging(args)
     plan = build_plan(args)
     describe(plan)

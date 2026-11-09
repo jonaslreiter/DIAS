@@ -23,7 +23,6 @@ class EdgeTypeLayoutTest(unittest.TestCase):
             num_relations=3,
             num_actions=2,
             action_arg_positions=[[0, 1], [0]],
-            successor_relations=True,
         )
         # 3 relations + 3 reversed + 3 action arguments + 4 * 3 changes.
         self.assertEqual(layout.num_action_relations, 3)
@@ -38,14 +37,13 @@ class EdgeTypeLayoutTest(unittest.TestCase):
     def test_an_action_without_arguments_contributes_no_relations(self):
         layout = EdgeTypeLayout(num_relations=2, num_actions=2)
         self.assertEqual(layout.num_action_relations, 0)
-        self.assertEqual(layout.num_edge_types, 4)
+        self.assertEqual(layout.num_edge_types, 12)
 
     def test_changes_are_reported_in_both_directions(self):
         layout = EdgeTypeLayout(
             num_relations=2,
             num_actions=1,
             action_arg_positions=[[0]],
-            successor_relations=True,
         )
         before = transition([[0], [1]], [0])
         after = transition([[1], [0]], [1])
@@ -58,7 +56,6 @@ class EdgeTypeLayoutTest(unittest.TestCase):
             num_relations=1,
             num_actions=1,
             action_arg_positions=[[0]],
-            successor_relations=True,
         )
         state = transition([[0], [1]], [0])
         self.assertEqual(len(layout(state, None)[1]), 2)

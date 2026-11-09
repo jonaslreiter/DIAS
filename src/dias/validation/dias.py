@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from .artifacts import PddlWorkspace
 from .checkpoint import learned_pddl, load_run
-from .pddl import PddlValidator
+from .pddl import PddlValidator, PddlWorkspace
 
 
 class DiasValidator(PddlValidator):

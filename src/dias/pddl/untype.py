@@ -1,4 +1,4 @@
-"""Rewriting typed PDDL as untyped PDDL, which is what validating an untyped learned schema against a typed domain needs: the type hierarchy becomes unary static predicates in ``:init``."""
+"""Rewriting typed PDDL as untyped PDDL, the types as unary predicates."""
 
 from __future__ import annotations
 
@@ -11,27 +11,25 @@ def strip_problem_types(
     problem_text: str,
     domain_text: str | None = None,
 ) -> str:
-    """Remove the type annotations from a problem's ``:objects``. With *domain_text*, type-derived unary atoms (``(cell c_0_0)``) go into ``:init`` so the untyped domain can use them as static preconditions."""
+    """The problem without types in ``:objects``; with `domain_text`, each object's types and their ancestors asserted in ``:init``."""
     type_atoms: list[str] = []
 
     if domain_text is not None:
         parents = pddl_text.type_parents(domain_text)
         for names, type_name in pddl_text.parse_typed_list(_objects_body(problem_text)):
             for name in names:
-                # Assert the object's type and every ancestor of it.
                 ancestor = type_name
                 while ancestor and ancestor != "object":
                     type_atoms.append(f"({ancestor} {name})")
                     ancestor = parents.get(ancestor)
 
-    # Only a standalone dash, so object names like "p1-0" stay intact.
     text = re.sub(r"\s+-\s+[^\s()]+", "", problem_text)
 
     return _extend_init(text, type_atoms) if type_atoms else text
 
 
 def with_equality_facts(problem_text: str) -> str:
-    """The problem asserting ``(equal o o)`` for every object, which a domain written with ``equality_as_predicate`` needs, in place of any equality facts it had. One relating two different objects is refused: its predicate was not equality."""
+    """The problem asserting ``(equal o o)`` for every object in place of the equality facts it had, which must each relate an object to itself."""
     pattern = re.compile(
         rf"\s*\(\s*(?:{'|'.join(pddl_text.EQUALITY_PREDICATE_NAMES)})\s+([^\s()]+)\s+([^\s()]+)\s*\)",
         re.IGNORECASE,
@@ -51,7 +49,7 @@ def with_equality_facts(problem_text: str) -> str:
 
 
 def _extend_init(text: str, atoms: list[str]) -> str:
-    """Insert *atoms* just before the closing paren of ``:init``."""
+    """`text` with `atoms` added to ``:init``."""
     goal_pos = text.find("(:goal")
     init_close = text.rfind(")", 0, goal_pos) if goal_pos != -1 else text.rfind(")")
     if init_close == -1:
@@ -65,17 +63,13 @@ def extract_domain_header(
     predicate_names: list[str] | None = None,
     predicate_arities: list[int] | None = None,
 ) -> str:
-    """Return everything before the first ``:action``, untyped.
-
-    ``:requirements`` gains ``:negative-preconditions``, and keeps ``:equality`` only if the original declared it. Given *predicate_names* and *predicate_arities*, ``:predicates`` is rebuilt so the generated domain is self-contained.
-    """
+    """Everything before the first ``:action``, untyped, requiring ``:negative-preconditions`` and ``:equality`` if the original did. Given the predicates, ``:predicates`` declares them, the types and the original's predicates."""
     action_start = domain_text.find("(:action")
     if action_start == -1:
         header = domain_text.rstrip().rstrip(")")
     else:
         header = domain_text[:action_start].rstrip()
 
-    # Rewrite :requirements in place, after the (define (domain ...)) line.
     orig_reqs_match = re.search(r"\(:requirements([^)]*)\)", domain_text)
     needs_equality = bool(orig_reqs_match and ":equality" in orig_reqs_match.group(1))
     reqs = ":negative-preconditions"
@@ -87,7 +81,6 @@ def extract_domain_header(
         pos = m_def.end()
         header = header[:pos] + f"\n  (:requirements {reqs})" + header[pos:]
 
-    # Drop the type declarations and every typed parameter annotation.
     header = re.sub(r"\(:types[^)]*\)\s*", "", header)
     header = re.sub(r":typing\s*", "", header)
     header = re.sub(r"(\?[^\s()]+)\s+-\s+[^\s()]+", r"\1", header)
@@ -95,7 +88,6 @@ def extract_domain_header(
     if predicate_names is None or predicate_arities is None:
         return header
 
-    # Rebuild :predicates from the learned relations, the type names and whatever the original declared beyond both.
     pred_start = header.find("(:predicates")
     if pred_start != -1:
         block, _ = pddl_text.find_balanced_expr(header, pred_start)
@@ -105,7 +97,6 @@ def extract_domain_header(
     decls: list[str] = []
 
     def declare(name: str, arity: int) -> None:
-        # "=" is a built-in enabled by :equality, not a user predicate.
         if name in declared or name == "=":
             return
         declared.add(name)
@@ -139,7 +130,7 @@ def _objects_body(problem_text: str) -> str:
 
 
 def problem_object_names(problem_text: str) -> list[str]:
-    """Every object a problem declares, with any type annotations dropped."""
+    """The objects a problem declares."""
     return [
         name
         for names, _ in pddl_text.parse_typed_list(_objects_body(problem_text))
@@ -152,7 +143,7 @@ def untype_action(
     name_prefix: str = "",
     ignored_types: frozenset[str] = frozenset(),
 ) -> str:
-    """Rewrite one ``(:action ...)`` block without types: each typed parameter becomes a unary precondition, except the uninformative ones in *ignored_types*."""
+    """An ``(:action ...)`` block without types, each parameter type but `ignored_types` a unary precondition."""
     match = re.match(r"\(\s*:action\s+(\S+)", action_block)
     if match is None:
         raise ValueError("Failed to parse action name")

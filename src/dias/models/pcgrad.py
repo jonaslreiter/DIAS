@@ -1,4 +1,4 @@
-"""Turning two losses into one gradient per parameter."""
+"""Combining the gradients of `L_main` and `L_aux` (paper, App. B.3)."""
 
 from __future__ import annotations
 
@@ -8,106 +8,92 @@ import torch
 
 
 class GradientCombiner(Protocol):
-    """Populates ``parameter.grad`` from a primary and an auxiliary loss."""
+    """Sets ``parameter.grad`` from the main and the auxiliary loss."""
 
     def backward(
         self,
-        primary: torch.Tensor,
-        auxiliary: torch.Tensor,
+        main: torch.Tensor,
+        aux: torch.Tensor,
         parameters: Iterable[torch.nn.Parameter],
     ) -> None: ...
 
 
 class SingleObjective:
-    """No auxiliary objective at all: an ordinary backward pass."""
+    """The main loss alone."""
 
-    def backward(self, primary, auxiliary, parameters) -> None:
-        primary.backward()
+    def backward(self, main, aux, parameters) -> None:
+        main.backward()
 
 
 class WeightedSum:
-    """One backward pass over ``primary + alpha * auxiliary``."""
+    """``main + alpha * aux``."""
 
     def __init__(self, alpha: float):
         self.alpha = alpha
 
-    def backward(self, primary, auxiliary, parameters) -> None:
-        (primary + self.alpha * auxiliary).backward()
+    def backward(self, main, aux, parameters) -> None:
+        (main + self.alpha * aux).backward()
 
 
 class PCGrad:
-    """Where the two gradients conflict, keep the primary one's direction.
+    """Per parameter tensor, the auxiliary gradient without its component against the main one, capped at the main gradient's norm."""
 
-    Per parameter, the auxiliary gradient is projected onto the plane orthogonal to the primary one wherever they oppose, so it can only act in directions the primary objective is indifferent to.
-    """
-
-    # Below this the primary gradient is noise, typically once training has converged, so a conflict with it says nothing about a wrong direction: the auxiliary gradient is left unprojected, and the norm cap bounds how much it can do.
+    # Below this squared norm, the main gradient is not projected against.
     NEGLIGIBLE = 1e-12
 
-    def __init__(self, alpha: float, norm_cap: bool = True):
+    def __init__(self, alpha: float):
         self.alpha = alpha
-        self.norm_cap = norm_cap
 
-    def backward(self, primary, auxiliary, parameters) -> None:
+    def backward(self, main, aux, parameters) -> None:
         parameters = list(parameters)
-        # Alpha is applied inside autograd rather than to the gradient afterwards.
-        primary_grads = torch.autograd.grad(
-            primary, parameters, retain_graph=True, allow_unused=True
+        main_grads = torch.autograd.grad(
+            main, parameters, retain_graph=True, allow_unused=True
         )
-        auxiliary_grads = torch.autograd.grad(
-            self.alpha * auxiliary, parameters, retain_graph=True, allow_unused=True
+        aux_grads = torch.autograd.grad(
+            self.alpha * aux, parameters, retain_graph=True, allow_unused=True
         )
-        for parameter, primary_grad, auxiliary_grad in zip(
-            parameters, primary_grads, auxiliary_grads
-        ):
-            combined = self._combine(primary_grad, auxiliary_grad)
+        for parameter, main_grad, aux_grad in zip(parameters, main_grads, aux_grads):
+            combined = self._combine(main_grad, aux_grad)
             if combined is not None:
                 parameter.grad = combined
 
     def _combine(
-        self, primary: torch.Tensor | None, auxiliary: torch.Tensor | None
+        self, main: torch.Tensor | None, aux: torch.Tensor | None
     ) -> torch.Tensor | None:
-        """The gradient one parameter ends up with, or None to leave it alone."""
-        if primary is None or auxiliary is None:
-            reached = auxiliary if primary is None else primary
+        """One parameter's gradient, or None if neither loss reaches it."""
+        if main is None or aux is None:
+            reached = aux if main is None else main
             return None if reached is None else reached.clone()
-
-        auxiliary = self._project(primary, auxiliary)
-        if self.norm_cap:
-            auxiliary = self._cap_norm(primary, auxiliary)
-        return (primary + auxiliary).clone()
+        aux = self._cap_norm(main, self._project(main, aux))
+        return (main + aux).clone()
 
     @classmethod
-    def _project(cls, primary: torch.Tensor, auxiliary: torch.Tensor) -> torch.Tensor:
-        """Remove the component of `auxiliary` that opposes `primary`."""
-        flat_primary = primary.reshape(-1)
-        opposition = torch.dot(flat_primary, auxiliary.reshape(-1))
+    def _project(cls, main: torch.Tensor, aux: torch.Tensor) -> torch.Tensor:
+        """`aux` without its component against `main`."""
+        flat_main = main.reshape(-1)
+        opposition = torch.dot(flat_main, aux.reshape(-1))
         if opposition >= 0:
-            return auxiliary
-        squared_norm = torch.dot(flat_primary, flat_primary)
+            return aux
+        squared_norm = torch.dot(flat_main, flat_main)
         if squared_norm <= cls.NEGLIGIBLE:
-            return auxiliary
-        return auxiliary - (opposition / squared_norm) * primary
+            return aux
+        return aux - (opposition / squared_norm) * main
 
-    @classmethod
-    def _cap_norm(cls, primary: torch.Tensor, auxiliary: torch.Tensor) -> torch.Tensor:
-        """Keep the auxiliary gradient no longer than the primary one: orthogonality alone does not bound it, and it can dominate early."""
-        primary_norm = torch.norm(primary)
-        auxiliary_norm = torch.norm(auxiliary)
-        if auxiliary_norm > primary_norm:
-            return auxiliary * (primary_norm / auxiliary_norm)
-        return auxiliary
+    @staticmethod
+    def _cap_norm(main: torch.Tensor, aux: torch.Tensor) -> torch.Tensor:
+        """`aux` scaled down to the norm of `main` if longer."""
+        main_norm = torch.norm(main)
+        aux_norm = torch.norm(aux)
+        if aux_norm > main_norm:
+            return aux * (main_norm / aux_norm)
+        return aux
 
 
 def gradient_combiner(
-    use_pcgrad: bool,
-    alpha: float,
-    auxiliary_active: bool,
-    norm_cap: bool = True,
+    use_pcgrad: bool, alpha: float, aux_active: bool
 ) -> GradientCombiner:
-    """Pick how the two losses are reconciled, once, at construction."""
-    if not auxiliary_active:
+    if not aux_active:
         return SingleObjective()
     if not use_pcgrad:
         return WeightedSum(alpha)
-    return PCGrad(alpha, norm_cap=norm_cap)
+    return PCGrad(alpha)

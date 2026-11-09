@@ -1,18 +1,8 @@
 #!/usr/bin/env python
-"""Launch the instance-size scaling study: one Slurm array per domain, each task walking that domain's whole size ladder on one exclusive GPU. No validation array; this study produces timings, not schemas.
+"""Launch the scaling study: per domain, a Slurm array with one task per seed, which benchmarks the domain's instances on a whole GPU. ``--seeds``, ``--num-runs``, ``--log-dir``, ``--backend`` and ``--dry-run`` work as for ``experiments/launch.py``.
 
-Unlike ``experiments/launch.py`` the arrays are not one-task-per-run: the sizes of one (domain, seed) share a task so the curve is measured on one card, and the ``slurm:`` block of ``sizes.yaml`` asks for a whole GPU on a pinned partition rather than a shard.
-
-Results land in ``<log-dir>/scaling/<experiment>/<domain>/<instance>-s<seed>.json``, Slurm output in ``<log-dir>/slurm/``; aggregate with ``experiments/scaling/collect_scaling.py``. ``--seeds``, ``--num-runs``, ``--log-dir``, ``--backend`` and ``--dry-run`` mean what they mean for ``experiments/launch.py``.
-
-Examples
---------
-    # Full grid (3 domains x 6 sizes x 5 seeds) on Slurm, or one domain, printed only.
+Examples:
     python experiments/scaling/launch_scaling.py --experiment scaling --seeds 0-4
-    python experiments/scaling/launch_scaling.py --experiment scaling --domains delivery --dry-run
-
-    # Re-run the seeds that died, keeping the finished points; or run here.
-    python experiments/scaling/launch_scaling.py --experiment scaling --domains blocks-3 --seeds 1-2 --skip-existing
     python experiments/scaling/launch_scaling.py --experiment smoke --backend local --domains blocks-3 --seeds 0
 """
 
@@ -28,11 +18,8 @@ SCALING_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCALING_DIR.parents[1]
 SLURM_SCRIPT = SCALING_DIR / "slurm" / "benchmark.sh"
 
-# Appended, not prepended, so the sibling imports below are not shadowed.
 sys.path.append(str(SCALING_DIR.parent))
 from benchmark import SIZES_CONFIG, results_dir  # noqa: E402
-
-# Reused, so this study's flags and sbatch options mean what the main pipeline's mean.
 from pipeline import (  # noqa: E402
     LOGS_DIR,
     add_seed_arguments,
@@ -81,7 +68,7 @@ def main() -> int:
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    p.add_argument("--experiment", default="scaling", help="Results group name.")
+    p.add_argument("--experiment", default="scaling", help="Experiment name.")
     p.add_argument(
         "--domains", nargs="+", default=None, help="Default: all in sizes.yaml."
     )
@@ -94,10 +81,14 @@ def main() -> int:
     p.add_argument(
         "--skip-existing",
         action="store_true",
-        help="Skip (domain, size, seed) points that already have a result JSON.",
+        help="Skip the points that have a result.",
     )
     p.add_argument("--accelerator", default=None, help="local backend only, e.g. cpu.")
-    p.add_argument("--dry-run", action="store_true", help="Print, do not submit/run.")
+    p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the commands without running them.",
+    )
     args = p.parse_args()
 
     cfg = yaml.safe_load(args.sizes_config.read_text())
@@ -120,11 +111,7 @@ def main() -> int:
         if not (SCALING_DIR / "instances" / domain / f"{instance}.pddl").exists()
     ]
     if missing:
-        raise SystemExit(
-            "Missing instance file(s): "
-            + ", ".join(missing)
-            + "\nRegenerate them with experiments/scaling/generate_instances.py --generators-dir DIR (see experiments/scaling/README.md)."
-        )
+        raise SystemExit("Missing instance file(s): " + ", ".join(missing))
 
     total = sum(len(instances_for(d, cfg)) for d in domains) * len(seeds)
     print(f"experiment : {args.experiment}")

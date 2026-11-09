@@ -1,11 +1,11 @@
-"""Reading and re-hosting pymimir states."""
+"""Reading pymimir states and rebuilding them in another problem."""
 
 from __future__ import annotations
 
 from pymimir.advanced.formalism import FluentGroundAtomList, ObjectList
 from pymimir.wrapper_formalism import State
 
-# A state's atoms as plain data, `(predicate, (object, ...))`, which a worker process can rebuild a state from.
+# A state's atoms as ``(predicate, (object, ...))``.
 StateAtoms = list[tuple[str, tuple[str, ...]]]
 
 
@@ -33,7 +33,7 @@ def state_atoms(state) -> StateAtoms:
 
 
 def rebuild_state(atoms: StateAtoms, target_problem) -> State:
-    """A state of `target_problem` holding the fluent ones of `atoms`, which must use its object and predicate names. Predicates static in the target keep the target's definition."""
+    """The state of `target_problem` holding the atoms of its fluent predicates among `atoms`."""
     advanced = target_problem._advanced_problem
     fluent_by_name = {
         p.get_name(): p for p in advanced.get_domain().get_fluent_predicates()

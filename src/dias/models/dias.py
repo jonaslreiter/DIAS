@@ -1,3 +1,5 @@
+"""The DIAS model (paper, Sec. 4)."""
+
 import io
 import logging
 from typing import Mapping
@@ -9,7 +11,7 @@ from dias.adjacency import dense_from_edges
 from dias.hparams import to_mapping
 from dias.schedules import Schedule, as_schedule
 
-from .checkpoints import CHECKPOINT_VERSION, UNVERSIONED, VERSION_KEY, migrate
+from .checkpoints import CHECKPOINT_VERSION, VERSION_KEY, migrate
 from .edges import EdgeTypeLayout
 from .encoder import DEFAULT_HIDDEN_DIMS, RelationalEncoder
 from .objectives import DiasObjective, Losses
@@ -22,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 class DIAS(L.LightningModule):
-    """A relational encoder, a slot assignment, and one lifted schema per action. Defaults are the paper's full model."""
+    """Differentiable Induction of Action Schemas. The defaults are the paper's model."""
 
     def __init__(
         self,
@@ -35,14 +37,12 @@ class DIAS(L.LightningModule):
         aux_loss_alpha: float = 0.1,
         force_action_args: bool = False,
         per_action_slots: bool = False,
-        learn_preconditions: bool = True,
+        gate_preconditions: bool = True,
         action_arities: list[int] | None = None,
         action_arg_positions: list[list[int]] | None = None,
-        successor_relations: bool = True,
-        random_node_embeddings: bool = True,
+        random_node_features: bool = True,
         precondition_tau: Schedule | Mapping | None = None,
-        pcgrad_norm_cap: bool = True,
-        state_dependent_effects: bool = False,
+        mlp_effects: bool = False,
         use_slot_weights: bool = True,
         use_precondition_loss: bool = True,
         use_applicability_loss: bool = False,
@@ -50,43 +50,39 @@ class DIAS(L.LightningModule):
         use_effect_loss: bool = True,
         use_pcgrad: bool = True,
         encoder_hidden_dims: list[int] | None = None,
-        schema_threshold: float = 0.5,
+        derivation_threshold: float = 0.5,
     ):
         """
         Args:
             num_objects: Objects in the instance. (linked from the datamodule)
             relation_arities: Arity (1 or 2) of every relation, in channel order. (linked from the datamodule)
-            num_actions: Action schemas to learn, one per action of the domain. (linked from the datamodule)
-            object_dim: Width of the object embeddings.
-            num_slots: Parameter slots per schema, clamped to num_objects. Required unless per_action_slots.
-            learning_rate: Adam step size.
-            aux_loss_alpha: Alpha, the weight of the auxiliary objective against the adjacency loss.
-            force_action_args: Bind the slots of observed action arguments instead of assigning them.
-            per_action_slots: Give every action its own arity in slots, rather than num_slots each.
-            learn_preconditions: Gate the predicted change on the learned preconditions.
+            num_actions: Actions of the domain, one lifted schema each. (linked from the datamodule)
+            object_dim: Width d of the object embeddings.
+            num_slots: Slots M per action, capped at num_objects. Required unless per_action_slots.
+            learning_rate: AdamW learning rate.
+            aux_loss_alpha: Weight alpha of L_aux.
+            force_action_args: Bind the slots of the arguments an action label names to those objects.
+            per_action_slots: Give every action one slot per argument instead of num_slots.
+            gate_preconditions: Apply the effects only as far as the learned preconditions hold (p_pre in Eq. 5).
             action_arities: Arity of every action. (linked from the datamodule)
-            action_arg_positions: Argument positions the labels observe, per action. (linked from the datamodule)
-            successor_relations: Show the encoder what the transition changed.
-            random_node_embeddings: Start each object from noise, so symmetric objects differ.
-            precondition_tau: Schedule for tau, the root degree of the relaxed precondition product. None holds it at 1, the geometric mean.
-            pcgrad_norm_cap: Cap the projected auxiliary gradient at the primary one's norm.
-            state_dependent_effects: Predict effects from the state with an MLP instead of learning one lifted tensor per action.
-            use_slot_weights: Learn which slots an action uses, which is its recovered arity.
-            use_precondition_loss: Include the restrictive-precondition auxiliary term.
-            use_applicability_loss: Ask the preconditions to hold at the bound objects of every observed transition, including those that changed nothing, as a term of the primary loss.
-            observation_noise: Probability with which the adjacency loss takes each observed atom to be flipped, which bounds what one corrupted atom can cost. 0 trusts every atom.
-            use_effect_loss: Include the minimal-effects auxiliary term.
-            use_pcgrad: Project the auxiliary gradient rather than adding a weighted sum.
-            encoder_hidden_dims: Widths of the relational convolutions.
-            schema_threshold: Probability at which the learned domain written beside each checkpoint binarizes slots, effects and preconditions.
+            action_arg_positions: Argument positions the action labels name, per action. (linked from the datamodule)
+            random_node_features: Draw the first half of the initial node features at random.
+            precondition_tau: Schedule of tau, the root degree of the relaxed precondition product. Unset holds it at 1.
+            mlp_effects: Predict the effects from the state with an MLP instead of learning P_eff.
+            use_slot_weights: Learn the slot weights w, which give the arity.
+            use_precondition_loss: Include L_pre in L_aux.
+            use_applicability_loss: Add to L_main a cross-entropy asking every transition's preconditions to hold at its bound objects.
+            observation_noise: Probability with which L_adj takes each observed atom to be flipped.
+            use_effect_loss: Include L_eff in L_aux.
+            use_pcgrad: Combine the gradients of L_main and L_aux with PCGrad instead of adding them.
+            encoder_hidden_dims: Widths of the R-GCN's hidden layers.
+            derivation_threshold: Threshold of the schema derivation for the learned domain written beside each checkpoint.
         """
         super().__init__()
         self.save_hyperparameters()
         self.precondition_tau = as_schedule(precondition_tau)
-        # Hyper-parameters must stay primitive; see dias.hparams.
         self.hparams["precondition_tau"] = to_mapping(self.precondition_tau)
 
-        # Kept here because something reads them back; the rest goes to the module that owns it.
         self.num_objects = num_objects
         self.num_actions = num_actions
         self.num_relations = len(relation_arities)
@@ -104,15 +100,13 @@ class DIAS(L.LightningModule):
             num_relations=self.num_relations,
             num_actions=num_actions,
             action_arg_positions=action_arg_positions,
-            successor_relations=successor_relations,
         )
         self.encoder = RelationalEncoder(
             object_dim,
             self.edges.num_edge_types,
             hidden_dims=encoder_hidden_dims or DEFAULT_HIDDEN_DIMS,
-            random_node_embeddings=random_node_embeddings,
+            random_node_features=random_node_features,
         )
-
         self.predictor = SuccessorPredictor(
             relation_arities=relation_arities,
             num_actions=num_actions,
@@ -120,12 +114,11 @@ class DIAS(L.LightningModule):
             object_dim=object_dim,
             force_action_args=force_action_args,
             per_action_slots=per_action_slots,
-            learn_preconditions=learn_preconditions,
+            gate_preconditions=gate_preconditions,
             action_arities=action_arities,
-            state_dependent_effects=state_dependent_effects,
+            mlp_effects=mlp_effects,
             use_slot_weights=use_slot_weights,
         )
-
         self.objective = DiasObjective(
             relation_arities=relation_arities,
             num_slots=self.num_slots,
@@ -137,18 +130,16 @@ class DIAS(L.LightningModule):
         self.gradients = gradient_combiner(
             use_pcgrad=use_pcgrad,
             alpha=aux_loss_alpha,
-            auxiliary_active=aux_loss_alpha != 0.0
+            aux_active=aux_loss_alpha != 0.0
             and (use_effect_loss or use_precondition_loss),
-            norm_cap=pcgrad_norm_cap,
         )
-
         self.automatic_optimization = False
 
-        auxiliary = [
+        aux_terms = [
             name
             for name, active in (
-                ("effects", use_effect_loss),
-                ("preconditions", use_precondition_loss),
+                ("L_eff", use_effect_loss),
+                ("L_pre", use_precondition_loss),
             )
             if active
         ]
@@ -161,31 +152,23 @@ class DIAS(L.LightningModule):
             f"{sum(p.numel() for p in self.parameters()):,}",
         )
         logger.info(
-            "Effects are %s; auxiliary losses %s at weight %g, combined by %s.",
-            (
-                "predicted from the state"
-                if state_dependent_effects
-                else "a lifted tensor"
-            ),
-            ", ".join(auxiliary) if auxiliary else "off",
+            "Effects %s; L_aux %s at alpha %g, combined by %s.",
+            "from an MLP" if mlp_effects else "lifted",
+            " + ".join(aux_terms) if aux_terms else "off",
             aux_loss_alpha,
             type(self.gradients).__name__,
         )
         if use_applicability_loss:
-            logger.info(
-                "The primary loss asks every observed transition's preconditions to hold."
-            )
+            logger.info("L_main includes the applicability term.")
 
     def on_save_checkpoint(self, checkpoint: dict) -> None:
         checkpoint[VERSION_KEY] = CHECKPOINT_VERSION
 
     @classmethod
     def load_from_checkpoint(cls, checkpoint_path, *args, **kwargs):
-        """Load a checkpoint, bringing an older layout up to date on the way in."""
+        """Load a checkpoint, in an earlier format too."""
         checkpoint = torch.load(checkpoint_path, map_location="cpu")
-        version = checkpoint.get(VERSION_KEY, UNVERSIONED)
-        if version != CHECKPOINT_VERSION:
-            logger.info("Reading a checkpoint written in format %d.", version)
+        if checkpoint.get(VERSION_KEY) != CHECKPOINT_VERSION:
             checkpoint = migrate(checkpoint)
         buffer = io.BytesIO()
         torch.save(checkpoint, buffer)
@@ -213,10 +196,7 @@ class DIAS(L.LightningModule):
         return prediction
 
     def schema_logits(self) -> SchemaLogits:
-        """The learned schema as the model applies it, arity-masked, on the CPU.
-
-        The supported way to read a schema off a trained model: the raw parameters hold noise at masked cells, and the stored slot-weight logits are not what the forward pass applies when the weights are not learned.
-        """
+        """The learned schema as the forward pass applies it: arity-masked, with the slot weights it uses, on the CPU."""
         with torch.no_grad():
             preconditions = self.predictor.preconditions.action_logits()
             effects = self.predictor.effects.action_logits()
@@ -233,11 +213,11 @@ class DIAS(L.LightningModule):
         selection: torch.Tensor,
         y_action: torch.Tensor,
     ) -> torch.Tensor:
-        """The successor state predicted for a known slot binding, preconditions not consulted."""
+        """The successor state for a known slot binding, preconditions not consulted."""
         return self.predictor.apply(adjacency, selection, y_action)
 
     def retarget(self, num_objects: int) -> None:
-        """Point the model at an instance with a different number of objects."""
+        """Apply the model to an instance with `num_objects` objects."""
         if num_objects < self.num_slots:
             raise ValueError(
                 f"This instance has {num_objects} objects, fewer than the model's {self.num_slots} slots; it cannot bind them all."
@@ -245,7 +225,7 @@ class DIAS(L.LightningModule):
         self.num_objects = num_objects
 
     def dense(self, batch) -> torch.Tensor:
-        """One graph batch as the ``[B, R, O, O]`` tensor the schema acts on."""
+        """A graph batch as the ``[B, R, O, O]`` adjacency tensor."""
         return dense_from_edges(
             batch.edge_index,
             batch.edge_attr,
@@ -274,13 +254,10 @@ class DIAS(L.LightningModule):
         optimizer.zero_grad()
 
         losses = self.step(batch)
-        self.gradients.backward(
-            losses.primary, losses.auxiliary, self.trainable_parameters()
-        )
+        self.gradients.backward(losses.main, losses.aux, self.trainable_parameters())
         optimizer.step()
 
         self.log_results("train", losses.logged(self.aux_loss_alpha))
-        # Automatic optimization is off: `gradients` set p.grad itself.
         return None
 
     def _eval_step(self, prefix: str, batch) -> torch.Tensor:

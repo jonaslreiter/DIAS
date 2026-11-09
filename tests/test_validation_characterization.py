@@ -1,7 +1,4 @@
-"""End-to-end characterization of the DIAS validation path, which the unit tests do not cover: a transposed einsum, a changed enumeration order or a flipped logit channel would pass them all.
-
-Rather than train a model, this plants a schema by hand: blocks-3's `stack` written into the checkpoint exactly, its inequality left to decoding as for any run without the `=` relation, and the other two actions left inert. The expected result then follows independently of the numbers, so the assertion is sensitive in both directions: `stack` recovered perfectly, everything the others would reach a false negative.
-"""
+"""End-to-end characterization of the DIAS validation path on a planted schema: blocks-3's `stack` written into a checkpoint exactly, its distinctness left to the derivation, the other two actions inert."""
 
 import json
 import unittest
@@ -13,12 +10,11 @@ from checkpoints import TEST_PROBLEM, build_model, domain_schema, save
 from dias.schema.export import learned_domain
 from dias.validation.checkpoint import load_run, resolve_checkpoint
 from dias.validation.dias import DiasValidator
-from dias.validation.successors import BfsSampling, WalkSampling
+from dias.validation.successors import WalkSampling
 from support import temp_dir
 
 torch.set_num_threads(1)
 
-# Softmax over the three channels turns these into ~(1, 0, 0) or ~(0, 1, 0), which the 0.5 threshold reads as a clean off/on.
 OFF, ON = 10.0, 10.0
 
 SAMPLE_SEED = 0
@@ -27,13 +23,13 @@ SAMPLING = WalkSampling(num_samples=NUM_SAMPLES, walk_length=20, min_walks=2)
 
 
 def build_checkpoint(
-    directory: Path, legacy: bool = False, inequality: bool = False
+    directory: Path, equality: bool = False, inequality: bool = False
 ) -> str:
-    """Write a checkpoint whose only learned action is `stack`, correct apart from its inequality, which only a `legacy` run, from before `include_equality`, has a channel to learn."""
-    schema = domain_schema(legacy=legacy)
+    """Write a checkpoint whose only learned action is `stack`, correct apart from its inequality, which only a run with an `=` channel can learn."""
+    schema = domain_schema(equality=equality)
     relation = {name: i for i, name in enumerate(schema.relation_names)}
     action = {name: i for i, name in enumerate(schema.action_names)}
-    model, hparams = build_model(legacy=legacy)
+    model, hparams = build_model(equality=equality)
 
     stack = action["stack"]
     with torch.no_grad():
@@ -65,7 +61,7 @@ def build_checkpoint(
         enable(effects, "clear", 1, 1, 2)
         enable(effects, "on-table", 0, 0, 2)
 
-    return save(directory, model, hparams, legacy=legacy)
+    return save(directory, model, hparams, equality=equality)
 
 
 class ValidationCharacterizationTest(unittest.TestCase):
@@ -86,7 +82,7 @@ class ValidationCharacterizationTest(unittest.TestCase):
         return validation.validate(progress)
 
     def test_a_resumed_validation_scores_only_the_states_left(self):
-        """Each state's score is recorded as it finishes, so a validation killed partway continues where it stopped and adds up to the uninterrupted result."""
+        """A validation stopped partway continues from its recorded states and adds up to the uninterrupted result."""
         directory = temp_dir(self)
         model_id = build_checkpoint(directory)
         progress = directory / "seed0.test-1.states.jsonl"
@@ -124,10 +120,9 @@ class ValidationCharacterizationTest(unittest.TestCase):
         result = self.validate()
 
         self.assertEqual(result["total"], NUM_SAMPLES)
-        # 65 of the original successors are reached, 112 missed, and 16 are spurious: 8 states, each produced by both of the inert learned actions. Counts are attributed to the action that produced them, so those 8 count twice: two operators, two wrong predictions.
+        # 65 successors reached, 112 missed, and the 8 states themselves produced by each of the two inert actions.
         self.assertAlmostEqual(result["precision"], 65 / 81, places=12)
         self.assertAlmostEqual(result["recall"], 65 / 177, places=12)
-        # No sampled state has both successor sets agreeing exactly, which is the state-level view the attributed counts do not carry.
         self.assertEqual(result["matches"], 0)
         self.assertEqual(result["accuracy"], 0.0)
 
@@ -140,32 +135,11 @@ class ValidationCharacterizationTest(unittest.TestCase):
         )
         self.assertEqual(stats["move"], {"tp": 0, "fp": 8, "fn": 89, "conflicts": 97})
 
-    def test_the_breadth_first_draw_scores_as_it_always_has(self):
-        """The paper's draw is kept as an option, so its states, and the counts on them, are the ones it drew before the walks existed."""
-        result = self.validate(
-            BfsSampling(num_samples=NUM_SAMPLES, sample_population=20)
-        )
-
-        self.assertAlmostEqual(result["precision"], 54 / 70, places=12)
-        self.assertAlmostEqual(result["recall"], 54 / 192, places=12)
-        self.assertEqual(
-            result["action_stats"],
-            {
-                "stack": {"tp": 54, "fp": 0, "fn": 0, "conflicts": 0},
-                "newtower": {"tp": 0, "fp": 8, "fn": 28, "conflicts": 36},
-                "move": {"tp": 0, "fp": 8, "fn": 110, "conflicts": 118},
-            },
-        )
-
     def test_repeated_validation_is_deterministic(self):
-        """Which states are drawn is seeded, so a result can be reproduced."""
         self.assertEqual(self.validate(), self.validate())
 
     def test_an_unseeded_run_records_the_seed_that_reproduces_it(self):
-        """Unfixed is not the same as unrecorded.
-
-        `experiments/configs/validation.yaml` leaves `sample_seed` unset, so each run scores on its own sample. What makes such a result checkable is that the seed it drew with is written into the result JSON and, passed back, redraws exactly those states.
-        """
+        """The seed an unseeded validation drew reproduces its states."""
         directory = temp_dir(self)
         model_id = build_checkpoint(directory)
 
@@ -182,24 +156,26 @@ class ValidationCharacterizationTest(unittest.TestCase):
 
 
 class LearnedDomainTest(unittest.TestCase):
-    def stack(self, legacy: bool, inequality: bool = False) -> str:
+    def stack(self, equality: bool, inequality: bool = False) -> str:
         directory = temp_dir(self)
-        run = load_run(build_checkpoint(directory, legacy, inequality), str(directory))
+        run = load_run(
+            build_checkpoint(directory, equality, inequality), str(directory)
+        )
         text = learned_domain(run.model, run.schema, run.datamodule_hparams, 0.5)
         return text[text.index("(:action stack") : text.index("(:action newtower")]
 
     def test_a_run_without_equality_requires_distinct_parameters(self):
-        self.assertIn("(not (= ?x0 ?x1))", self.stack(legacy=False))
+        self.assertIn("(not (= ?x0 ?x1))", self.stack(equality=False))
 
     def test_a_run_that_learned_equality_writes_only_what_it_learned(self):
-        self.assertNotIn("equal", self.stack(legacy=True))
-        learned = self.stack(legacy=True, inequality=True)
+        self.assertNotIn("equal", self.stack(equality=True))
+        learned = self.stack(equality=True, inequality=True)
         self.assertIn("(not (equal ?x0 ?x1))", learned)
         self.assertNotIn("(= ", learned)
 
-    def score_stack(self, legacy: bool, force_injective: bool = False) -> dict:
+    def score_stack(self, equality: bool, force_injective: bool = False) -> dict:
         directory = temp_dir(self)
-        model_id = build_checkpoint(directory, legacy)
+        model_id = build_checkpoint(directory, equality)
         validation = DiasValidator(
             model_id,
             str(directory),
@@ -213,11 +189,10 @@ class LearnedDomainTest(unittest.TestCase):
         return validation.validate()["action_stats"]["stack"]
 
     def test_forcing_distinct_parameters_excludes_a_repeated_object(self):
-        """Without the inequality, stack(b, b) applies wherever b is clear on the table and puts it on itself."""
         perfect = {"tp": 65, "fp": 0, "fn": 0, "conflicts": 0}
-        self.assertEqual(self.score_stack(legacy=False), perfect)
-        self.assertGreater(self.score_stack(legacy=True)["fp"], 0)
-        self.assertEqual(self.score_stack(legacy=True, force_injective=True), perfect)
+        self.assertEqual(self.score_stack(equality=False), perfect)
+        self.assertGreater(self.score_stack(equality=True)["fp"], 0)
+        self.assertEqual(self.score_stack(equality=True, force_injective=True), perfect)
 
     def test_the_domain_written_beside_the_checkpoint_is_scored_unless_a_threshold_is_given(
         self,

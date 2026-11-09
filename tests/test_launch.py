@@ -1,4 +1,4 @@
-"""Tests for `--validate-only`, which submits the validation array over an already trained run instead of training first. Two things make it correct: no training array goes out and the validation array waits on no dependency, and a run that stopped short of `max_steps` is refused rather than scored."""
+"""What `launch.py` submits: validation alone over finished runs, the Slurm resources, the overlays, the sweeps and L1."""
 
 import sys
 import unittest
@@ -89,9 +89,6 @@ class ValidationThresholdTest(unittest.TestCase):
     def test_by_default_validation_scores_the_domain_the_run_wrote(self):
         self.assertNotIn("THRESHOLD", self.exported())
 
-    def test_a_threshold_is_handed_to_validation_only_when_given(self):
-        self.assertIn("THRESHOLD=0.25", self.exported(validation_threshold=0.25))
-
     def test_validation_scores_the_final_checkpoint_unless_asked_for_the_best(self):
         self.assertNotIn("CHECKPOINT", self.exported())
         self.assertIn("CHECKPOINT=best", self.exported(validation_checkpoint="best"))
@@ -101,53 +98,61 @@ class ResourcesTest(unittest.TestCase):
     def setUp(self):
         self.log_dir = temp_dir(self)
 
-    def test_mlp_effects_validation_asks_for_the_resources_of_its_own_file(self):
-        """It grounds every learned precondition, which takes far longer than scoring a learned domain."""
-        requested = {}
-        for experiment_type, resources in (
-            ("mlp", pipeline.SLURM_RESOURCES_VALIDATION_MLP),
-            ("dias", pipeline.SLURM_RESOURCES_VALIDATION),
-        ):
-            plan = launch.build_plan(
-                plan_args(self.log_dir, experiment_type=experiment_type)
-            )
-            validation = submitted(plan)[-1]
-            requested[experiment_type] = launch.sbatch_resource_opts(
-                launch.resolve_resources(launch.load_yaml(resources), "gripper")
-            )
-            for option in requested[experiment_type]:
-                self.assertIn(option, validation)
-        self.assertNotEqual(requested["mlp"], requested["dias"])
-
-    def test_each_experiment_type_reads_its_own_resource_files_unless_given_others(
-        self,
-    ):
-        """Noise has files of its own for both arrays, the MLP-effects model for validation only."""
+    def test_each_experiment_type_takes_its_sections_of_the_slurm_config(self):
+        config = launch.load_yaml(pipeline.SLURM_CONFIG)
         for experiment_type, train, validation in (
-            ("dias", pipeline.SLURM_RESOURCES, pipeline.SLURM_RESOURCES_VALIDATION),
-            (
-                "noise",
-                pipeline.SLURM_RESOURCES_NOISE,
-                pipeline.SLURM_RESOURCES_VALIDATION_NOISE,
-            ),
-            ("mlp", pipeline.SLURM_RESOURCES, pipeline.SLURM_RESOURCES_VALIDATION_MLP),
+            ("dias", "train", "validate"),
+            ("noise", "train-noise", "validate-noise"),
+            ("mlp", "train", "validate-mlp"),
         ):
             plan = launch.build_plan(
                 plan_args(self.log_dir, experiment_type=experiment_type)
             )
-            self.assertEqual(plan.train_resources, launch.load_yaml(train))
-            self.assertEqual(plan.validation_resources, launch.load_yaml(validation))
-        given = pipeline.SLURM_RESOURCES_VALIDATION_MLP
-        plan = launch.build_plan(
-            plan_args(
-                self.log_dir,
-                experiment_type="noise",
-                slurm_resources=given,
-                slurm_resources_validation=given,
-            )
+            self.assertEqual(plan.train_resources, config[train])
+            self.assertEqual(plan.validation_resources, config[validation])
+
+    def test_the_validation_array_asks_for_its_resources(self):
+        plan = launch.build_plan(plan_args(self.log_dir, experiment_type="mlp"))
+        validation = submitted(plan)[-1]
+        for option in launch.sbatch_resource_opts(
+            launch.resolve_resources(plan.validation_resources, "gripper")
+        ):
+            self.assertIn(option, validation)
+
+
+class ThresholdSweepTest(unittest.TestCase):
+    def setUp(self):
+        self.log_dir = temp_dir(self)
+        write_run(self.log_dir, "exp-gripper-s0")
+        write_run(self.log_dir, "exp-gripper-s1")
+
+    def plan(self, **overrides):
+        return launch.build_plan(
+            plan_args(self.log_dir, sweep="threshold", sweep_values="0.25", **overrides)
         )
-        self.assertEqual(plan.train_resources, launch.load_yaml(given))
-        self.assertEqual(plan.validation_resources, launch.load_yaml(given))
+
+    def test_it_validates_the_existing_runs_into_an_experiment_per_threshold(self):
+        (validate,) = submitted(self.plan())
+        export = next(opt for opt in validate if opt.startswith("--export"))
+        for variable in (
+            "EXPERIMENT=exp,",
+            "RESULTS_EXPERIMENT=exp-thr0.25",
+            "THRESHOLD=0.25",
+            "NO_WANDB=1",
+        ):
+            self.assertIn(variable, export)
+        self.assertFalse([opt for opt in validate if opt.startswith("--dependency")])
+
+    def test_runs_that_did_not_finish_are_refused(self):
+        self.log_dir = temp_dir(self)
+        write_run(self.log_dir, "exp-gripper-s0")
+        write_run(self.log_dir, "exp-gripper-s1", step=5000)
+        with self.assertRaisesRegex(SystemExit, "did not train"):
+            self.plan()
+
+    def test_an_override_is_refused(self):
+        with self.assertRaisesRegex(SystemExit, "--set"):
+            self.plan(set="model.init_args.num_slots=3")
 
 
 class LabelsTest(unittest.TestCase):
@@ -221,7 +226,6 @@ class L1LaunchTest(unittest.TestCase):
             ["--labels", "strips"],
             ["--ablation", "no-pcgrad"],
             ["--set", "model.init_args.num_slots=3"],
-            ["--validation-threshold", "0.25"],
             ["--validation-checkpoint", "best"],
         ):
             with self.subTest(extra=extra):

@@ -1,7 +1,4 @@
-"""The MLP-effects validator's worker side: one sampled state's expected successors and learned groundings. Workers run under a memory limit, so this imports no torch.
-
-A successor is identified by the cells it flips relative to its state, as the XOR of a random 128-bit key per ``(relation, object, object)`` cell, which the GPU side computes from the bound objects alone.
-"""
+"""The MLP-effects validator's worker side: a state's expected successors and the groundings of its learned actions. A successor is identified by the XOR of a random 128-bit key per cell it flips. Imports no torch, since workers run under an address-space limit."""
 
 from __future__ import annotations
 
@@ -20,7 +17,7 @@ _WORKER: dict = {}
 
 
 def successor_keys(num_relations: int, num_objects: int) -> np.ndarray:
-    """One key per cell as two int64 words, ``(R, N, N, 2)``, the same in every process."""
+    """One key per cell as two int64 words, ``(R, O, O, 2)``, the same in every process."""
     return np.random.default_rng(_KEY_SEED).integers(
         np.iinfo(np.int64).min,
         np.iinfo(np.int64).max,
@@ -36,7 +33,7 @@ def signature_from_words(high: int, low: int) -> int:
 
 
 def flip_signature(keys: np.ndarray, flips: np.ndarray) -> int:
-    """The signature of a successor differing from its state at `flips`, ``(R, N, N)`` bool."""
+    """The signature of a successor differing from its state at `flips`, ``(R, O, O)``."""
     words = np.bitwise_xor.reduce(keys[flips], axis=0) if flips.any() else (0, 0)
     return signature_from_words(words[0], words[1])
 
@@ -73,10 +70,7 @@ def _adjacency(state, config: dict) -> np.ndarray:
 
 
 def ground_state(payload) -> tuple:
-    """A state's adjacency, its expected successor signatures by action name, and one action index and ``(K,)`` slot binding (-1 when inactive) per learned grounding.
-
-    The state is grounded on problems of its own: pymimir keeps every action a problem grounds until the problem is dropped.
-    """
+    """A state's adjacency, its expected successor signatures by action, and per learned grounding its action index and slot binding ``(M,)``, -1 for an inactive slot. Grounded on problems of its own, since pymimir keeps every action a problem grounds."""
     config = _WORKER["config"]
     channels = np.ones(config["num_relations"], dtype=bool)
     if config["eq_channel_idx"] is not None:
@@ -100,7 +94,6 @@ def ground_state(payload) -> tuple:
             flip_signature(_WORKER["keys"], flips)
         )
 
-    # Typed buffers: tens of millions of groundings per state do not fit as Python ints.
     actions = array("h")
     slot_objects = array("h")
     learned = _WORKER["learned_actions"]

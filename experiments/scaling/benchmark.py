@@ -1,20 +1,8 @@
 #!/usr/bin/env python
-"""Benchmark one (domain, instance, seed) of the scaling study.
+"""Benchmark one (domain, instance, seed) of the scaling study: a real training run through ``dias.main.CLI`` with ``configs/scaling.yaml``, timing the steps after ``--warmup`` and recording peak GPU and host memory. An out-of-memory error is recorded as ``status: "oom"``.
 
-Measures how the DIAS *training step* behaves as the instance grows:
-
-  * throughput      : iterations (training steps) per second, steady state
-  * GPU memory      : peak allocated / reserved bytes over the measured window
-  * host memory     : peak RSS, and the size of the pre-computed sample pool
-  * setup time      : transition sampling + tensor construction
-
-What runs is the ordinary training path: a real run's config chain through ``dias.main.CLI``, with a callback that times the steps. Nothing is stubbed; the overlay only pins the data pipeline and turns off validation, logging and checkpointing.
-
-The first ``--warmup`` steps are discarded and the peak-memory counters reset right after them, so neither the CUDA context nor the allocator growth is counted; each measured step is bracketed by ``torch.cuda.synchronize()``. Out-of-memory is recorded as ``status: "oom"`` rather than raised, so the ladder can be walked to its end.
-
-Usage
------
-    python experiments/scaling/benchmark.py --domain blocks-3 --instance n0068 --seed 0 [--experiment scaling-l40s] [--warmup 20 --measure 100]
+Example:
+    python experiments/scaling/benchmark.py --domain blocks-3 --instance n0068 --seed 0
 """
 
 from __future__ import annotations
@@ -35,7 +23,6 @@ import yaml
 SCALING_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCALING_DIR.parents[1]
 
-# A domain's layout is the main pipeline's business, so it is imported, not re-derived.
 sys.path.append(str(SCALING_DIR.parent))
 from pipeline import LOGS_DIR, domain_config, domain_pddl  # noqa: E402
 
@@ -45,14 +32,14 @@ INSTANCES_DIR = SCALING_DIR / "instances"
 
 
 def results_dir(log_dir: Path, experiment: str) -> Path:
-    """Where one experiment's benchmark points are written, one folder per domain."""
+    """Where an experiment's results are written."""
     return Path(log_dir) / "scaling" / experiment
 
 
 def result_path(
     log_dir: Path, experiment: str, domain: str, instance: str, seed: int
 ) -> Path:
-    """Where one benchmark point is written."""
+    """Where one point's result is written."""
     return results_dir(log_dir, experiment) / domain / f"{instance}-s{seed}.json"
 
 
@@ -66,15 +53,12 @@ def _peak_rss_mib() -> float:
 
 
 def _build_callback():
-    """Defined lazily so ``--help`` and the launcher do not need torch."""
+    """The timing callback, defined on first use so that the launcher needs no torch."""
     import torch
     from lightning.pytorch.callbacks import Callback
 
     class ThroughputBenchmark(Callback):
-        """Times the training steps and records peak memory over the window.
-
-        Batches are counted here, not off ``trainer.global_step``: DIAS optimizes manually, so the global step is whatever the module makes it.
-        """
+        """Times the training steps after the warm-up and records the peak memory over them."""
 
         def __init__(self, warmup: int, measure: int):
             self.warmup = warmup
@@ -93,12 +77,10 @@ def _build_callback():
                 torch.cuda.synchronize()
 
         def on_train_start(self, trainer, pl_module):
-            # Everything before the first step: setup, dataloaders, model transfer.
             self.pre_train_seconds = time.perf_counter() - self.fit_start
 
         def on_train_batch_start(self, trainer, pl_module, batch, batch_idx):
             if self.batches == self.warmup:
-                # Steady state: forget the warm-up peaks and start the clock. reset_peak_memory_stats sets the peak to current usage, so the warmed-up pool stays in the number.
                 self._sync()
                 if self._cuda:
                     torch.cuda.reset_peak_memory_stats()
@@ -126,7 +108,6 @@ def _build_callback():
             if times:
                 out.update(
                     {
-                        # Median: robust to a stray descheduled step.
                         "iterations_per_second": 1.0 / statistics.median(times),
                         "iterations_per_second_mean": len(times) / sum(times),
                         "step_time_ms_median": 1e3 * statistics.median(times),
@@ -160,7 +141,7 @@ def _lightning_args(
     max_steps: int,
     accelerator: str | None,
 ) -> list[str]:
-    """The config chain of a real run, with the instance swapped in."""
+    """A run's config chain on the instance."""
     return [
         "--config",
         str(PROJECT_ROOT / "configs" / "main.yaml"),
@@ -190,7 +171,7 @@ def run_benchmark(
     measure: int,
     accelerator: str | None = None,
 ) -> dict:
-    """Run one benchmark point and return its record (never raises on OOM)."""
+    """Benchmark one point and return its record."""
     import torch
 
     from dias.main import CLI
@@ -200,9 +181,7 @@ def run_benchmark(
     domain_file = domain_pddl(domain)
     problem_pddl = instance_path(domain, instance)
     if not problem_pddl.exists():
-        raise SystemExit(
-            f"Missing instance {problem_pddl}, run experiments/scaling/generate_instances.py first."
-        )
+        raise SystemExit(f"No instance {problem_pddl}.")
 
     record: dict = {
         "domain": domain,
@@ -223,10 +202,8 @@ def run_benchmark(
 
     callback = _build_callback()(warmup=warmup, measure=measure)
     t_start = time.perf_counter()
-    # Filled by the setup wrapper below, out here so `finally` can read it either way.
     sampling: dict = {}
     try:
-        # LightningCLI warns about `args` while this script's own argv is visible.
         argv, sys.argv = sys.argv, sys.argv[:1]
         try:
             cli = CLI(
@@ -240,13 +217,12 @@ def run_benchmark(
                 ),
                 run=False,
                 save_config_callback=None,
-                # No logger, no checkpointing: this run produces nothing but timings.
                 trainer_defaults={"callbacks": [callback]},
             )
         finally:
             sys.argv = argv
         datamodule, model, trainer = cli.datamodule, cli.model, cli.trainer
-        # Wrap the hook itself: Lightning runs the callback setup hook after the datamodule's, and calling setup() here would sample twice.
+        # Timed inside the hook, which Lightning calls.
         inner_setup = datamodule.setup
 
         def timed_setup(stage=None):
@@ -268,7 +244,7 @@ def run_benchmark(
         callback.fit_start = time.perf_counter()
         trainer.fit(model, datamodule=datamodule)
         record["status"] = "ok"
-        # The pre-computed adjacency pool in host memory: the other quadratic term, and in practice what limits the ladder before the GPU does.
+        # The sampled transitions in host memory.
         base = datamodule.base
         record["num_samples"] = len(base)
         record["sample_pool_mib"] = (
@@ -280,8 +256,7 @@ def run_benchmark(
         print(
             f"[oom] {domain}/{instance} seed={seed}: {record['error']}", file=sys.stderr
         )
-    except Exception as exc:  # noqa: BLE001 - recorded, the ladder continues
-        # CPU OOM and some CUDA paths surface as plain RuntimeError/MemoryError.
+    except Exception as exc:  # noqa: BLE001
         oom = isinstance(exc, MemoryError) or "out of memory" in str(exc).lower()
         record["status"] = "oom" if oom else "error"
         record["error"] = str(exc).splitlines()[0] if str(exc) else repr(exc)
@@ -339,7 +314,6 @@ def main() -> int:
         f"[{record['status']}] {args.domain}/{args.instance} seed={args.seed}: {'%.2f it/s' % its if its else 'no timing'}, peak {record.get('gpu_peak_allocated_mib', float('nan')):.0f} MiB allocated / {record.get('gpu_peak_reserved_mib', float('nan')):.0f} MiB reserved -> {out}",
         flush=True,
     )
-    # OOM is a recorded outcome; only genuine failures are errors.
     return 1 if record["status"] == "error" else 0
 
 

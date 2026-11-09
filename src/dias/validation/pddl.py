@@ -1,10 +1,11 @@
-"""Scoring a learned PDDL domain against the original domain it was learned from."""
+"""Scoring a learned PDDL domain against the original one."""
 
 from __future__ import annotations
 
 import hashlib
 import logging
 import re
+import tempfile
 from pathlib import Path
 
 import pymimir
@@ -19,10 +20,8 @@ from dias.pddl.untype import (
     with_equality_facts,
 )
 
-from .artifacts import PddlWorkspace
 from .successors import (
     LEARNED_ACTION_PREFIX,
-    Sampling,
     WalkSampling,
     append_progress,
     combine_scores,
@@ -36,12 +35,12 @@ from .workers import score_states
 
 logger = logging.getLogger(__name__)
 
-# A learned schema's parameters carry these when it has no real type for them.
+# Parameter types a learned schema may give that say nothing.
 UNINFORMATIVE_TYPES = frozenset({"untyped", "object"})
 
 
 class PddlValidator:
-    """Compares the successors of the learned actions with the original ones, in one untyped domain holding both."""
+    """Scores a learned domain by the successors its actions generate beside the original ones, in one untyped domain holding both."""
 
     threshold: float | None = None
 
@@ -90,7 +89,7 @@ class PddlValidator:
             f"{header}\n\n{original_actions_text}\n\n{learned_actions_text}\n)\n"
         )
         merged_problem_text = strip_problem_types(problem_text, original_domain_text)
-        # Everything a state's score depends on besides the state itself, so recorded progress is reused for exactly this comparison.
+        # What a state's score depends on besides the state.
         self.scored_digest = hashlib.sha256(
             "\0".join(
                 [
@@ -126,7 +125,7 @@ class PddlValidator:
     def _check_learned_types(
         original_domain_text: str, learned_domain_text: str
     ) -> None:
-        """Refuse a learned parameter type that is neither a type nor a unary predicate of the original: no problem would assert it."""
+        """Refuse a learned parameter type that is neither a type nor a unary predicate of the original."""
         known = {
             name.lower()
             for children, parent in pddl_text.parse_type_groups(original_domain_text)
@@ -155,7 +154,7 @@ class PddlValidator:
     def _patch_missing_predicates(
         self, header: str, actions_text: str, original_domain_text: str
     ) -> str:
-        """Declare every predicate the merged domain uses but does not define: those its actions use, and the types, which became unary atoms."""
+        """Declare the predicates the merged domain uses but does not declare, the types among them."""
         defined_words = {
             m.group(1).lower() for m in re.finditer(r"\(\s*([^\s()]+)", header)
         }
@@ -196,23 +195,19 @@ class PddlValidator:
 
     def setup(
         self,
-        sampling: Sampling = WalkSampling(),
+        sampling: WalkSampling = WalkSampling(),
         seed: int | None = None,
     ):
         self.sample_seed = resolve_sample_seed(seed)
         self.sampling = sampling
         states = sampling.draw(self.original_problem, self.sample_seed)
-        # Checks that the merged problem holds every sampled state; workers rebuild them from their atoms.
         transfer_states(
             states, self.merged_problem, self.original_domain, self.merged_domain
         )
         self.state_set = [state_atoms(state) for state in states]
 
     def validate(self, progress_path: str | Path | None = None) -> dict:
-        """Score every sampled state.
-
-        With `progress_path`, each state's score is appended as it finishes, and a later run comparing the same domains on the same problem, sample seed and sampling skips those states.
-        """
+        """Score every sampled state, recording each in `progress_path`, where a later run on the same domains, problem, sample seed and sampling finds it."""
         if self.state_set is None:
             raise RuntimeError("Call setup() before validate().")
         scores: dict[int, dict] = {}
@@ -246,12 +241,24 @@ _WORKER: dict = {}
 
 
 def init_worker(config: dict) -> None:
-    """A worker's merged domain, parsed once."""
+    """Parse the merged domain once per worker."""
     _WORKER.update(config, domain=pymimir.Domain(Path(config["domain"])))
 
 
 def score_state(atoms) -> dict:
-    """One state's score, on a problem of its own: pymimir keeps every action a problem grounds until the problem is dropped."""
+    """One state's score, on a problem of its own, since pymimir keeps every action a problem grounds."""
     problem = pymimir.Problem(_WORKER["domain"], Path(_WORKER["problem"]))
     state = rebuild_state(atoms, problem)
     return score_successors([successor_sets(state, LEARNED_ACTION_PREFIX)])
+
+
+class PddlWorkspace:
+    """A temporary directory for the PDDL files a validator writes for pymimir, removed with the workspace."""
+
+    def __init__(self) -> None:
+        self._directory = tempfile.TemporaryDirectory(prefix="dias-validation-")
+
+    def write(self, name: str, text: str) -> str:
+        path = Path(self._directory.name) / name
+        path.write_text(text)
+        return str(path)

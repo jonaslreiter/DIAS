@@ -1,4 +1,4 @@
-"""What training minimises."""
+"""The training objective: `L_main` and `L_aux` (paper, Sec. 4.4)."""
 
 from __future__ import annotations
 
@@ -13,39 +13,31 @@ from .outputs import SchemaPrediction
 
 @dataclass(frozen=True)
 class Losses:
-    """The loss terms of one step, and the diagnostics logged beside them."""
+    """The loss terms of one step and the diagnostics logged beside them, each divided by `N`."""
 
-    adjacency: torch.Tensor
-    """How far the predicted successor state is from the observed one."""
+    main: torch.Tensor
+    """`L_main`: the cross-entropy of the predicted successor, plus the applicability term when it is on."""
 
-    auxiliary: torch.Tensor
-    """The two terms pushing the schema toward ignoring what it can."""
+    aux: torch.Tensor
+    """`L_eff + L_pre`, before the weight alpha."""
 
     hamming_distance: torch.Tensor
-    """Cells the thresholded prediction got wrong. Never trained on."""
+    """Cells of the successor the thresholded prediction gets wrong."""
 
     precondition_satisfaction: torch.Tensor
     precondition_product: torch.Tensor
 
     applicability: torch.Tensor | None = None
-    """How far the preconditions are from holding at the bound objects of the observed transitions. Part of the primary loss, and only computed when that term is on."""
-
-    @property
-    def primary(self) -> torch.Tensor:
-        """What the auxiliary gradient may not override: `L_adj`, plus the applicability term when it is on."""
-        if self.applicability is None:
-            return self.adjacency
-        return self.adjacency + self.applicability
+    """The applicability term, when it is on."""
 
     def total(self, alpha: float) -> torch.Tensor:
-        return self.primary + alpha * self.auxiliary
+        return self.main + alpha * self.aux
 
     def logged(self, alpha: float) -> dict[str, torch.Tensor]:
-        """What one step reports, under the names a run's history uses."""
         logged = {
             "loss": self.total(alpha).detach(),
-            "loss_adjacency": self.adjacency.detach(),
-            "loss_aux": self.auxiliary.detach(),
+            "loss_main": self.main.detach(),
+            "loss_aux": self.aux.detach(),
             "hamming_distance": self.hamming_distance,
             "precondition_satisfaction": self.precondition_satisfaction,
             "precondition_product": self.precondition_product,
@@ -56,16 +48,11 @@ class Losses:
 
 
 class DiasObjective:
-    """Reproduce the observed successor state, with two nudges toward simplicity.
+    """`L_main = L_adj / N` and `L_aux = (L_eff + L_pre) / N`, returned separately for the gradient combiner.
 
-    `L_adj` is a cross-entropy over every cell of the predicted successor. `L_eff` asks the schema to ignore every effect it can and `L_pre` to restrict every precondition it can, which stops it explaining a transition with a schema that fires everywhere else. The two are returned beside `L_adj`, never summed with it: that is `pcgrad`'s decision.
-
-    With `use_applicability_loss`, the primary loss also asks the preconditions to hold at the bound objects of every observed transition, since every observed action was applicable. `L_adj` alone says so only where the action changed something: where its add effects already held, failing preconditions explain the transition as well as holding ones, and `L_pre` then pushes in a literal no observation refutes, such as satellite's calibrate forbidding the `calibrated` it adds.
-
-    With `observation_noise` above zero, `L_adj` scores the observed successor as the predicted one seen through a channel that flips each atom with that probability. A cell the prediction confidently contradicts then costs at most ``-log(observation_noise)``, with a bounded gradient, so one corrupted atom, in the successor or in the state the prediction copies, cannot outweigh the transitions that agree. Where the prediction is right, the loss barely changes.
+    With `use_applicability_loss`, `L_main` adds a cross-entropy per transition asking its preconditions to hold at the bound objects. With `observation_noise` ε, `L_adj` scores the observed successor against ``ε + (1 - 2ε) Â'``.
     """
 
-    # Clamp off 0 and 1: the cross-entropy gradient is unbounded at both ends.
     EPSILON = 1e-7
 
     def __init__(
@@ -81,7 +68,7 @@ class DiasObjective:
             raise ValueError(
                 f"observation_noise must lie in [0, 0.5), not {observation_noise!r}"
             )
-        # One schema cell per slot tuple a relation of that arity ranges over.
+        # Schema cells per action: M^|p| per relation p.
         self.schema_cells = int(sum(num_slots**arity for arity in relation_arities))
         self.use_effect_loss = use_effect_loss
         self.use_precondition_loss = use_precondition_loss
@@ -95,10 +82,9 @@ class DiasObjective:
         slot_weights: torch.Tensor,
     ) -> Losses:
         predicted = prediction.adjacency
-        # In half precision a sum over every cell of every relation loses too much.
         with torch.amp.autocast(device_type=predicted.device.type, enabled=False):
             normalizer = self._normalizer(predicted)
-            adjacency = (
+            main = (
                 F.binary_cross_entropy(
                     self.observed(predicted.float()).clamp(
                         self.EPSILON, 1 - self.EPSILON
@@ -108,19 +94,19 @@ class DiasObjective:
                 )
                 / normalizer
             )
-            auxiliary = self._auxiliary(prediction, slot_weights) / normalizer
+            aux = self._aux(prediction, slot_weights) / normalizer
             applicability = None
             if self.use_applicability_loss:
-                # Off zero only, as a satisfaction never exceeds one.
                 satisfaction = prediction.precondition_satisfaction.float()
                 applicability = (
                     _cross_entropy_against_one(satisfaction.clamp(min=self.EPSILON))
                     / normalizer
                 )
+                main = main + applicability
 
         return Losses(
-            adjacency=adjacency,
-            auxiliary=auxiliary,
+            main=main,
+            aux=aux,
             hamming_distance=((predicted > 0.5) ^ (target > 0.5)).sum(),
             precondition_satisfaction=prediction.precondition_satisfaction.mean().detach(),
             precondition_product=prediction.precondition_product.mean(),
@@ -128,26 +114,23 @@ class DiasObjective:
         )
 
     def observed(self, predicted: torch.Tensor) -> torch.Tensor:
-        """How likely each atom is to be observed true, when it is the predicted atom flipped with probability `observation_noise`. The identity at zero."""
+        """The predicted successor seen through a channel flipping each atom with probability `observation_noise`."""
         if self.observation_noise == 0.0:
             return predicted
         return self.observation_noise + (1 - 2 * self.observation_noise) * predicted
 
-    def _auxiliary(
+    def _aux(
         self, prediction: SchemaPrediction, slot_weights: torch.Tensor
     ) -> torch.Tensor:
-        """`L_eff + L_pre`, either of which can be ablated away."""
+        """`L_eff + L_pre`, either of which may be off."""
         ignore_effects = prediction.effects.ignore
-        # Full precision, so the sum over every schema cell accumulates exactly.
         terms = torch.zeros((), device=ignore_effects.device, dtype=torch.float32)
         if self.use_effect_loss:
             terms = terms + _cross_entropy_against_one(ignore_effects)
         if self.use_precondition_loss:
-            # Weighting by slot weights makes an unrestrictive precondition as costly as an active slot, so the two cannot be traded off.
             weight_pairs = (
                 slot_weights[:, None, :, None] * slot_weights[:, None, None, :]
             )
-            # Off zero only: a masked cell is exactly zero, and nothing here exceeds one.
             restrictive = ((1 - prediction.preconditions.ignore) * weight_pairs).clamp(
                 min=self.EPSILON
             )
@@ -155,17 +138,13 @@ class DiasObjective:
         return terms
 
     def _normalizer(self, predicted: torch.Tensor) -> int:
-        """Every cell the prediction could have got wrong, plus the schema cells each auxiliary term ranges over, plus one applicability per transition when that term is on.
-
-        Summing and dividing keeps the terms on one scale; averaged separately, the adjacency term would shrink as the instance grew.
-        """
+        """`N` (paper, Eq. 12) summed over the batch, plus one cell per transition for the applicability term."""
         batch = predicted.size(0)
         applicability = batch if self.use_applicability_loss else 0
         return predicted.numel() + self.schema_cells * batch * 2 + applicability
 
 
 def _cross_entropy_against_one(probabilities: torch.Tensor) -> torch.Tensor:
-    """How far `probabilities` are from all being 1, summed."""
     return F.binary_cross_entropy(
         probabilities, torch.ones_like(probabilities), reduction="sum"
     )

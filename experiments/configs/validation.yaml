@@ -1,19 +1,16 @@
-# Consumed by experiments/launch.py, validate_runs.py and validate_checkpoint.py. Each domain trains on `pddl/<domain>/train.pddl` and validates on that folder's `test-1.pddl` .. `test-3.pddl`; which files those are is the folder layout, not a setting.
+# Validation settings, read by experiments/launch.py, validate_runs.py and validate_checkpoint.py.
 
-# How each held-out problem's states are drawn, read by `successors.sampling_from_record` and written into every result JSON as is. `strategy` names one of `successors.SAMPLINGS`; the other keys are that dataclass's fields, and any left out take its defaults.
-# walks (`WalkSampling`): training's random walk on the held-out problem, `walk_length` steps from the initial state, at least `min_walks` times and more until every action schema is applicable in at least num_samples / (number of schemas) of the states visited; each schema then gets that share of the sample. 2,000 steps is what satellite needs for take_image to apply in a walk drawing uniformly from its many turn_to groundings.
-# bfs (`BfsSampling`): the paper's draw, `num_samples` (250) of the first `sample_population` (500) states a breadth-first search reaches, so `sampling: {strategy: bfs}` restores it. On the larger problems those states lie within a few actions of the initial state, and none makes satellite's take_image applicable, nor spanner's tighten_nut on test-2 and test-3, so their completeness goes unscored.
+# How a test problem's states are drawn: `dias.validation.successors.WalkSampling`.
 sampling:
-  strategy: walks
   num_samples: 500
   walk_length: 2000
   min_walks: 5
 
-# Null draws a fresh sample every run, as each run also trains on its own. Unfixed is not unrecorded: the seed that was drawn is written into the result JSON, and setting it back here scores the next run on exactly those states.
+# The seed of the state draw; null draws one per validation and records it in the result.
 sample_seed: null
 
-# Per domain; also the default --num-runs. The paper uses 0..9.
+# The seeds a launch runs by default.
 seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 
-# Replace whatever a learned domain says about equality with distinct parameters in every schema (`force_injective` of the validators). A DIAS or MLP-effects run trained without the equality relation already writes exactly that, so this changes only runs that learned equality, and L1.
+# Replace what a learned domain says about equality with the distinctness of every two parameters.
 force_injective: false

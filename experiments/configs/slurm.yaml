@@ -1,0 +1,55 @@
+# Slurm resources per job kind, read by experiments/launch.py: `defaults` plus per-domain overrides, each field an sbatch flag (`time`, `mem`, `cpus`, `gres`) or a list of extra flags (`sbatch_extra`). They are sized on our cluster's A10 and L40S GPUs, where a GPU shard is a 24th of 24 GB.
+
+train:
+  defaults: {time: "03:00:00", mem: "4G", cpus: "8", gres: "shard:4"}
+  blocks-3: {time: "24:00:00"}
+  delivery: {gres: "shard:5", time: "04:00:00"}
+  driverlog: {gres: "shard:5", time: "24:00:00"}
+  gripper: {time: "24:00:00"}
+  hanoi: {time: "36:00:00"}
+  logistics: {time: "08:00:00"}
+  miconic: {time: "20:00:00"}
+  satellite: {gres: "shard:10", mem: "6G"}
+  satellite-recal: {gres: "shard:9", mem: "8G"}
+  sokoban: {gres: "shard:6", mem: "32G"}
+  sokoban-pull: {gres: "shard:6"}
+  spanner: {gres: "shard:5"}
+  visitall: {gres: "shard:8", time: "06:00:00"}
+
+train-noise:
+  defaults: {time: "03:00:00", mem: "4G", cpus: "8", gres: "shard:4"}
+  blocks-3: {time: "16:00:00"}
+  delivery: {time: "08:00:00"}
+  gripper: {time: "20:00:00"}
+  hanoi: {time: "08:00:00"}
+  logistics: {time: "08:00:00"}
+  miconic: {time: "16:00:00"}
+  n-puzzle: {time: "20:00:00"}
+  satellite: {mem: "6G"}
+  satellite-recal: {mem: "8G"}
+  sokoban: {mem: "32G"}
+  spanner: {time: "16:00:00"}
+
+validate:
+  defaults: {time: "02:00:00", mem: "8G", cpus: "8"}
+  blocks-3: {time: "04:00:00"}
+  hanoi: {time: "16:00:00", mem: "32G"}
+  satellite: {time: "08:00:00", mem: "12G"}
+  satellite-recal: {time: "04:00:00"}
+
+validate-noise:
+  defaults: {time: "02:00:00", mem: "8G", cpus: "8"}
+  delivery: {time: "04:00:00"}
+  driverlog: {time: "1-00:00:00", mem: "48G"}
+  hanoi: {time: "1-12:00:00", mem: "64G"}
+  logistics: {time: "08:00:00", mem: "16G"}
+  satellite: {time: "1-00:00:00", mem: "32G"}
+  satellite-recal: {time: "1-00:00:00", mem: "48G"}
+  sokoban: {time: "2-00:00:00", mem: "64G"}
+
+validate-mlp:
+  defaults: {time: "02:00:00", mem: "16G", cpus: "16", gres: "shard:1"}
+  driverlog: {time: "1-00:00:00", mem: "180G", gres: "shard:2"}
+  logistics: {gres: "shard:2"}
+  satellite: {time: "30:00:00", mem: "32G", gres: "shard:3"}
+  satellite-recal: {time: "30:00:00", mem: "32G", gres: "shard:3"}

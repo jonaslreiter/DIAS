@@ -1,4 +1,4 @@
-"""The dense multi-relational adjacency tensor: a state is one ``[R, O, O]``, and which cells of a relation's slice are meaningful depends on its arity."""
+"""A state as the adjacency tensor ``[R, O, O]``: a unary relation on the diagonal, a binary one everywhere, and its PyG graph."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from torch_geometric.data import Data
 
 
 def valid_cells(arity: int, num_objects: int) -> torch.Tensor | None:
-    """Flat indices of the cells a relation of `arity` can occupy: the whole matrix if binary, the diagonal if unary, None otherwise."""
+    """Flat indices of the cells a relation of `arity` occupies, or None for an arity other than 1 or 2."""
     if arity == 2:
         return torch.arange(num_objects * num_objects)
     if arity == 1:
@@ -16,7 +16,7 @@ def valid_cells(arity: int, num_objects: int) -> torch.Tensor | None:
 
 
 def adj_to_pyg_data(adj: torch.Tensor, num_objects: int) -> Data:
-    """``[R, O, O]`` to a PyG graph, one edge per non-zero with its relation id."""
+    """A PyG graph with one edge per atom, typed by its relation."""
     relation, source, target = adj.nonzero(as_tuple=True)
     return Data(
         edge_index=torch.stack([source, target], dim=0),
@@ -32,7 +32,7 @@ def dense_from_edges(
     num_relations: int,
     num_objects: int,
 ) -> torch.Tensor:
-    """``[B, R, O, O]`` from one PyG batch's flat edge list. Every graph describes the same instance, so a node's graph and position follow from its global index."""
+    """``[B, R, O, O]`` from a PyG batch of graphs over one instance."""
     adjacency = torch.zeros(
         batch_index.size(0) // num_objects,
         num_relations,
