@@ -1,0 +1,3054 @@
+{
+ "base": {
+  "blocks-3": {
+   "data.action_arguments": false,
+   "data.batch_sampling_strategy": "stratified",
+   "data.batch_size": 200,
+   "data.default_statics": [
+    "number",
+    "object"
+   ],
+   "data.domain_path": "pddl/blocks-3/domain.pddl",
+   "data.include_equality": false,
+   "data.include_statics": true,
+   "data.max_per_action_train": 1000,
+   "data.max_per_action_valid": 500,
+   "data.max_steps": 1000000,
+   "data.min_per_action_train": 100,
+   "data.min_per_action_train_floor": null,
+   "data.min_per_action_valid": 50,
+   "data.min_per_action_valid_floor": null,
+   "data.noise": null,
+   "data.num_train": null,
+   "data.num_valid": null,
+   "data.num_workers": 0,
+   "data.problem_path": "pddl/blocks-3/train.pddl",
+   "data.pt_file": null,
+   "data.seed": null,
+   "data.shuffle_train": true,
+   "data.strips_plus_actions": false,
+   "model.action_arg_positions": null,
+   "model.action_arities": null,
+   "model.aux_loss_alpha": 1.0,
+   "model.encoder_hidden_dims": null,
+   "model.force_action_args": false,
+   "model.learn_preconditions": true,
+   "model.learning_rate": 0.005,
+   "model.num_actions": null,
+   "model.num_objects": null,
+   "model.num_slots": 5,
+   "model.object_dim": 32,
+   "model.observation_noise": 0.0,
+   "model.pcgrad_norm_cap": true,
+   "model.per_action_slots": false,
+   "model.precondition_tau.every": 500,
+   "model.precondition_tau.factor": 0.1,
+   "model.precondition_tau.floor": 0.0,
+   "model.precondition_tau.start": 1.0,
+   "model.random_node_embeddings": true,
+   "model.relation_arities": null,
+   "model.schema_threshold": 0.5,
+   "model.state_dependent_effects": false,
+   "model.successor_relations": true,
+   "model.use_applicability_loss": false,
+   "model.use_effect_loss": true,
+   "model.use_pcgrad": true,
+   "model.use_precondition_loss": true,
+   "model.use_slot_weights": true
+  },
+  "delivery": {
+   "data.action_arguments": false,
+   "data.batch_sampling_strategy": "stratified",
+   "data.batch_size": 200,
+   "data.default_statics": [
+    "number",
+    "object"
+   ],
+   "data.domain_path": "pddl/delivery/domain.pddl",
+   "data.include_equality": false,
+   "data.include_statics": true,
+   "data.max_per_action_train": 2000,
+   "data.max_per_action_valid": 1000,
+   "data.max_steps": 1000000,
+   "data.min_per_action_train": 1000,
+   "data.min_per_action_train_floor": null,
+   "data.min_per_action_valid": 500,
+   "data.min_per_action_valid_floor": null,
+   "data.noise": null,
+   "data.num_train": null,
+   "data.num_valid": null,
+   "data.num_workers": 0,
+   "data.problem_path": "pddl/delivery/train.pddl",
+   "data.pt_file": null,
+   "data.seed": null,
+   "data.shuffle_train": true,
+   "data.strips_plus_actions": false,
+   "model.action_arg_positions": null,
+   "model.action_arities": null,
+   "model.aux_loss_alpha": 0.1,
+   "model.encoder_hidden_dims": null,
+   "model.force_action_args": false,
+   "model.learn_preconditions": true,
+   "model.learning_rate": 0.005,
+   "model.num_actions": null,
+   "model.num_objects": null,
+   "model.num_slots": 5,
+   "model.object_dim": 32,
+   "model.observation_noise": 0.0,
+   "model.pcgrad_norm_cap": true,
+   "model.per_action_slots": false,
+   "model.precondition_tau.every": 500,
+   "model.precondition_tau.factor": 0.1,
+   "model.precondition_tau.floor": 0.0,
+   "model.precondition_tau.start": 1.0,
+   "model.random_node_embeddings": true,
+   "model.relation_arities": null,
+   "model.schema_threshold": 0.5,
+   "model.state_dependent_effects": false,
+   "model.successor_relations": true,
+   "model.use_applicability_loss": false,
+   "model.use_effect_loss": true,
+   "model.use_pcgrad": true,
+   "model.use_precondition_loss": true,
+   "model.use_slot_weights": true
+  },
+  "driverlog": {
+   "data.action_arguments": false,
+   "data.batch_sampling_strategy": "stratified",
+   "data.batch_size": 200,
+   "data.default_statics": [
+    "number",
+    "object"
+   ],
+   "data.domain_path": "pddl/driverlog/domain.pddl",
+   "data.include_equality": false,
+   "data.include_statics": true,
+   "data.max_per_action_train": 3000,
+   "data.max_per_action_valid": 1500,
+   "data.max_steps": 1000000,
+   "data.min_per_action_train": 2000,
+   "data.min_per_action_train_floor": null,
+   "data.min_per_action_valid": 1000,
+   "data.min_per_action_valid_floor": null,
+   "data.noise": null,
+   "data.num_train": null,
+   "data.num_valid": null,
+   "data.num_workers": 0,
+   "data.problem_path": "pddl/driverlog/train.pddl",
+   "data.pt_file": null,
+   "data.seed": null,
+   "data.shuffle_train": true,
+   "data.strips_plus_actions": false,
+   "model.action_arg_positions": null,
+   "model.action_arities": null,
+   "model.aux_loss_alpha": 0.01,
+   "model.encoder_hidden_dims": null,
+   "model.force_action_args": false,
+   "model.learn_preconditions": true,
+   "model.learning_rate": 0.005,
+   "model.num_actions": null,
+   "model.num_objects": null,
+   "model.num_slots": 5,
+   "model.object_dim": 32,
+   "model.observation_noise": 0.0,
+   "model.pcgrad_norm_cap": true,
+   "model.per_action_slots": false,
+   "model.precondition_tau.every": 500,
+   "model.precondition_tau.factor": 0.1,
+   "model.precondition_tau.floor": 0.0,
+   "model.precondition_tau.start": 1.0,
+   "model.random_node_embeddings": true,
+   "model.relation_arities": null,
+   "model.schema_threshold": 0.5,
+   "model.state_dependent_effects": false,
+   "model.successor_relations": true,
+   "model.use_applicability_loss": false,
+   "model.use_effect_loss": true,
+   "model.use_pcgrad": true,
+   "model.use_precondition_loss": true,
+   "model.use_slot_weights": true
+  },
+  "gripper": {
+   "data.action_arguments": false,
+   "data.batch_sampling_strategy": "stratified",
+   "data.batch_size": 200,
+   "data.default_statics": [
+    "number",
+    "object"
+   ],
+   "data.domain_path": "pddl/gripper/domain.pddl",
+   "data.include_equality": false,
+   "data.include_statics": true,
+   "data.max_per_action_train": 1000,
+   "data.max_per_action_valid": 500,
+   "data.max_steps": 1000000,
+   "data.min_per_action_train": 200,
+   "data.min_per_action_train_floor": null,
+   "data.min_per_action_valid": 100,
+   "data.min_per_action_valid_floor": null,
+   "data.noise": null,
+   "data.num_train": null,
+   "data.num_valid": null,
+   "data.num_workers": 0,
+   "data.problem_path": "pddl/gripper/train.pddl",
+   "data.pt_file": null,
+   "data.seed": null,
+   "data.shuffle_train": true,
+   "data.strips_plus_actions": false,
+   "model.action_arg_positions": null,
+   "model.action_arities": null,
+   "model.aux_loss_alpha": 1.0,
+   "model.encoder_hidden_dims": null,
+   "model.force_action_args": false,
+   "model.learn_preconditions": true,
+   "model.learning_rate": 0.005,
+   "model.num_actions": null,
+   "model.num_objects": null,
+   "model.num_slots": 5,
+   "model.object_dim": 32,
+   "model.observation_noise": 0.0,
+   "model.pcgrad_norm_cap": true,
+   "model.per_action_slots": false,
+   "model.precondition_tau.every": 500,
+   "model.precondition_tau.factor": 0.1,
+   "model.precondition_tau.floor": 0.0,
+   "model.precondition_tau.start": 1.0,
+   "model.random_node_embeddings": true,
+   "model.relation_arities": null,
+   "model.schema_threshold": 0.5,
+   "model.state_dependent_effects": false,
+   "model.successor_relations": true,
+   "model.use_applicability_loss": false,
+   "model.use_effect_loss": true,
+   "model.use_pcgrad": true,
+   "model.use_precondition_loss": true,
+   "model.use_slot_weights": true
+  },
+  "hanoi": {
+   "data.action_arguments": false,
+   "data.batch_sampling_strategy": "stratified",
+   "data.batch_size": 200,
+   "data.default_statics": [
+    "number",
+    "object"
+   ],
+   "data.domain_path": "pddl/hanoi/domain.pddl",
+   "data.include_equality": false,
+   "data.include_statics": true,
+   "data.max_per_action_train": 1000,
+   "data.max_per_action_valid": 500,
+   "data.max_steps": 1000000,
+   "data.min_per_action_train": 1000,
+   "data.min_per_action_train_floor": null,
+   "data.min_per_action_valid": 500,
+   "data.min_per_action_valid_floor": null,
+   "data.noise": null,
+   "data.num_train": null,
+   "data.num_valid": null,
+   "data.num_workers": 0,
+   "data.problem_path": "pddl/hanoi/train.pddl",
+   "data.pt_file": null,
+   "data.seed": null,
+   "data.shuffle_train": true,
+   "data.strips_plus_actions": false,
+   "model.action_arg_positions": null,
+   "model.action_arities": null,
+   "model.aux_loss_alpha": 0.3,
+   "model.encoder_hidden_dims": null,
+   "model.force_action_args": false,
+   "model.learn_preconditions": true,
+   "model.learning_rate": 0.005,
+   "model.num_actions": null,
+   "model.num_objects": null,
+   "model.num_slots": 5,
+   "model.object_dim": 32,
+   "model.observation_noise": 0.0,
+   "model.pcgrad_norm_cap": true,
+   "model.per_action_slots": false,
+   "model.precondition_tau.every": 500,
+   "model.precondition_tau.factor": 0.1,
+   "model.precondition_tau.floor": 0.0,
+   "model.precondition_tau.start": 1.0,
+   "model.random_node_embeddings": true,
+   "model.relation_arities": null,
+   "model.schema_threshold": 0.5,
+   "model.state_dependent_effects": false,
+   "model.successor_relations": true,
+   "model.use_applicability_loss": false,
+   "model.use_effect_loss": true,
+   "model.use_pcgrad": true,
+   "model.use_precondition_loss": true,
+   "model.use_slot_weights": true
+  },
+  "logistics": {
+   "data.action_arguments": false,
+   "data.batch_sampling_strategy": "stratified",
+   "data.batch_size": 200,
+   "data.default_statics": [
+    "number",
+    "object"
+   ],
+   "data.domain_path": "pddl/logistics/domain.pddl",
+   "data.include_equality": false,
+   "data.include_statics": true,
+   "data.max_per_action_train": 1000,
+   "data.max_per_action_valid": 500,
+   "data.max_steps": 1000000,
+   "data.min_per_action_train": 100,
+   "data.min_per_action_train_floor": null,
+   "data.min_per_action_valid": 50,
+   "data.min_per_action_valid_floor": null,
+   "data.noise": null,
+   "data.num_train": null,
+   "data.num_valid": null,
+   "data.num_workers": 0,
+   "data.problem_path": "pddl/logistics/train.pddl",
+   "data.pt_file": null,
+   "data.seed": null,
+   "data.shuffle_train": true,
+   "data.strips_plus_actions": false,
+   "model.action_arg_positions": null,
+   "model.action_arities": null,
+   "model.aux_loss_alpha": 0.3,
+   "model.encoder_hidden_dims": null,
+   "model.force_action_args": false,
+   "model.learn_preconditions": true,
+   "model.learning_rate": 0.005,
+   "model.num_actions": null,
+   "model.num_objects": null,
+   "model.num_slots": 5,
+   "model.object_dim": 32,
+   "model.observation_noise": 0.0,
+   "model.pcgrad_norm_cap": true,
+   "model.per_action_slots": false,
+   "model.precondition_tau.every": 500,
+   "model.precondition_tau.factor": 0.1,
+   "model.precondition_tau.floor": 0.0,
+   "model.precondition_tau.start": 1.0,
+   "model.random_node_embeddings": true,
+   "model.relation_arities": null,
+   "model.schema_threshold": 0.5,
+   "model.state_dependent_effects": false,
+   "model.successor_relations": true,
+   "model.use_applicability_loss": false,
+   "model.use_effect_loss": true,
+   "model.use_pcgrad": true,
+   "model.use_precondition_loss": true,
+   "model.use_slot_weights": true
+  },
+  "miconic": {
+   "data.action_arguments": false,
+   "data.batch_sampling_strategy": "stratified",
+   "data.batch_size": 200,
+   "data.default_statics": [
+    "number",
+    "object"
+   ],
+   "data.domain_path": "pddl/miconic/domain.pddl",
+   "data.include_equality": false,
+   "data.include_statics": true,
+   "data.max_per_action_train": 1000,
+   "data.max_per_action_valid": 500,
+   "data.max_steps": 1000000,
+   "data.min_per_action_train": 100,
+   "data.min_per_action_train_floor": null,
+   "data.min_per_action_valid": 50,
+   "data.min_per_action_valid_floor": null,
+   "data.noise": null,
+   "data.num_train": null,
+   "data.num_valid": null,
+   "data.num_workers": 0,
+   "data.problem_path": "pddl/miconic/train.pddl",
+   "data.pt_file": null,
+   "data.seed": null,
+   "data.shuffle_train": true,
+   "data.strips_plus_actions": false,
+   "model.action_arg_positions": null,
+   "model.action_arities": null,
+   "model.aux_loss_alpha": 1.0,
+   "model.encoder_hidden_dims": null,
+   "model.force_action_args": false,
+   "model.learn_preconditions": true,
+   "model.learning_rate": 0.005,
+   "model.num_actions": null,
+   "model.num_objects": null,
+   "model.num_slots": 5,
+   "model.object_dim": 32,
+   "model.observation_noise": 0.0,
+   "model.pcgrad_norm_cap": true,
+   "model.per_action_slots": false,
+   "model.precondition_tau.every": 500,
+   "model.precondition_tau.factor": 0.1,
+   "model.precondition_tau.floor": 0.0,
+   "model.precondition_tau.start": 1.0,
+   "model.random_node_embeddings": true,
+   "model.relation_arities": null,
+   "model.schema_threshold": 0.5,
+   "model.state_dependent_effects": false,
+   "model.successor_relations": true,
+   "model.use_applicability_loss": false,
+   "model.use_effect_loss": true,
+   "model.use_pcgrad": true,
+   "model.use_precondition_loss": true,
+   "model.use_slot_weights": true
+  },
+  "n-puzzle": {
+   "data.action_arguments": false,
+   "data.batch_sampling_strategy": "stratified",
+   "data.batch_size": 200,
+   "data.default_statics": [
+    "number",
+    "object"
+   ],
+   "data.domain_path": "pddl/n-puzzle/domain.pddl",
+   "data.include_equality": false,
+   "data.include_statics": true,
+   "data.max_per_action_train": 1000,
+   "data.max_per_action_valid": 500,
+   "data.max_steps": 1000000,
+   "data.min_per_action_train": 100,
+   "data.min_per_action_train_floor": null,
+   "data.min_per_action_valid": 50,
+   "data.min_per_action_valid_floor": null,
+   "data.noise": null,
+   "data.num_train": null,
+   "data.num_valid": null,
+   "data.num_workers": 0,
+   "data.problem_path": "pddl/n-puzzle/train.pddl",
+   "data.pt_file": null,
+   "data.seed": null,
+   "data.shuffle_train": true,
+   "data.strips_plus_actions": false,
+   "model.action_arg_positions": null,
+   "model.action_arities": null,
+   "model.aux_loss_alpha": 1.0,
+   "model.encoder_hidden_dims": null,
+   "model.force_action_args": false,
+   "model.learn_preconditions": true,
+   "model.learning_rate": 0.005,
+   "model.num_actions": null,
+   "model.num_objects": null,
+   "model.num_slots": 5,
+   "model.object_dim": 32,
+   "model.observation_noise": 0.0,
+   "model.pcgrad_norm_cap": true,
+   "model.per_action_slots": false,
+   "model.precondition_tau.every": 500,
+   "model.precondition_tau.factor": 0.1,
+   "model.precondition_tau.floor": 0.0,
+   "model.precondition_tau.start": 1.0,
+   "model.random_node_embeddings": true,
+   "model.relation_arities": null,
+   "model.schema_threshold": 0.5,
+   "model.state_dependent_effects": false,
+   "model.successor_relations": true,
+   "model.use_applicability_loss": false,
+   "model.use_effect_loss": true,
+   "model.use_pcgrad": true,
+   "model.use_precondition_loss": true,
+   "model.use_slot_weights": true
+  },
+  "satellite": {
+   "data.action_arguments": false,
+   "data.batch_sampling_strategy": "stratified",
+   "data.batch_size": 200,
+   "data.default_statics": [
+    "number",
+    "object"
+   ],
+   "data.domain_path": "pddl/satellite/domain.pddl",
+   "data.include_equality": false,
+   "data.include_statics": true,
+   "data.max_per_action_train": 1000,
+   "data.max_per_action_valid": 500,
+   "data.max_steps": 1000000,
+   "data.min_per_action_train": 100,
+   "data.min_per_action_train_floor": null,
+   "data.min_per_action_valid": 50,
+   "data.min_per_action_valid_floor": null,
+   "data.noise": null,
+   "data.num_train": null,
+   "data.num_valid": null,
+   "data.num_workers": 0,
+   "data.problem_path": "pddl/satellite/train.pddl",
+   "data.pt_file": null,
+   "data.seed": null,
+   "data.shuffle_train": true,
+   "data.strips_plus_actions": false,
+   "model.action_arg_positions": null,
+   "model.action_arities": null,
+   "model.aux_loss_alpha": 0.01,
+   "model.encoder_hidden_dims": null,
+   "model.force_action_args": false,
+   "model.learn_preconditions": true,
+   "model.learning_rate": 0.005,
+   "model.num_actions": null,
+   "model.num_objects": null,
+   "model.num_slots": 5,
+   "model.object_dim": 32,
+   "model.observation_noise": 0.0,
+   "model.pcgrad_norm_cap": true,
+   "model.per_action_slots": false,
+   "model.precondition_tau.every": 500,
+   "model.precondition_tau.factor": 0.1,
+   "model.precondition_tau.floor": 0.0,
+   "model.precondition_tau.start": 1.0,
+   "model.random_node_embeddings": true,
+   "model.relation_arities": null,
+   "model.schema_threshold": 0.5,
+   "model.state_dependent_effects": false,
+   "model.successor_relations": true,
+   "model.use_applicability_loss": false,
+   "model.use_effect_loss": true,
+   "model.use_pcgrad": true,
+   "model.use_precondition_loss": true,
+   "model.use_slot_weights": true
+  },
+  "satellite-recal": {
+   "data.action_arguments": false,
+   "data.batch_sampling_strategy": "stratified",
+   "data.batch_size": 200,
+   "data.default_statics": [
+    "number",
+    "object"
+   ],
+   "data.domain_path": "pddl/satellite-recal/domain.pddl",
+   "data.include_equality": false,
+   "data.include_statics": true,
+   "data.max_per_action_train": 1000,
+   "data.max_per_action_valid": 500,
+   "data.max_steps": 1000000,
+   "data.min_per_action_train": 100,
+   "data.min_per_action_train_floor": null,
+   "data.min_per_action_valid": 50,
+   "data.min_per_action_valid_floor": null,
+   "data.noise": null,
+   "data.num_train": null,
+   "data.num_valid": null,
+   "data.num_workers": 0,
+   "data.problem_path": "pddl/satellite-recal/train.pddl",
+   "data.pt_file": null,
+   "data.seed": null,
+   "data.shuffle_train": true,
+   "data.strips_plus_actions": false,
+   "model.action_arg_positions": null,
+   "model.action_arities": null,
+   "model.aux_loss_alpha": 0.01,
+   "model.encoder_hidden_dims": null,
+   "model.force_action_args": false,
+   "model.learn_preconditions": true,
+   "model.learning_rate": 0.005,
+   "model.num_actions": null,
+   "model.num_objects": null,
+   "model.num_slots": 5,
+   "model.object_dim": 32,
+   "model.observation_noise": 0.0,
+   "model.pcgrad_norm_cap": true,
+   "model.per_action_slots": false,
+   "model.precondition_tau.every": 500,
+   "model.precondition_tau.factor": 0.1,
+   "model.precondition_tau.floor": 0.0,
+   "model.precondition_tau.start": 1.0,
+   "model.random_node_embeddings": true,
+   "model.relation_arities": null,
+   "model.schema_threshold": 0.5,
+   "model.state_dependent_effects": false,
+   "model.successor_relations": true,
+   "model.use_applicability_loss": false,
+   "model.use_effect_loss": true,
+   "model.use_pcgrad": true,
+   "model.use_precondition_loss": true,
+   "model.use_slot_weights": true
+  },
+  "sokoban": {
+   "data.action_arguments": false,
+   "data.batch_sampling_strategy": "stratified",
+   "data.batch_size": 200,
+   "data.default_statics": [
+    "number",
+    "object"
+   ],
+   "data.domain_path": "pddl/sokoban/domain.pddl",
+   "data.include_equality": false,
+   "data.include_statics": true,
+   "data.max_per_action_train": 1000,
+   "data.max_per_action_valid": 500,
+   "data.max_steps": 1000000,
+   "data.min_per_action_train": 100,
+   "data.min_per_action_train_floor": null,
+   "data.min_per_action_valid": 50,
+   "data.min_per_action_valid_floor": null,
+   "data.noise": null,
+   "data.num_train": null,
+   "data.num_valid": null,
+   "data.num_workers": 0,
+   "data.problem_path": "pddl/sokoban/train.pddl",
+   "data.pt_file": null,
+   "data.seed": null,
+   "data.shuffle_train": true,
+   "data.strips_plus_actions": false,
+   "model.action_arg_positions": null,
+   "model.action_arities": null,
+   "model.aux_loss_alpha": 0.1,
+   "model.encoder_hidden_dims": null,
+   "model.force_action_args": false,
+   "model.learn_preconditions": true,
+   "model.learning_rate": 0.005,
+   "model.num_actions": null,
+   "model.num_objects": null,
+   "model.num_slots": 5,
+   "model.object_dim": 32,
+   "model.observation_noise": 0.0,
+   "model.pcgrad_norm_cap": true,
+   "model.per_action_slots": false,
+   "model.precondition_tau.every": 500,
+   "model.precondition_tau.factor": 0.1,
+   "model.precondition_tau.floor": 0.0,
+   "model.precondition_tau.start": 1.0,
+   "model.random_node_embeddings": true,
+   "model.relation_arities": null,
+   "model.schema_threshold": 0.5,
+   "model.state_dependent_effects": false,
+   "model.successor_relations": true,
+   "model.use_applicability_loss": false,
+   "model.use_effect_loss": true,
+   "model.use_pcgrad": true,
+   "model.use_precondition_loss": true,
+   "model.use_slot_weights": true
+  },
+  "sokoban-pull": {
+   "data.action_arguments": false,
+   "data.batch_sampling_strategy": "stratified",
+   "data.batch_size": 200,
+   "data.default_statics": [
+    "number",
+    "object"
+   ],
+   "data.domain_path": "pddl/sokoban-pull/domain.pddl",
+   "data.include_equality": false,
+   "data.include_statics": true,
+   "data.max_per_action_train": 1000,
+   "data.max_per_action_valid": 500,
+   "data.max_steps": 1000000,
+   "data.min_per_action_train": 100,
+   "data.min_per_action_train_floor": null,
+   "data.min_per_action_valid": 50,
+   "data.min_per_action_valid_floor": null,
+   "data.noise": null,
+   "data.num_train": null,
+   "data.num_valid": null,
+   "data.num_workers": 0,
+   "data.problem_path": "pddl/sokoban-pull/train.pddl",
+   "data.pt_file": null,
+   "data.seed": null,
+   "data.shuffle_train": true,
+   "data.strips_plus_actions": false,
+   "model.action_arg_positions": null,
+   "model.action_arities": null,
+   "model.aux_loss_alpha": 0.1,
+   "model.encoder_hidden_dims": null,
+   "model.force_action_args": false,
+   "model.learn_preconditions": true,
+   "model.learning_rate": 0.005,
+   "model.num_actions": null,
+   "model.num_objects": null,
+   "model.num_slots": 5,
+   "model.object_dim": 32,
+   "model.observation_noise": 0.0,
+   "model.pcgrad_norm_cap": true,
+   "model.per_action_slots": false,
+   "model.precondition_tau.every": 500,
+   "model.precondition_tau.factor": 0.1,
+   "model.precondition_tau.floor": 0.0,
+   "model.precondition_tau.start": 1.0,
+   "model.random_node_embeddings": true,
+   "model.relation_arities": null,
+   "model.schema_threshold": 0.5,
+   "model.state_dependent_effects": false,
+   "model.successor_relations": true,
+   "model.use_applicability_loss": false,
+   "model.use_effect_loss": true,
+   "model.use_pcgrad": true,
+   "model.use_precondition_loss": true,
+   "model.use_slot_weights": true
+  },
+  "spanner": {
+   "data.action_arguments": false,
+   "data.batch_sampling_strategy": "stratified",
+   "data.batch_size": 200,
+   "data.default_statics": [
+    "number",
+    "object"
+   ],
+   "data.domain_path": "pddl/spanner/domain.pddl",
+   "data.include_equality": false,
+   "data.include_statics": true,
+   "data.max_per_action_train": 1000,
+   "data.max_per_action_valid": 500,
+   "data.max_steps": 1000000,
+   "data.min_per_action_train": 200,
+   "data.min_per_action_train_floor": null,
+   "data.min_per_action_valid": 100,
+   "data.min_per_action_valid_floor": null,
+   "data.noise": null,
+   "data.num_train": null,
+   "data.num_valid": null,
+   "data.num_workers": 0,
+   "data.problem_path": "pddl/spanner/train.pddl",
+   "data.pt_file": null,
+   "data.seed": null,
+   "data.shuffle_train": true,
+   "data.strips_plus_actions": false,
+   "model.action_arg_positions": null,
+   "model.action_arities": null,
+   "model.aux_loss_alpha": 1.0,
+   "model.encoder_hidden_dims": null,
+   "model.force_action_args": false,
+   "model.learn_preconditions": true,
+   "model.learning_rate": 0.005,
+   "model.num_actions": null,
+   "model.num_objects": null,
+   "model.num_slots": 5,
+   "model.object_dim": 32,
+   "model.observation_noise": 0.0,
+   "model.pcgrad_norm_cap": true,
+   "model.per_action_slots": false,
+   "model.precondition_tau.every": 500,
+   "model.precondition_tau.factor": 0.1,
+   "model.precondition_tau.floor": 0.0,
+   "model.precondition_tau.start": 1.0,
+   "model.random_node_embeddings": true,
+   "model.relation_arities": null,
+   "model.schema_threshold": 0.5,
+   "model.state_dependent_effects": false,
+   "model.successor_relations": true,
+   "model.use_applicability_loss": false,
+   "model.use_effect_loss": true,
+   "model.use_pcgrad": true,
+   "model.use_precondition_loss": true,
+   "model.use_slot_weights": true
+  },
+  "visitall": {
+   "data.action_arguments": false,
+   "data.batch_sampling_strategy": "stratified",
+   "data.batch_size": 200,
+   "data.default_statics": [
+    "number",
+    "object"
+   ],
+   "data.domain_path": "pddl/visitall/domain.pddl",
+   "data.include_equality": false,
+   "data.include_statics": true,
+   "data.max_per_action_train": 1000,
+   "data.max_per_action_valid": 500,
+   "data.max_steps": 1000000,
+   "data.min_per_action_train": 100,
+   "data.min_per_action_train_floor": null,
+   "data.min_per_action_valid": 50,
+   "data.min_per_action_valid_floor": null,
+   "data.noise": null,
+   "data.num_train": null,
+   "data.num_valid": null,
+   "data.num_workers": 0,
+   "data.problem_path": "pddl/visitall/train.pddl",
+   "data.pt_file": null,
+   "data.seed": null,
+   "data.shuffle_train": true,
+   "data.strips_plus_actions": false,
+   "model.action_arg_positions": null,
+   "model.action_arities": null,
+   "model.aux_loss_alpha": 1.0,
+   "model.encoder_hidden_dims": null,
+   "model.force_action_args": false,
+   "model.learn_preconditions": true,
+   "model.learning_rate": 0.005,
+   "model.num_actions": null,
+   "model.num_objects": null,
+   "model.num_slots": 5,
+   "model.object_dim": 32,
+   "model.observation_noise": 0.0,
+   "model.pcgrad_norm_cap": true,
+   "model.per_action_slots": false,
+   "model.precondition_tau.every": 500,
+   "model.precondition_tau.factor": 0.1,
+   "model.precondition_tau.floor": 0.0,
+   "model.precondition_tau.start": 1.0,
+   "model.random_node_embeddings": true,
+   "model.relation_arities": null,
+   "model.schema_threshold": 0.5,
+   "model.state_dependent_effects": false,
+   "model.successor_relations": true,
+   "model.use_applicability_loss": false,
+   "model.use_effect_loss": true,
+   "model.use_pcgrad": true,
+   "model.use_precondition_loss": true,
+   "model.use_slot_weights": true
+  }
+ },
+ "recipes": {
+  "ablation-no-aux-loss": {
+   "domains": {
+    "blocks-3": {
+     "model.use_effect_loss": false,
+     "model.use_precondition_loss": false
+    },
+    "delivery": {
+     "model.use_effect_loss": false,
+     "model.use_precondition_loss": false
+    },
+    "driverlog": {
+     "model.use_effect_loss": false,
+     "model.use_precondition_loss": false
+    },
+    "gripper": {
+     "model.use_effect_loss": false,
+     "model.use_precondition_loss": false
+    },
+    "hanoi": {
+     "model.use_effect_loss": false,
+     "model.use_precondition_loss": false
+    },
+    "logistics": {
+     "model.use_effect_loss": false,
+     "model.use_precondition_loss": false
+    },
+    "miconic": {
+     "model.use_effect_loss": false,
+     "model.use_precondition_loss": false
+    },
+    "n-puzzle": {
+     "model.use_effect_loss": false,
+     "model.use_precondition_loss": false
+    },
+    "satellite": {
+     "model.use_effect_loss": false,
+     "model.use_precondition_loss": false
+    },
+    "satellite-recal": {
+     "model.use_effect_loss": false,
+     "model.use_precondition_loss": false
+    },
+    "sokoban": {
+     "model.use_effect_loss": false,
+     "model.use_precondition_loss": false
+    },
+    "sokoban-pull": {
+     "model.use_effect_loss": false,
+     "model.use_precondition_loss": false
+    },
+    "spanner": {
+     "model.use_effect_loss": false,
+     "model.use_precondition_loss": false
+    },
+    "visitall": {
+     "model.use_effect_loss": false,
+     "model.use_precondition_loss": false
+    }
+   },
+   "validator": "dias"
+  },
+  "ablation-no-effect-loss": {
+   "domains": {
+    "blocks-3": {
+     "model.use_effect_loss": false
+    },
+    "delivery": {
+     "model.use_effect_loss": false
+    },
+    "driverlog": {
+     "model.use_effect_loss": false
+    },
+    "gripper": {
+     "model.use_effect_loss": false
+    },
+    "hanoi": {
+     "model.use_effect_loss": false
+    },
+    "logistics": {
+     "model.use_effect_loss": false
+    },
+    "miconic": {
+     "model.use_effect_loss": false
+    },
+    "n-puzzle": {
+     "model.use_effect_loss": false
+    },
+    "satellite": {
+     "model.use_effect_loss": false
+    },
+    "satellite-recal": {
+     "model.use_effect_loss": false
+    },
+    "sokoban": {
+     "model.use_effect_loss": false
+    },
+    "sokoban-pull": {
+     "model.use_effect_loss": false
+    },
+    "spanner": {
+     "model.use_effect_loss": false
+    },
+    "visitall": {
+     "model.use_effect_loss": false
+    }
+   },
+   "validator": "dias"
+  },
+  "ablation-no-pcgrad": {
+   "domains": {
+    "blocks-3": {
+     "model.use_pcgrad": false
+    },
+    "delivery": {
+     "model.use_pcgrad": false
+    },
+    "driverlog": {
+     "model.use_pcgrad": false
+    },
+    "gripper": {
+     "model.use_pcgrad": false
+    },
+    "hanoi": {
+     "model.use_pcgrad": false
+    },
+    "logistics": {
+     "model.use_pcgrad": false
+    },
+    "miconic": {
+     "model.use_pcgrad": false
+    },
+    "n-puzzle": {
+     "model.use_pcgrad": false
+    },
+    "satellite": {
+     "model.use_pcgrad": false
+    },
+    "satellite-recal": {
+     "model.use_pcgrad": false
+    },
+    "sokoban": {
+     "model.use_pcgrad": false
+    },
+    "sokoban-pull": {
+     "model.use_pcgrad": false
+    },
+    "spanner": {
+     "model.use_pcgrad": false
+    },
+    "visitall": {
+     "model.use_pcgrad": false
+    }
+   },
+   "validator": "dias"
+  },
+  "ablation-no-precondition-loss": {
+   "domains": {
+    "blocks-3": {
+     "model.use_precondition_loss": false
+    },
+    "delivery": {
+     "model.use_precondition_loss": false
+    },
+    "driverlog": {
+     "model.use_precondition_loss": false
+    },
+    "gripper": {
+     "model.use_precondition_loss": false
+    },
+    "hanoi": {
+     "model.use_precondition_loss": false
+    },
+    "logistics": {
+     "model.use_precondition_loss": false
+    },
+    "miconic": {
+     "model.use_precondition_loss": false
+    },
+    "n-puzzle": {
+     "model.use_precondition_loss": false
+    },
+    "satellite": {
+     "model.use_precondition_loss": false
+    },
+    "satellite-recal": {
+     "model.use_precondition_loss": false
+    },
+    "sokoban": {
+     "model.use_precondition_loss": false
+    },
+    "sokoban-pull": {
+     "model.use_precondition_loss": false
+    },
+    "spanner": {
+     "model.use_precondition_loss": false
+    },
+    "visitall": {
+     "model.use_precondition_loss": false
+    }
+   },
+   "validator": "dias"
+  },
+  "ablation-no-random-embeddings": {
+   "domains": {
+    "blocks-3": {
+     "model.random_node_embeddings": false
+    },
+    "delivery": {
+     "model.random_node_embeddings": false
+    },
+    "driverlog": {
+     "model.random_node_embeddings": false
+    },
+    "gripper": {
+     "model.random_node_embeddings": false
+    },
+    "hanoi": {
+     "model.random_node_embeddings": false
+    },
+    "logistics": {
+     "model.random_node_embeddings": false
+    },
+    "miconic": {
+     "model.random_node_embeddings": false
+    },
+    "n-puzzle": {
+     "model.random_node_embeddings": false
+    },
+    "satellite": {
+     "model.random_node_embeddings": false
+    },
+    "satellite-recal": {
+     "model.random_node_embeddings": false
+    },
+    "sokoban": {
+     "model.random_node_embeddings": false
+    },
+    "sokoban-pull": {
+     "model.random_node_embeddings": false
+    },
+    "spanner": {
+     "model.random_node_embeddings": false
+    },
+    "visitall": {
+     "model.random_node_embeddings": false
+    }
+   },
+   "validator": "dias"
+  },
+  "ablation-no-slot-weights": {
+   "domains": {
+    "blocks-3": {
+     "model.use_slot_weights": false
+    },
+    "delivery": {
+     "model.use_slot_weights": false
+    },
+    "driverlog": {
+     "model.use_slot_weights": false
+    },
+    "gripper": {
+     "model.use_slot_weights": false
+    },
+    "hanoi": {
+     "model.use_slot_weights": false
+    },
+    "logistics": {
+     "model.use_slot_weights": false
+    },
+    "miconic": {
+     "model.use_slot_weights": false
+    },
+    "n-puzzle": {
+     "model.use_slot_weights": false
+    },
+    "satellite": {
+     "model.use_slot_weights": false
+    },
+    "satellite-recal": {
+     "model.use_slot_weights": false
+    },
+    "sokoban": {
+     "model.use_slot_weights": false
+    },
+    "sokoban-pull": {
+     "model.use_slot_weights": false
+    },
+    "spanner": {
+     "model.use_slot_weights": false
+    },
+    "visitall": {
+     "model.use_slot_weights": false
+    }
+   },
+   "validator": "dias"
+  },
+  "alpha-aux0.01": {
+   "domains": {
+    "blocks-3": {
+     "model.aux_loss_alpha": 0.01
+    },
+    "delivery": {
+     "model.aux_loss_alpha": 0.01
+    },
+    "driverlog": {},
+    "gripper": {
+     "model.aux_loss_alpha": 0.01
+    },
+    "hanoi": {
+     "model.aux_loss_alpha": 0.01
+    },
+    "logistics": {
+     "model.aux_loss_alpha": 0.01
+    },
+    "miconic": {
+     "model.aux_loss_alpha": 0.01
+    },
+    "n-puzzle": {
+     "model.aux_loss_alpha": 0.01
+    },
+    "satellite": {},
+    "satellite-recal": {},
+    "sokoban": {
+     "model.aux_loss_alpha": 0.01
+    },
+    "sokoban-pull": {
+     "model.aux_loss_alpha": 0.01
+    },
+    "spanner": {
+     "model.aux_loss_alpha": 0.01
+    },
+    "visitall": {
+     "model.aux_loss_alpha": 0.01
+    }
+   },
+   "validator": "dias"
+  },
+  "alpha-aux0.03": {
+   "domains": {
+    "blocks-3": {
+     "model.aux_loss_alpha": 0.03
+    },
+    "delivery": {
+     "model.aux_loss_alpha": 0.03
+    },
+    "driverlog": {
+     "model.aux_loss_alpha": 0.03
+    },
+    "gripper": {
+     "model.aux_loss_alpha": 0.03
+    },
+    "hanoi": {
+     "model.aux_loss_alpha": 0.03
+    },
+    "logistics": {
+     "model.aux_loss_alpha": 0.03
+    },
+    "miconic": {
+     "model.aux_loss_alpha": 0.03
+    },
+    "n-puzzle": {
+     "model.aux_loss_alpha": 0.03
+    },
+    "satellite": {
+     "model.aux_loss_alpha": 0.03
+    },
+    "satellite-recal": {
+     "model.aux_loss_alpha": 0.03
+    },
+    "sokoban": {
+     "model.aux_loss_alpha": 0.03
+    },
+    "sokoban-pull": {
+     "model.aux_loss_alpha": 0.03
+    },
+    "spanner": {
+     "model.aux_loss_alpha": 0.03
+    },
+    "visitall": {
+     "model.aux_loss_alpha": 0.03
+    }
+   },
+   "validator": "dias"
+  },
+  "alpha-aux0.1": {
+   "domains": {
+    "blocks-3": {
+     "model.aux_loss_alpha": 0.1
+    },
+    "delivery": {},
+    "driverlog": {
+     "model.aux_loss_alpha": 0.1
+    },
+    "gripper": {
+     "model.aux_loss_alpha": 0.1
+    },
+    "hanoi": {
+     "model.aux_loss_alpha": 0.1
+    },
+    "logistics": {
+     "model.aux_loss_alpha": 0.1
+    },
+    "miconic": {
+     "model.aux_loss_alpha": 0.1
+    },
+    "n-puzzle": {
+     "model.aux_loss_alpha": 0.1
+    },
+    "satellite": {
+     "model.aux_loss_alpha": 0.1
+    },
+    "satellite-recal": {
+     "model.aux_loss_alpha": 0.1
+    },
+    "sokoban": {},
+    "sokoban-pull": {},
+    "spanner": {
+     "model.aux_loss_alpha": 0.1
+    },
+    "visitall": {
+     "model.aux_loss_alpha": 0.1
+    }
+   },
+   "validator": "dias"
+  },
+  "alpha-aux0.3": {
+   "domains": {
+    "blocks-3": {
+     "model.aux_loss_alpha": 0.3
+    },
+    "delivery": {
+     "model.aux_loss_alpha": 0.3
+    },
+    "driverlog": {
+     "model.aux_loss_alpha": 0.3
+    },
+    "gripper": {
+     "model.aux_loss_alpha": 0.3
+    },
+    "hanoi": {},
+    "logistics": {},
+    "miconic": {
+     "model.aux_loss_alpha": 0.3
+    },
+    "n-puzzle": {
+     "model.aux_loss_alpha": 0.3
+    },
+    "satellite": {
+     "model.aux_loss_alpha": 0.3
+    },
+    "satellite-recal": {
+     "model.aux_loss_alpha": 0.3
+    },
+    "sokoban": {
+     "model.aux_loss_alpha": 0.3
+    },
+    "sokoban-pull": {
+     "model.aux_loss_alpha": 0.3
+    },
+    "spanner": {
+     "model.aux_loss_alpha": 0.3
+    },
+    "visitall": {
+     "model.aux_loss_alpha": 0.3
+    }
+   },
+   "validator": "dias"
+  },
+  "alpha-aux1": {
+   "domains": {
+    "blocks-3": {},
+    "delivery": {
+     "model.aux_loss_alpha": 1.0
+    },
+    "driverlog": {
+     "model.aux_loss_alpha": 1.0
+    },
+    "gripper": {},
+    "hanoi": {
+     "model.aux_loss_alpha": 1.0
+    },
+    "logistics": {
+     "model.aux_loss_alpha": 1.0
+    },
+    "miconic": {},
+    "n-puzzle": {},
+    "satellite": {
+     "model.aux_loss_alpha": 1.0
+    },
+    "satellite-recal": {
+     "model.aux_loss_alpha": 1.0
+    },
+    "sokoban": {
+     "model.aux_loss_alpha": 1.0
+    },
+    "sokoban-pull": {
+     "model.aux_loss_alpha": 1.0
+    },
+    "spanner": {},
+    "visitall": {}
+   },
+   "validator": "dias"
+  },
+  "curve-f2-n100": {
+   "domains": {
+    "blocks-3": {
+     "data.batch_size": 50,
+     "data.max_per_action_train": 100,
+     "data.max_per_action_valid": 50,
+     "data.min_per_action_train_floor": 100,
+     "data.min_per_action_valid_floor": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "delivery": {
+     "data.batch_size": 50,
+     "data.max_per_action_train": 100,
+     "data.max_per_action_valid": 50,
+     "data.min_per_action_train": 100,
+     "data.min_per_action_train_floor": 100,
+     "data.min_per_action_valid": 50,
+     "data.min_per_action_valid_floor": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "gripper": {
+     "data.batch_size": 50,
+     "data.max_per_action_train": 100,
+     "data.max_per_action_valid": 50,
+     "data.min_per_action_train": 100,
+     "data.min_per_action_train_floor": 100,
+     "data.min_per_action_valid": 50,
+     "data.min_per_action_valid_floor": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "hanoi": {
+     "data.batch_size": 50,
+     "data.max_per_action_train": 100,
+     "data.max_per_action_valid": 50,
+     "data.min_per_action_train": 100,
+     "data.min_per_action_train_floor": 100,
+     "data.min_per_action_valid": 50,
+     "data.min_per_action_valid_floor": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "logistics": {
+     "data.batch_size": 50,
+     "data.max_per_action_train": 100,
+     "data.max_per_action_valid": 50,
+     "data.min_per_action_train_floor": 100,
+     "data.min_per_action_valid_floor": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    }
+   },
+   "validator": "dias"
+  },
+  "curve-f2-n1000": {
+   "domains": {
+    "blocks-3": {
+     "data.batch_size": 50,
+     "data.min_per_action_train": 1000,
+     "data.min_per_action_train_floor": 1000,
+     "data.min_per_action_valid": 500,
+     "data.min_per_action_valid_floor": 500,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "delivery": {
+     "data.batch_size": 50,
+     "data.max_per_action_train": 1000,
+     "data.max_per_action_valid": 500,
+     "data.min_per_action_train_floor": 1000,
+     "data.min_per_action_valid_floor": 500,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "gripper": {
+     "data.batch_size": 50,
+     "data.min_per_action_train": 1000,
+     "data.min_per_action_train_floor": 1000,
+     "data.min_per_action_valid": 500,
+     "data.min_per_action_valid_floor": 500,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "hanoi": {
+     "data.batch_size": 50,
+     "data.min_per_action_train_floor": 1000,
+     "data.min_per_action_valid_floor": 500,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "logistics": {
+     "data.batch_size": 50,
+     "data.min_per_action_train": 1000,
+     "data.min_per_action_train_floor": 1000,
+     "data.min_per_action_valid": 500,
+     "data.min_per_action_valid_floor": 500,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    }
+   },
+   "validator": "dias"
+  },
+  "curve-f2-n20": {
+   "domains": {
+    "blocks-3": {
+     "data.batch_size": 50,
+     "data.max_per_action_train": 20,
+     "data.max_per_action_valid": 10,
+     "data.min_per_action_train": 20,
+     "data.min_per_action_train_floor": 20,
+     "data.min_per_action_valid": 10,
+     "data.min_per_action_valid_floor": 10,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "delivery": {
+     "data.batch_size": 50,
+     "data.max_per_action_train": 20,
+     "data.max_per_action_valid": 10,
+     "data.min_per_action_train": 20,
+     "data.min_per_action_train_floor": 20,
+     "data.min_per_action_valid": 10,
+     "data.min_per_action_valid_floor": 10,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "gripper": {
+     "data.batch_size": 50,
+     "data.max_per_action_train": 20,
+     "data.max_per_action_valid": 10,
+     "data.min_per_action_train": 20,
+     "data.min_per_action_train_floor": 20,
+     "data.min_per_action_valid": 10,
+     "data.min_per_action_valid_floor": 10,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "hanoi": {
+     "data.batch_size": 50,
+     "data.max_per_action_train": 20,
+     "data.max_per_action_valid": 10,
+     "data.min_per_action_train": 20,
+     "data.min_per_action_train_floor": 20,
+     "data.min_per_action_valid": 10,
+     "data.min_per_action_valid_floor": 10,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "logistics": {
+     "data.batch_size": 50,
+     "data.max_per_action_train": 20,
+     "data.max_per_action_valid": 10,
+     "data.min_per_action_train": 20,
+     "data.min_per_action_train_floor": 20,
+     "data.min_per_action_valid": 10,
+     "data.min_per_action_valid_floor": 10,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    }
+   },
+   "validator": "dias"
+  },
+  "curve-f2-n200": {
+   "domains": {
+    "blocks-3": {
+     "data.batch_size": 50,
+     "data.max_per_action_train": 200,
+     "data.max_per_action_valid": 100,
+     "data.min_per_action_train": 200,
+     "data.min_per_action_train_floor": 200,
+     "data.min_per_action_valid": 100,
+     "data.min_per_action_valid_floor": 100,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "delivery": {
+     "data.batch_size": 50,
+     "data.max_per_action_train": 200,
+     "data.max_per_action_valid": 100,
+     "data.min_per_action_train": 200,
+     "data.min_per_action_train_floor": 200,
+     "data.min_per_action_valid": 100,
+     "data.min_per_action_valid_floor": 100,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "gripper": {
+     "data.batch_size": 50,
+     "data.max_per_action_train": 200,
+     "data.max_per_action_valid": 100,
+     "data.min_per_action_train_floor": 200,
+     "data.min_per_action_valid_floor": 100,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "hanoi": {
+     "data.batch_size": 50,
+     "data.max_per_action_train": 200,
+     "data.max_per_action_valid": 100,
+     "data.min_per_action_train": 200,
+     "data.min_per_action_train_floor": 200,
+     "data.min_per_action_valid": 100,
+     "data.min_per_action_valid_floor": 100,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "logistics": {
+     "data.batch_size": 50,
+     "data.max_per_action_train": 200,
+     "data.max_per_action_valid": 100,
+     "data.min_per_action_train": 200,
+     "data.min_per_action_train_floor": 200,
+     "data.min_per_action_valid": 100,
+     "data.min_per_action_valid_floor": 100,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    }
+   },
+   "validator": "dias"
+  },
+  "curve-f2-n2000": {
+   "domains": {
+    "blocks-3": {
+     "data.batch_size": 50,
+     "data.max_per_action_train": 2000,
+     "data.max_per_action_valid": 1000,
+     "data.min_per_action_train": 2000,
+     "data.min_per_action_train_floor": 2000,
+     "data.min_per_action_valid": 1000,
+     "data.min_per_action_valid_floor": 1000,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "delivery": {
+     "data.batch_size": 50,
+     "data.min_per_action_train": 2000,
+     "data.min_per_action_train_floor": 2000,
+     "data.min_per_action_valid": 1000,
+     "data.min_per_action_valid_floor": 1000,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "gripper": {
+     "data.batch_size": 50,
+     "data.max_per_action_train": 2000,
+     "data.max_per_action_valid": 1000,
+     "data.min_per_action_train": 2000,
+     "data.min_per_action_train_floor": 2000,
+     "data.min_per_action_valid": 1000,
+     "data.min_per_action_valid_floor": 1000,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "hanoi": {
+     "data.batch_size": 50,
+     "data.max_per_action_train": 2000,
+     "data.max_per_action_valid": 1000,
+     "data.min_per_action_train": 2000,
+     "data.min_per_action_train_floor": 2000,
+     "data.min_per_action_valid": 1000,
+     "data.min_per_action_valid_floor": 1000,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "logistics": {
+     "data.batch_size": 50,
+     "data.max_per_action_train": 2000,
+     "data.max_per_action_valid": 1000,
+     "data.min_per_action_train": 2000,
+     "data.min_per_action_train_floor": 2000,
+     "data.min_per_action_valid": 1000,
+     "data.min_per_action_valid_floor": 1000,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    }
+   },
+   "validator": "dias"
+  },
+  "curve-f2-n50": {
+   "domains": {
+    "blocks-3": {
+     "data.batch_size": 50,
+     "data.max_per_action_train": 50,
+     "data.max_per_action_valid": 25,
+     "data.min_per_action_train": 50,
+     "data.min_per_action_train_floor": 50,
+     "data.min_per_action_valid": 25,
+     "data.min_per_action_valid_floor": 25,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "delivery": {
+     "data.batch_size": 50,
+     "data.max_per_action_train": 50,
+     "data.max_per_action_valid": 25,
+     "data.min_per_action_train": 50,
+     "data.min_per_action_train_floor": 50,
+     "data.min_per_action_valid": 25,
+     "data.min_per_action_valid_floor": 25,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "gripper": {
+     "data.batch_size": 50,
+     "data.max_per_action_train": 50,
+     "data.max_per_action_valid": 25,
+     "data.min_per_action_train": 50,
+     "data.min_per_action_train_floor": 50,
+     "data.min_per_action_valid": 25,
+     "data.min_per_action_valid_floor": 25,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "hanoi": {
+     "data.batch_size": 50,
+     "data.max_per_action_train": 50,
+     "data.max_per_action_valid": 25,
+     "data.min_per_action_train": 50,
+     "data.min_per_action_train_floor": 50,
+     "data.min_per_action_valid": 25,
+     "data.min_per_action_valid_floor": 25,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "logistics": {
+     "data.batch_size": 50,
+     "data.max_per_action_train": 50,
+     "data.max_per_action_valid": 25,
+     "data.min_per_action_train": 50,
+     "data.min_per_action_train_floor": 50,
+     "data.min_per_action_valid": 25,
+     "data.min_per_action_valid_floor": 25,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    }
+   },
+   "validator": "dias"
+  },
+  "curve-f2-n500": {
+   "domains": {
+    "blocks-3": {
+     "data.batch_size": 50,
+     "data.max_per_action_train": 500,
+     "data.max_per_action_valid": 250,
+     "data.min_per_action_train": 500,
+     "data.min_per_action_train_floor": 500,
+     "data.min_per_action_valid": 250,
+     "data.min_per_action_valid_floor": 250,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "delivery": {
+     "data.batch_size": 50,
+     "data.max_per_action_train": 500,
+     "data.max_per_action_valid": 250,
+     "data.min_per_action_train": 500,
+     "data.min_per_action_train_floor": 500,
+     "data.min_per_action_valid": 250,
+     "data.min_per_action_valid_floor": 250,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "gripper": {
+     "data.batch_size": 50,
+     "data.max_per_action_train": 500,
+     "data.max_per_action_valid": 250,
+     "data.min_per_action_train": 500,
+     "data.min_per_action_train_floor": 500,
+     "data.min_per_action_valid": 250,
+     "data.min_per_action_valid_floor": 250,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "hanoi": {
+     "data.batch_size": 50,
+     "data.max_per_action_train": 500,
+     "data.max_per_action_valid": 250,
+     "data.min_per_action_train": 500,
+     "data.min_per_action_train_floor": 500,
+     "data.min_per_action_valid": 250,
+     "data.min_per_action_valid_floor": 250,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "logistics": {
+     "data.batch_size": 50,
+     "data.max_per_action_train": 500,
+     "data.max_per_action_valid": 250,
+     "data.min_per_action_train": 500,
+     "data.min_per_action_train_floor": 500,
+     "data.min_per_action_valid": 250,
+     "data.min_per_action_valid_floor": 250,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    }
+   },
+   "validator": "dias"
+  },
+  "curve-n100": {
+   "domains": {
+    "blocks-3": {
+     "data.max_per_action_train": 100,
+     "data.max_per_action_valid": 50,
+     "data.min_per_action_train_floor": 100,
+     "data.min_per_action_valid_floor": 50
+    },
+    "delivery": {
+     "data.max_per_action_train": 100,
+     "data.max_per_action_valid": 50,
+     "data.min_per_action_train": 100,
+     "data.min_per_action_train_floor": 100,
+     "data.min_per_action_valid": 50,
+     "data.min_per_action_valid_floor": 50
+    },
+    "gripper": {
+     "data.max_per_action_train": 100,
+     "data.max_per_action_valid": 50,
+     "data.min_per_action_train": 100,
+     "data.min_per_action_train_floor": 100,
+     "data.min_per_action_valid": 50,
+     "data.min_per_action_valid_floor": 50
+    },
+    "hanoi": {
+     "data.max_per_action_train": 100,
+     "data.max_per_action_valid": 50,
+     "data.min_per_action_train": 100,
+     "data.min_per_action_train_floor": 100,
+     "data.min_per_action_valid": 50,
+     "data.min_per_action_valid_floor": 50
+    },
+    "logistics": {
+     "data.max_per_action_train": 100,
+     "data.max_per_action_valid": 50,
+     "data.min_per_action_train_floor": 100,
+     "data.min_per_action_valid_floor": 50
+    }
+   },
+   "validator": "dias"
+  },
+  "curve-n1000": {
+   "domains": {
+    "blocks-3": {
+     "data.min_per_action_train": 1000,
+     "data.min_per_action_train_floor": 1000,
+     "data.min_per_action_valid": 500,
+     "data.min_per_action_valid_floor": 500
+    },
+    "delivery": {
+     "data.max_per_action_train": 1000,
+     "data.max_per_action_valid": 500,
+     "data.min_per_action_train_floor": 1000,
+     "data.min_per_action_valid_floor": 500
+    },
+    "gripper": {
+     "data.min_per_action_train": 1000,
+     "data.min_per_action_train_floor": 1000,
+     "data.min_per_action_valid": 500,
+     "data.min_per_action_valid_floor": 500
+    },
+    "hanoi": {
+     "data.min_per_action_train_floor": 1000,
+     "data.min_per_action_valid_floor": 500
+    },
+    "logistics": {
+     "data.min_per_action_train": 1000,
+     "data.min_per_action_train_floor": 1000,
+     "data.min_per_action_valid": 500,
+     "data.min_per_action_valid_floor": 500
+    }
+   },
+   "validator": "dias"
+  },
+  "curve-n20": {
+   "domains": {
+    "blocks-3": {
+     "data.max_per_action_train": 20,
+     "data.max_per_action_valid": 10,
+     "data.min_per_action_train": 20,
+     "data.min_per_action_train_floor": 20,
+     "data.min_per_action_valid": 10,
+     "data.min_per_action_valid_floor": 10
+    },
+    "delivery": {
+     "data.max_per_action_train": 20,
+     "data.max_per_action_valid": 10,
+     "data.min_per_action_train": 20,
+     "data.min_per_action_train_floor": 20,
+     "data.min_per_action_valid": 10,
+     "data.min_per_action_valid_floor": 10
+    },
+    "gripper": {
+     "data.max_per_action_train": 20,
+     "data.max_per_action_valid": 10,
+     "data.min_per_action_train": 20,
+     "data.min_per_action_train_floor": 20,
+     "data.min_per_action_valid": 10,
+     "data.min_per_action_valid_floor": 10
+    },
+    "hanoi": {
+     "data.max_per_action_train": 20,
+     "data.max_per_action_valid": 10,
+     "data.min_per_action_train": 20,
+     "data.min_per_action_train_floor": 20,
+     "data.min_per_action_valid": 10,
+     "data.min_per_action_valid_floor": 10
+    },
+    "logistics": {
+     "data.max_per_action_train": 20,
+     "data.max_per_action_valid": 10,
+     "data.min_per_action_train": 20,
+     "data.min_per_action_train_floor": 20,
+     "data.min_per_action_valid": 10,
+     "data.min_per_action_valid_floor": 10
+    }
+   },
+   "validator": "dias"
+  },
+  "curve-n200": {
+   "domains": {
+    "blocks-3": {
+     "data.max_per_action_train": 200,
+     "data.max_per_action_valid": 100,
+     "data.min_per_action_train": 200,
+     "data.min_per_action_train_floor": 200,
+     "data.min_per_action_valid": 100,
+     "data.min_per_action_valid_floor": 100
+    },
+    "delivery": {
+     "data.max_per_action_train": 200,
+     "data.max_per_action_valid": 100,
+     "data.min_per_action_train": 200,
+     "data.min_per_action_train_floor": 200,
+     "data.min_per_action_valid": 100,
+     "data.min_per_action_valid_floor": 100
+    },
+    "gripper": {
+     "data.max_per_action_train": 200,
+     "data.max_per_action_valid": 100,
+     "data.min_per_action_train_floor": 200,
+     "data.min_per_action_valid_floor": 100
+    },
+    "hanoi": {
+     "data.max_per_action_train": 200,
+     "data.max_per_action_valid": 100,
+     "data.min_per_action_train": 200,
+     "data.min_per_action_train_floor": 200,
+     "data.min_per_action_valid": 100,
+     "data.min_per_action_valid_floor": 100
+    },
+    "logistics": {
+     "data.max_per_action_train": 200,
+     "data.max_per_action_valid": 100,
+     "data.min_per_action_train": 200,
+     "data.min_per_action_train_floor": 200,
+     "data.min_per_action_valid": 100,
+     "data.min_per_action_valid_floor": 100
+    }
+   },
+   "validator": "dias"
+  },
+  "curve-n2000": {
+   "domains": {
+    "blocks-3": {
+     "data.max_per_action_train": 2000,
+     "data.max_per_action_valid": 1000,
+     "data.min_per_action_train": 2000,
+     "data.min_per_action_train_floor": 2000,
+     "data.min_per_action_valid": 1000,
+     "data.min_per_action_valid_floor": 1000
+    },
+    "delivery": {
+     "data.min_per_action_train": 2000,
+     "data.min_per_action_train_floor": 2000,
+     "data.min_per_action_valid": 1000,
+     "data.min_per_action_valid_floor": 1000
+    },
+    "gripper": {
+     "data.max_per_action_train": 2000,
+     "data.max_per_action_valid": 1000,
+     "data.min_per_action_train": 2000,
+     "data.min_per_action_train_floor": 2000,
+     "data.min_per_action_valid": 1000,
+     "data.min_per_action_valid_floor": 1000
+    },
+    "hanoi": {
+     "data.max_per_action_train": 2000,
+     "data.max_per_action_valid": 1000,
+     "data.min_per_action_train": 2000,
+     "data.min_per_action_train_floor": 2000,
+     "data.min_per_action_valid": 1000,
+     "data.min_per_action_valid_floor": 1000
+    },
+    "logistics": {
+     "data.max_per_action_train": 2000,
+     "data.max_per_action_valid": 1000,
+     "data.min_per_action_train": 2000,
+     "data.min_per_action_train_floor": 2000,
+     "data.min_per_action_valid": 1000,
+     "data.min_per_action_valid_floor": 1000
+    }
+   },
+   "validator": "dias"
+  },
+  "curve-n50": {
+   "domains": {
+    "blocks-3": {
+     "data.max_per_action_train": 50,
+     "data.max_per_action_valid": 25,
+     "data.min_per_action_train": 50,
+     "data.min_per_action_train_floor": 50,
+     "data.min_per_action_valid": 25,
+     "data.min_per_action_valid_floor": 25
+    },
+    "delivery": {
+     "data.max_per_action_train": 50,
+     "data.max_per_action_valid": 25,
+     "data.min_per_action_train": 50,
+     "data.min_per_action_train_floor": 50,
+     "data.min_per_action_valid": 25,
+     "data.min_per_action_valid_floor": 25
+    },
+    "gripper": {
+     "data.max_per_action_train": 50,
+     "data.max_per_action_valid": 25,
+     "data.min_per_action_train": 50,
+     "data.min_per_action_train_floor": 50,
+     "data.min_per_action_valid": 25,
+     "data.min_per_action_valid_floor": 25
+    },
+    "hanoi": {
+     "data.max_per_action_train": 50,
+     "data.max_per_action_valid": 25,
+     "data.min_per_action_train": 50,
+     "data.min_per_action_train_floor": 50,
+     "data.min_per_action_valid": 25,
+     "data.min_per_action_valid_floor": 25
+    },
+    "logistics": {
+     "data.max_per_action_train": 50,
+     "data.max_per_action_valid": 25,
+     "data.min_per_action_train": 50,
+     "data.min_per_action_train_floor": 50,
+     "data.min_per_action_valid": 25,
+     "data.min_per_action_valid_floor": 25
+    }
+   },
+   "validator": "dias"
+  },
+  "curve-n500": {
+   "domains": {
+    "blocks-3": {
+     "data.max_per_action_train": 500,
+     "data.max_per_action_valid": 250,
+     "data.min_per_action_train": 500,
+     "data.min_per_action_train_floor": 500,
+     "data.min_per_action_valid": 250,
+     "data.min_per_action_valid_floor": 250
+    },
+    "delivery": {
+     "data.max_per_action_train": 500,
+     "data.max_per_action_valid": 250,
+     "data.min_per_action_train": 500,
+     "data.min_per_action_train_floor": 500,
+     "data.min_per_action_valid": 250,
+     "data.min_per_action_valid_floor": 250
+    },
+    "gripper": {
+     "data.max_per_action_train": 500,
+     "data.max_per_action_valid": 250,
+     "data.min_per_action_train": 500,
+     "data.min_per_action_train_floor": 500,
+     "data.min_per_action_valid": 250,
+     "data.min_per_action_valid_floor": 250
+    },
+    "hanoi": {
+     "data.max_per_action_train": 500,
+     "data.max_per_action_valid": 250,
+     "data.min_per_action_train": 500,
+     "data.min_per_action_train_floor": 500,
+     "data.min_per_action_valid": 250,
+     "data.min_per_action_valid_floor": 250
+    },
+    "logistics": {
+     "data.max_per_action_train": 500,
+     "data.max_per_action_valid": 250,
+     "data.min_per_action_train": 500,
+     "data.min_per_action_train_floor": 500,
+     "data.min_per_action_valid": 250,
+     "data.min_per_action_valid_floor": 250
+    }
+   },
+   "validator": "dias"
+  },
+  "dias-names-slots7": {
+   "domains": {
+    "blocks-3": {
+     "model.num_slots": 7
+    },
+    "delivery": {
+     "model.num_slots": 7
+    },
+    "driverlog": {
+     "model.num_slots": 7
+    },
+    "gripper": {
+     "model.num_slots": 7
+    },
+    "hanoi": {
+     "model.num_slots": 7
+    },
+    "logistics": {
+     "model.num_slots": 7
+    },
+    "miconic": {
+     "model.num_slots": 7
+    },
+    "n-puzzle": {
+     "model.num_slots": 7
+    },
+    "satellite": {
+     "model.num_slots": 7
+    },
+    "satellite-recal": {
+     "model.num_slots": 7
+    },
+    "sokoban": {
+     "model.num_slots": 7
+    },
+    "sokoban-pull": {
+     "model.num_slots": 7
+    },
+    "spanner": {
+     "model.num_slots": 7
+    },
+    "visitall": {
+     "model.num_slots": 7
+    }
+   },
+   "validator": "dias"
+  },
+  "dias-names-slots9": {
+   "domains": {
+    "blocks-3": {
+     "model.num_slots": 9
+    },
+    "delivery": {
+     "model.num_slots": 9
+    },
+    "driverlog": {
+     "model.num_slots": 9
+    },
+    "gripper": {
+     "model.num_slots": 9
+    },
+    "hanoi": {
+     "model.num_slots": 9
+    },
+    "logistics": {
+     "model.num_slots": 9
+    },
+    "miconic": {
+     "model.num_slots": 9
+    },
+    "n-puzzle": {
+     "model.num_slots": 9
+    },
+    "satellite": {
+     "model.num_slots": 9
+    },
+    "satellite-recal": {
+     "model.num_slots": 9
+    },
+    "sokoban": {
+     "model.num_slots": 9
+    },
+    "sokoban-pull": {
+     "model.num_slots": 9
+    },
+    "spanner": {
+     "model.num_slots": 9
+    },
+    "visitall": {
+     "model.num_slots": 9
+    }
+   },
+   "validator": "dias"
+  },
+  "dias-names-tau0": {
+   "domains": {
+    "blocks-3": {
+     "model.precondition_tau.every": 0
+    },
+    "delivery": {
+     "model.precondition_tau.every": 0
+    },
+    "driverlog": {
+     "model.precondition_tau.every": 0
+    },
+    "gripper": {
+     "model.precondition_tau.every": 0
+    },
+    "hanoi": {
+     "model.precondition_tau.every": 0
+    },
+    "logistics": {
+     "model.precondition_tau.every": 0
+    },
+    "miconic": {
+     "model.precondition_tau.every": 0
+    },
+    "n-puzzle": {
+     "model.precondition_tau.every": 0
+    },
+    "satellite": {
+     "model.precondition_tau.every": 0
+    },
+    "satellite-recal": {
+     "model.precondition_tau.every": 0
+    },
+    "sokoban": {
+     "model.precondition_tau.every": 0
+    },
+    "sokoban-pull": {
+     "model.precondition_tau.every": 0
+    },
+    "spanner": {
+     "model.precondition_tau.every": 0
+    },
+    "visitall": {
+     "model.precondition_tau.every": 0
+    }
+   },
+   "validator": "dias"
+  },
+  "dias-names-tau100": {
+   "domains": {
+    "blocks-3": {
+     "model.precondition_tau.every": 100
+    },
+    "delivery": {
+     "model.precondition_tau.every": 100
+    },
+    "driverlog": {
+     "model.precondition_tau.every": 100
+    },
+    "gripper": {
+     "model.precondition_tau.every": 100
+    },
+    "hanoi": {
+     "model.precondition_tau.every": 100
+    },
+    "logistics": {
+     "model.precondition_tau.every": 100
+    },
+    "miconic": {
+     "model.precondition_tau.every": 100
+    },
+    "n-puzzle": {
+     "model.precondition_tau.every": 100
+    },
+    "satellite": {
+     "model.precondition_tau.every": 100
+    },
+    "satellite-recal": {
+     "model.precondition_tau.every": 100
+    },
+    "sokoban": {
+     "model.precondition_tau.every": 100
+    },
+    "sokoban-pull": {
+     "model.precondition_tau.every": 100
+    },
+    "spanner": {
+     "model.precondition_tau.every": 100
+    },
+    "visitall": {
+     "model.precondition_tau.every": 100
+    }
+   },
+   "validator": "dias"
+  },
+  "dias-names-tau1000": {
+   "domains": {
+    "blocks-3": {
+     "model.precondition_tau.every": 1000
+    },
+    "delivery": {
+     "model.precondition_tau.every": 1000
+    },
+    "driverlog": {
+     "model.precondition_tau.every": 1000
+    },
+    "gripper": {
+     "model.precondition_tau.every": 1000
+    },
+    "hanoi": {
+     "model.precondition_tau.every": 1000
+    },
+    "logistics": {
+     "model.precondition_tau.every": 1000
+    },
+    "miconic": {
+     "model.precondition_tau.every": 1000
+    },
+    "n-puzzle": {
+     "model.precondition_tau.every": 1000
+    },
+    "satellite": {
+     "model.precondition_tau.every": 1000
+    },
+    "satellite-recal": {
+     "model.precondition_tau.every": 1000
+    },
+    "sokoban": {
+     "model.precondition_tau.every": 1000
+    },
+    "sokoban-pull": {
+     "model.precondition_tau.every": 1000
+    },
+    "spanner": {
+     "model.precondition_tau.every": 1000
+    },
+    "visitall": {
+     "model.precondition_tau.every": 1000
+    }
+   },
+   "validator": "dias"
+  },
+  "dias-names-tau5000": {
+   "domains": {
+    "blocks-3": {
+     "model.precondition_tau.every": 5000
+    },
+    "delivery": {
+     "model.precondition_tau.every": 5000
+    },
+    "driverlog": {
+     "model.precondition_tau.every": 5000
+    },
+    "gripper": {
+     "model.precondition_tau.every": 5000
+    },
+    "hanoi": {
+     "model.precondition_tau.every": 5000
+    },
+    "logistics": {
+     "model.precondition_tau.every": 5000
+    },
+    "miconic": {
+     "model.precondition_tau.every": 5000
+    },
+    "n-puzzle": {
+     "model.precondition_tau.every": 5000
+    },
+    "satellite": {
+     "model.precondition_tau.every": 5000
+    },
+    "satellite-recal": {
+     "model.precondition_tau.every": 5000
+    },
+    "sokoban": {
+     "model.precondition_tau.every": 5000
+    },
+    "sokoban-pull": {
+     "model.precondition_tau.every": 5000
+    },
+    "spanner": {
+     "model.precondition_tau.every": 5000
+    },
+    "visitall": {
+     "model.precondition_tau.every": 5000
+    }
+   },
+   "validator": "dias"
+  },
+  "dias-strips": {
+   "domains": {
+    "blocks-3": {
+     "data.action_arguments": true,
+     "model.force_action_args": true,
+     "model.num_slots": null,
+     "model.per_action_slots": true
+    },
+    "delivery": {
+     "data.action_arguments": true,
+     "model.force_action_args": true,
+     "model.num_slots": null,
+     "model.per_action_slots": true
+    },
+    "driverlog": {
+     "data.action_arguments": true,
+     "model.force_action_args": true,
+     "model.num_slots": null,
+     "model.per_action_slots": true
+    },
+    "gripper": {
+     "data.action_arguments": true,
+     "model.force_action_args": true,
+     "model.num_slots": null,
+     "model.per_action_slots": true
+    },
+    "hanoi": {
+     "data.action_arguments": true,
+     "model.force_action_args": true,
+     "model.num_slots": null,
+     "model.per_action_slots": true
+    },
+    "logistics": {
+     "data.action_arguments": true,
+     "model.force_action_args": true,
+     "model.num_slots": null,
+     "model.per_action_slots": true
+    },
+    "miconic": {
+     "data.action_arguments": true,
+     "model.force_action_args": true,
+     "model.num_slots": null,
+     "model.per_action_slots": true
+    },
+    "n-puzzle": {
+     "data.action_arguments": true,
+     "model.force_action_args": true,
+     "model.num_slots": null,
+     "model.per_action_slots": true
+    },
+    "satellite": {
+     "data.action_arguments": true,
+     "model.force_action_args": true,
+     "model.num_slots": null,
+     "model.per_action_slots": true
+    },
+    "satellite-recal": {
+     "data.action_arguments": true,
+     "model.force_action_args": true,
+     "model.num_slots": null,
+     "model.per_action_slots": true
+    },
+    "sokoban": {
+     "data.action_arguments": true,
+     "model.force_action_args": true,
+     "model.num_slots": null,
+     "model.per_action_slots": true
+    },
+    "sokoban-pull": {
+     "data.action_arguments": true,
+     "model.force_action_args": true,
+     "model.num_slots": null,
+     "model.per_action_slots": true
+    },
+    "spanner": {
+     "data.action_arguments": true,
+     "model.force_action_args": true,
+     "model.num_slots": null,
+     "model.per_action_slots": true
+    },
+    "visitall": {
+     "data.action_arguments": true,
+     "model.force_action_args": true,
+     "model.num_slots": null,
+     "model.per_action_slots": true
+    }
+   },
+   "validator": "dias"
+  },
+  "dias-strips-plus": {
+   "domains": {
+    "blocks-3": {
+     "data.action_arguments": true,
+     "data.strips_plus_actions": true,
+     "model.force_action_args": true
+    },
+    "delivery": {
+     "data.action_arguments": true,
+     "data.strips_plus_actions": true,
+     "model.force_action_args": true
+    },
+    "driverlog": {
+     "data.action_arguments": true,
+     "data.strips_plus_actions": true,
+     "model.force_action_args": true
+    },
+    "gripper": {
+     "data.action_arguments": true,
+     "data.strips_plus_actions": true,
+     "model.force_action_args": true
+    },
+    "hanoi": {
+     "data.action_arguments": true,
+     "data.strips_plus_actions": true,
+     "model.force_action_args": true
+    },
+    "logistics": {
+     "data.action_arguments": true,
+     "data.strips_plus_actions": true,
+     "model.force_action_args": true
+    },
+    "miconic": {
+     "data.action_arguments": true,
+     "data.strips_plus_actions": true,
+     "model.force_action_args": true
+    },
+    "n-puzzle": {
+     "data.action_arguments": true,
+     "data.strips_plus_actions": true,
+     "model.force_action_args": true
+    },
+    "satellite": {
+     "data.action_arguments": true,
+     "data.strips_plus_actions": true,
+     "model.force_action_args": true
+    },
+    "satellite-recal": {
+     "data.action_arguments": true,
+     "data.strips_plus_actions": true,
+     "model.force_action_args": true
+    },
+    "sokoban": {
+     "data.action_arguments": true,
+     "data.strips_plus_actions": true,
+     "model.force_action_args": true
+    },
+    "sokoban-pull": {
+     "data.action_arguments": true,
+     "data.strips_plus_actions": true,
+     "model.force_action_args": true
+    },
+    "spanner": {
+     "data.action_arguments": true,
+     "data.strips_plus_actions": true,
+     "model.force_action_args": true
+    },
+    "visitall": {
+     "data.action_arguments": true,
+     "data.strips_plus_actions": true,
+     "model.force_action_args": true
+    }
+   },
+   "validator": "dias"
+  },
+  "mlp-names": {
+   "domains": {
+    "blocks-3": {
+     "model.state_dependent_effects": true
+    },
+    "delivery": {
+     "model.state_dependent_effects": true
+    },
+    "driverlog": {
+     "model.state_dependent_effects": true
+    },
+    "gripper": {
+     "model.state_dependent_effects": true
+    },
+    "hanoi": {
+     "model.state_dependent_effects": true
+    },
+    "logistics": {
+     "model.state_dependent_effects": true
+    },
+    "miconic": {
+     "model.state_dependent_effects": true
+    },
+    "n-puzzle": {
+     "model.state_dependent_effects": true
+    },
+    "satellite": {
+     "model.state_dependent_effects": true
+    },
+    "satellite-recal": {
+     "model.state_dependent_effects": true
+    },
+    "sokoban": {
+     "model.state_dependent_effects": true
+    },
+    "sokoban-pull": {
+     "model.state_dependent_effects": true
+    },
+    "spanner": {
+     "model.state_dependent_effects": true
+    },
+    "visitall": {
+     "model.state_dependent_effects": true
+    }
+   },
+   "validator": "mlp"
+  },
+  "noise-f1": {
+   "domains": {
+    "blocks-3": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.25,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.25,
+     "model.observation_noise": 0.1
+    },
+    "delivery": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.25,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.25,
+     "model.observation_noise": 0.1
+    },
+    "driverlog": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.25,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.25,
+     "model.observation_noise": 0.1
+    },
+    "gripper": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.25,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.25,
+     "model.observation_noise": 0.1
+    },
+    "hanoi": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.25,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.25,
+     "model.observation_noise": 0.1
+    },
+    "logistics": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.25,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.25,
+     "model.observation_noise": 0.1
+    },
+    "miconic": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.25,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.25,
+     "model.observation_noise": 0.1
+    },
+    "n-puzzle": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.25,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.25,
+     "model.observation_noise": 0.1
+    },
+    "satellite": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.25,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.25,
+     "model.observation_noise": 0.1
+    },
+    "satellite-recal": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.25,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.25,
+     "model.observation_noise": 0.1
+    },
+    "sokoban": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.25,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.25,
+     "model.observation_noise": 0.1
+    },
+    "sokoban-pull": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.25,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.25,
+     "model.observation_noise": 0.1
+    },
+    "spanner": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.25,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.25,
+     "model.observation_noise": 0.1
+    },
+    "visitall": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.25,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.25,
+     "model.observation_noise": 0.1
+    }
+   },
+   "validator": "dias"
+  },
+  "noise-f2": {
+   "domains": {
+    "blocks-3": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "delivery": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "driverlog": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "gripper": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "hanoi": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "logistics": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "miconic": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "n-puzzle": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "satellite": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "satellite-recal": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "sokoban": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "sokoban-pull": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "spanner": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    },
+    "visitall": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 0.5,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 0.5,
+     "model.observation_noise": 0.1
+    }
+   },
+   "validator": "dias"
+  },
+  "noise-f4": {
+   "domains": {
+    "blocks-3": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 1.0,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 1.0,
+     "model.observation_noise": 0.1
+    },
+    "delivery": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 1.0,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 1.0,
+     "model.observation_noise": 0.1
+    },
+    "driverlog": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 1.0,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 1.0,
+     "model.observation_noise": 0.1
+    },
+    "gripper": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 1.0,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 1.0,
+     "model.observation_noise": 0.1
+    },
+    "hanoi": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 1.0,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 1.0,
+     "model.observation_noise": 0.1
+    },
+    "logistics": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 1.0,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 1.0,
+     "model.observation_noise": 0.1
+    },
+    "miconic": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 1.0,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 1.0,
+     "model.observation_noise": 0.1
+    },
+    "n-puzzle": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 1.0,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 1.0,
+     "model.observation_noise": 0.1
+    },
+    "satellite": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 1.0,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 1.0,
+     "model.observation_noise": 0.1
+    },
+    "satellite-recal": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 1.0,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 1.0,
+     "model.observation_noise": 0.1
+    },
+    "sokoban": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 1.0,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 1.0,
+     "model.observation_noise": 0.1
+    },
+    "sokoban-pull": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 1.0,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 1.0,
+     "model.observation_noise": 0.1
+    },
+    "spanner": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 1.0,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 1.0,
+     "model.observation_noise": 0.1
+    },
+    "visitall": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 1.0,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 1.0,
+     "model.observation_noise": 0.1
+    }
+   },
+   "validator": "dias"
+  },
+  "noise-f8": {
+   "domains": {
+    "blocks-3": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 2.0,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 2.0,
+     "model.observation_noise": 0.1
+    },
+    "delivery": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 2.0,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 2.0,
+     "model.observation_noise": 0.1
+    },
+    "driverlog": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 2.0,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 2.0,
+     "model.observation_noise": 0.1
+    },
+    "gripper": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 2.0,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 2.0,
+     "model.observation_noise": 0.1
+    },
+    "hanoi": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 2.0,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 2.0,
+     "model.observation_noise": 0.1
+    },
+    "logistics": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 2.0,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 2.0,
+     "model.observation_noise": 0.1
+    },
+    "miconic": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 2.0,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 2.0,
+     "model.observation_noise": 0.1
+    },
+    "n-puzzle": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 2.0,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 2.0,
+     "model.observation_noise": 0.1
+    },
+    "satellite": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 2.0,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 2.0,
+     "model.observation_noise": 0.1
+    },
+    "satellite-recal": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 2.0,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 2.0,
+     "model.observation_noise": 0.1
+    },
+    "sokoban": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 2.0,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 2.0,
+     "model.observation_noise": 0.1
+    },
+    "sokoban-pull": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 2.0,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 2.0,
+     "model.observation_noise": 0.1
+    },
+    "spanner": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 2.0,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 2.0,
+     "model.observation_noise": 0.1
+    },
+    "visitall": {
+     "data.batch_size": 50,
+     "data.noise": "<absent>",
+     "data.noise.added_atoms": 2.0,
+     "data.noise.fluents_only": false,
+     "data.noise.removed_atoms": 2.0,
+     "model.observation_noise": 0.1
+    }
+   },
+   "validator": "dias"
+  }
+ }
+}
