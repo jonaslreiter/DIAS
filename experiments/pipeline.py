@@ -1,7 +1,4 @@
-"""What every script in the DIAS experiment pipeline shares: the paths, the domain-folder layout, the sbatch flag builders, the seed parsing and the validator table.
-
-Nothing here imports torch or pymimir: submitting jobs must work on a login node with nothing but PyYAML.
-"""
+"""What the experiment scripts share: paths, the domain folder layout, validators, seeds and Slurm options. Imports neither torch nor pymimir, so jobs can be submitted without them."""
 
 from __future__ import annotations
 
@@ -15,27 +12,22 @@ from pathlib import Path
 
 import yaml
 
-# ── where everything is ───────────────────────────────────────────────────────
-#
-# The launchers, Slurm scripts, orchestration configs and collected tables are this file's siblings. At the repository root sits what is not about running a sweep: the Lightning configs `dias fit` reads (CONFIGS_DIR) and the domains (PDDL_DIR).
-
 EXPERIMENTS_ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = EXPERIMENTS_ROOT.parent
 
 SLURM_DIR = EXPERIMENTS_ROOT / "slurm"
 PIPELINE_CONFIGS = EXPERIMENTS_ROOT / "configs"
 RESULTS_DIR = EXPERIMENTS_ROOT / "results"
+L1_PDDL_DIR = EXPERIMENTS_ROOT / "l1_pddl"
 
 CONFIGS_DIR = PROJECT_ROOT / "configs"
 PDDL_DIR = PROJECT_ROOT / "pddl"
+LOGS_DIR = PROJECT_ROOT / "logs"
 
 TRAIN_CONFIG = CONFIGS_DIR / "main.yaml"
 VALIDATION_CONFIG = PIPELINE_CONFIGS / "validation.yaml"
-SLURM_RESOURCES = PIPELINE_CONFIGS / "slurm-resources.yaml"
-SLURM_RESOURCES_VALIDATION = PIPELINE_CONFIGS / "slurm-resources-validation.yaml"
-LOGS_DIR = PROJECT_ROOT / "logs"
+SLURM_CONFIG = PIPELINE_CONFIGS / "slurm.yaml"
 
-# An unset entity means whichever account is logged in, so a clone needs no edit here.
 WANDB_PROJECT = os.environ.get("WANDB_PROJECT", "dias")
 WANDB_ENTITY = os.environ.get("WANDB_ENTITY") or None
 
@@ -44,13 +36,9 @@ def load_yaml(path: Path) -> dict:
     return yaml.safe_load(Path(path).read_text())
 
 
-# ── where a domain's files are ────────────────────────────────────────────────
-#
-# A domain is a folder under pddl/, named for the domain. There is no manifest; these names are the layout.
-
+# A domain is a folder under pddl/ holding these files.
 DOMAIN_FILE = "domain.pddl"
 TRAIN_PROBLEM = "train.pddl"
-# Held out from training, and validated on in this order.
 TEST_PROBLEMS = ("test-1.pddl", "test-2.pddl", "test-3.pddl")
 DOMAIN_CONFIG = "config.yaml"
 
@@ -64,17 +52,14 @@ def domain_pddl(domain: str) -> Path:
 
 
 def train_problem(domain: str) -> Path:
-    """The single instance a domain's transitions are sampled from."""
     return domain_dir(domain) / TRAIN_PROBLEM
 
 
 def validation_problems(domain: str) -> list[Path]:
-    """The held-out instances every validator scores against."""
     return [domain_dir(domain) / name for name in TEST_PROBLEMS]
 
 
 def domain_config(domain: str) -> Path:
-    """The Lightning partial config composed after configs/main.yaml."""
     return domain_dir(domain) / DOMAIN_CONFIG
 
 
@@ -87,12 +72,30 @@ def available_domains() -> list[str]:
     )
 
 
-def run_command(cmd: list[str], dry_run: bool, capture: bool = True) -> str | None:
-    """Print a command and run it, or only print it.
+def select_domains(requested: list[str] | None) -> list[str]:
+    """`requested`, all of them known domains, or every domain."""
+    available = available_domains()
+    domains = requested or available
+    unknown = [d for d in domains if d not in available]
+    if unknown:
+        raise SystemExit(
+            f"unknown domain(s) {unknown}; {PDDL_DIR} holds {', '.join(available)}"
+        )
+    return domains
 
-    sbatch needs ``capture``, for the job id on stdout; a training run wants the opposite, so its progress appears while it happens.
-    """
-    # shlex.join keeps the printed command copy-pasteable.
+
+def l1_domain(domain: str) -> Path:
+    """The domain L1 learned."""
+    return L1_PDDL_DIR / f"{domain}.pddl"
+
+
+def l1_domains() -> list[str]:
+    """The domains L1 learned one for."""
+    return [domain for domain in available_domains() if l1_domain(domain).is_file()]
+
+
+def run_command(cmd: list[str], dry_run: bool, capture: bool = True) -> str | None:
+    """Print `cmd` and run it unless `dry_run`. With `capture`, return its output."""
     print("  " + shlex.join(cmd), flush=True)
     if dry_run:
         return None
@@ -103,23 +106,15 @@ def run_command(cmd: list[str], dry_run: bool, capture: bool = True) -> str | No
     return out.stdout.strip()
 
 
-# ── validators ────────────────────────────────────────────────────────────────
-
-
 @dataclass(frozen=True)
 class Validator:
-    """One way of scoring a learned action model against the real domain.
-
-    ``binarizes_schema``: only a model with lifted schema tensors has anything to threshold. ``from_checkpoint``: L1 is handed a learned PDDL domain instead of a trained model. ``grounds_in_parallel``: whether the class takes ``num_workers``, which only the MLP-effects one does, its per-state grounding being the one that pays for a pool. ``module`` / ``class_name``: each validator module is named for the model it scores (``dias``, ``mlp_effects``, ``l1``) and holds one ``<Model>Validator``, rather than three modules sharing one name by convention.
-    """
+    """A way of scoring a learned domain, `from_checkpoint` if it is a training run's."""
 
     name: str
     module: str
     class_name: str
     summary: str
-    binarizes_schema: bool
     from_checkpoint: bool
-    grounds_in_parallel: bool = False
 
 
 VALIDATORS: dict[str, Validator] = {
@@ -127,47 +122,81 @@ VALIDATORS: dict[str, Validator] = {
         name="dias",
         module="dias.validation.dias",
         class_name="DiasValidator",
-        summary="DIAS: lifted schemas read off a trained checkpoint",
-        binarizes_schema=True,
+        summary="DIAS: the learned domain of a training run",
         from_checkpoint=True,
     ),
     "mlp": Validator(
         name="mlp",
         module="dias.validation.mlp_effects",
         class_name="MlpEffectsValidator",
-        summary="MLP effects: effects predicted from the state, no lifted schema",
-        binarizes_schema=False,
+        summary="MLP effects: learned preconditions, effects predicted from the state",
         from_checkpoint=True,
-        grounds_in_parallel=True,
     ),
     "l1": Validator(
         name="l1",
-        module="dias.validation.l1",
-        class_name="L1Validator",
-        summary="L1 baseline: a learned PDDL domain produced outside this repo",
-        binarizes_schema=False,
+        module="dias.validation.pddl",
+        class_name="PddlValidator",
+        summary="L1: the learned domain in experiments/l1_pddl/",
         from_checkpoint=False,
     ),
 }
 
-# Noise is a training-side setting, so its runs are still DIAS models.
-EXPERIMENT_VALIDATOR = {"dias": "dias", "noise": "dias", "mlp": "mlp"}
+# The checkpoints of a run: at the end of training, and at the lowest validation loss.
+CHECKPOINTS = ("final", "best")
+
+EXPERIMENT_VALIDATOR = {"dias": "dias", "noise": "dias", "mlp": "mlp", "l1": "l1"}
 EXPERIMENT_TYPES = tuple(EXPERIMENT_VALIDATOR)
 
 
 def validator_class(name: str):
-    """The validator class one entry names, imported on demand."""
     from importlib import import_module
 
     spec = VALIDATORS[name]
     return getattr(import_module(spec.module), spec.class_name)
 
 
-# ── seeds and Slurm ───────────────────────────────────────────────────────────
+def training_resources(slurm_config: dict, experiment_type: str) -> dict:
+    """The section of `slurm_config` a training job of `experiment_type` takes."""
+    return slurm_config["train-noise" if experiment_type == "noise" else "train"]
+
+
+def validation_resources(slurm_config: dict, experiment_type: str) -> dict:
+    """The section of `slurm_config` a validation job of `experiment_type` takes."""
+    section = {"mlp": "validate-mlp", "noise": "validate-noise"}
+    return slurm_config[section.get(experiment_type, "validate")]
+
+
+def resolve_resources(resources: dict, domain: str) -> dict:
+    """A domain's resources: the ``defaults`` with its own entry on top."""
+    merged = dict(resources.get("defaults", {}))
+    merged.update(resources.get(domain) or {})
+    return merged
+
+
+def sbatch_resource_opts(res: dict) -> list[str]:
+    opts: list[str] = []
+    if "time" in res:
+        opts.append(f"--time={res['time']}")
+    if "mem" in res:
+        opts.append(f"--mem={res['mem']}")
+    if "cpus" in res:
+        opts.append(f"--cpus-per-task={res['cpus']}")
+    if "gres" in res:
+        opts.append(f"--gres={res['gres']}")
+    opts += list(res.get("sbatch_extra", []))
+    return opts
+
+
+def sbatch_output_opt(log_dir: Path) -> str:
+    return f"--output={Path(log_dir).resolve()}/slurm/%x-%A_%a.out"
+
+
+def prepare_slurm_logs(log_dir: Path) -> None:
+    (Path(log_dir) / "slurm").mkdir(parents=True, exist_ok=True)
 
 
 def parse_seeds(specs: list[str]) -> list[int]:
-    """Parse ``--seeds`` into a sorted, deduplicated list. Single values and inclusive ranges, space- or comma-separated: ``3 7-9`` gives ``[3, 7, 8, 9]``."""
+    """``--seeds`` as a sorted list: single values and inclusive ranges, e.g. ``3 7-9``."""
     seeds: set[int] = set()
     for spec in specs:
         for part in spec.split(","):
@@ -188,18 +217,25 @@ def parse_seeds(specs: list[str]) -> list[int]:
     return sorted(seeds)
 
 
-def resolve_seeds(args: argparse.Namespace) -> list[int]:
-    """The seeds a launch covers: an explicit subset, or ``0 .. num_runs-1``, counted from validation.yaml."""
+def resolve_seeds(
+    args: argparse.Namespace, default: list[int] | None = None
+) -> list[int]:
+    """``--seeds``, ``0 .. --num-runs - 1``, or `default`, itself defaulting to validation.yaml's seeds."""
     if args.seeds is not None:
         if args.num_runs is not None:
             raise SystemExit("--seeds and --num-runs are mutually exclusive")
         return parse_seeds(args.seeds)
-    num_runs = args.num_runs or len(load_yaml(args.validation_config)["seeds"])
-    return list(range(num_runs))
+    if args.num_runs is not None:
+        if args.num_runs < 1:
+            raise SystemExit(f"--num-runs: expected at least 1, got {args.num_runs}")
+        return list(range(args.num_runs))
+    if default is None:
+        return list(range(len(load_yaml(args.validation_config)["seeds"])))
+    return sorted(default)
 
 
 def format_array(seeds: list[int]) -> str:
-    """Compress a sorted seed list into an sbatch ``--array`` spec (``3,7-9``)."""
+    """Seeds as an sbatch ``--array`` spec, e.g. ``3,7-9``."""
     parts: list[str] = []
     start = prev = seeds[0]
     for seed in seeds[1:]:
@@ -212,75 +248,35 @@ def format_array(seeds: list[int]) -> str:
     return ",".join(parts)
 
 
-def resolve_resources(slurm_cfg: dict, domain: str) -> dict:
-    """A domain's Slurm resources: the ``defaults`` block plus its own entry."""
-    merged = dict(slurm_cfg.get("defaults", {}))
-    merged.update(slurm_cfg.get(domain) or {})
-    return merged
-
-
-def sbatch_resource_opts(res: dict) -> list[str]:
-    """The sbatch flags a resolved resource block asks for. This is what the fields of the two slurm-resources files mean."""
-    opts: list[str] = []
-    if "time" in res:
-        opts.append(f"--time={res['time']}")
-    if "mem" in res:
-        opts.append(f"--mem={res['mem']}")
-    if "cpus" in res:
-        opts.append(f"--cpus-per-task={res['cpus']}")
-    if "gres" in res:
-        opts.append(f"--gres={res['gres']}")
-    opts += list(res.get("sbatch_extra", []))
-    return opts
-
-
-def allocated_cpus() -> int:
-    """How many CPUs this process may actually use: the affinity mask a Slurm job is pinned to, or the machine's count off the cluster."""
-    try:
-        return len(os.sched_getaffinity(0))
-    except AttributeError:  # not Linux
-        return os.cpu_count() or 1
-
-
-def sbatch_output_opt(log_dir: Path) -> str:
-    """Where an array task's stdout goes, absolute: the scripts' own ``#SBATCH --output`` is relative and would only resolve from the repository root."""
-    return f"--output={Path(log_dir).resolve()}/slurm/%x-%A_%a.out"
-
-
-def prepare_slurm_logs(log_dir: Path) -> None:
-    """Create the directory ``#SBATCH --output`` writes into, under ``--log-dir``: sbatch refuses a job whose output directory is missing."""
-    (Path(log_dir) / "slurm").mkdir(parents=True, exist_ok=True)
-
-
-# ── shared arguments ──────────────────────────────────────────────────────────
-
-
 def add_domain_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--domains",
         nargs="+",
         default=None,
-        help="Domain folders under pddl/ to run (default: all of them).",
+        help="Domain folders under pddl/ (default: all).",
     )
+    add_seed_arguments(parser, "the seeds validation.yaml lists")
+
+
+def add_seed_arguments(parser: argparse.ArgumentParser, default: str) -> None:
     parser.add_argument(
         "--num-runs",
         type=int,
         default=None,
-        help="Runs (seeds 0..N-1) per domain. Default: len(validation.yaml seeds).",
+        help=f"Seeds 0 to N-1. Default: {default}.",
     )
     parser.add_argument(
         "--seeds",
         nargs="+",
         default=None,
         metavar="SEED",
-        help="Explicit seeds instead of 0..num-runs-1, as single values and/or inclusive ranges (e.g. '--seeds 3 7-9'). Use to re-run individual failed seeds. Mutually exclusive with --num-runs.",
+        help="Seeds as single values and inclusive ranges, e.g. '--seeds 0-4' or '--seeds 3 7-9'.",
     )
 
 
 def add_path_arguments(
     parser: argparse.ArgumentParser, *, train_config: bool = False
 ) -> None:
-    """The config / logs paths every pipeline script accepts."""
     parser.add_argument("--validation-config", type=Path, default=VALIDATION_CONFIG)
     parser.add_argument("--log-dir", type=Path, default=LOGS_DIR)
     if train_config:
@@ -288,24 +284,15 @@ def add_path_arguments(
 
 
 def add_logging_arguments(parser: argparse.ArgumentParser) -> None:
-    """``-v`` / ``-q``, which every script's entry point resolves the same way."""
     group = parser.add_mutually_exclusive_group()
+    group.add_argument("-v", "--verbose", action="store_true", help="Log details.")
     group.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="Report per-step detail as well as state changes.",
-    )
-    group.add_argument(
-        "-q",
-        "--quiet",
-        action="store_true",
-        help="Report only warnings and errors.",
+        "-q", "--quiet", action="store_true", help="Log warnings and errors only."
     )
 
 
 def configure_logging(args: argparse.Namespace | None = None) -> None:
-    """Install the one log handler a script gets. ``DIAS_LOG_LEVEL`` overrides the flags, for a script whose command line is fixed by a Slurm job."""
+    """Log at the level ``-v`` / ``-q`` choose, or ``DIAS_LOG_LEVEL`` names."""
     level = logging.INFO
     if getattr(args, "verbose", False):
         level = logging.DEBUG
@@ -313,15 +300,3 @@ def configure_logging(args: argparse.Namespace | None = None) -> None:
         level = logging.WARNING
     level = os.environ.get("DIAS_LOG_LEVEL", "").upper() or level
     logging.basicConfig(level=level, format="%(name)s: %(message)s")
-
-
-def select_domains(requested: list[str] | None) -> list[str]:
-    """Validate ``--domains`` against pddl/; default to every domain there."""
-    available = available_domains()
-    domains = requested or available
-    unknown = [d for d in domains if d not in available]
-    if unknown:
-        raise SystemExit(
-            f"unknown domain(s) {unknown}; {PDDL_DIR} holds {', '.join(available)}"
-        )
-    return domains

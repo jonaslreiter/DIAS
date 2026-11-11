@@ -1,4 +1,4 @@
-"""The shape of a planning domain: its relations, actions and objects. Everything downstream is a function of these lists, so a consumer that only needs metadata builds this instead of a datamodule."""
+"""The relations, actions and objects of a (domain, problem) pair."""
 
 from __future__ import annotations
 
@@ -6,15 +6,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping, Sequence
 
-DEFAULT_STATICS = ("number", "object")
+from dias.pddl.text import is_equality_predicate
+
+# Unary predicates pymimir gives every object, which get no channel.
+OMITTED_PREDICATES = ("number", "object")
+
+# PDDL's equality, as pymimir names it.
+EQUALITY = "="
 
 
 @dataclass(frozen=True)
 class DomainSchema:
-    """Relation, action and object metadata for one (domain, problem) pair.
-
-    ``relation_*`` covers only the predicates that become tensor channels; ``action_arg_positions`` is empty where action arguments are unobserved.
-    """
+    """The metadata of one (domain, problem) pair. ``relation_*`` lists the predicates that are channels of the adjacency tensor, and ``action_arg_positions`` the argument positions the action labels name."""
 
     relation_names: tuple[str, ...]
     relation_arities: tuple[int, ...]
@@ -46,15 +49,12 @@ class DomainSchema:
         cls,
         metadata: Mapping,
         *,
-        include_statics: bool = False,
-        default_statics: Sequence[str] | None = None,
+        include_equality: bool = False,
         action_arg_positions: Sequence[Sequence[int]] | None = None,
     ) -> "DomainSchema":
-        """Build from the raw dict `read_metadata` returns."""
+        """From what `read_metadata` returns."""
         relations = tensor_relations(
-            metadata["predicates"],
-            include_statics=include_statics,
-            default_statics=list(default_statics or DEFAULT_STATICS),
+            metadata["predicates"], include_equality=include_equality
         )
         actions = metadata["actions"]
         if action_arg_positions is None:
@@ -76,8 +76,7 @@ class DomainSchema:
         domain_path: str | Path,
         problem_path: str | Path,
         *,
-        include_statics: bool = False,
-        default_statics: Sequence[str] | None = None,
+        include_equality: bool = False,
         action_arguments: bool = False,
         strips_plus_actions: bool = False,
     ) -> "DomainSchema":
@@ -88,8 +87,7 @@ class DomainSchema:
         metadata = read_metadata(domain, problem)
         return cls.from_metadata(
             metadata,
-            include_statics=include_statics,
-            default_statics=default_statics,
+            include_equality=include_equality,
             action_arg_positions=argument_positions(
                 metadata["actions"],
                 domain_path=domain_path,
@@ -100,16 +98,28 @@ class DomainSchema:
 
     @classmethod
     def from_checkpoint(cls, checkpoint: Mapping) -> "DomainSchema":
-        """Rebuild from the datamodule hyper-parameters stored in a checkpoint."""
-        hparams = checkpoint["datamodule_hyper_parameters"]
-        return cls.from_pddl(
+        """From the datamodule hyper-parameters a checkpoint stores."""
+        return cls.from_run(checkpoint["datamodule_hyper_parameters"])
+
+    @classmethod
+    def from_run(
+        cls, hparams: Mapping, relation_arities: Sequence[int] | None = None
+    ) -> "DomainSchema":
+        """From a run's datamodule hyper-parameters. Given the model's `relation_arities`, it is refused if the domain file no longer gives them."""
+        schema = cls.from_pddl(
             hparams["domain_path"],
             hparams["problem_path"],
-            include_statics=hparams.get("include_statics", False),
-            default_statics=hparams.get("default_statics"),
+            include_equality=hparams.get("include_equality", False),
             action_arguments=hparams.get("action_arguments", False),
             strips_plus_actions=hparams.get("strips_plus_actions", False),
         )
+        if relation_arities is not None and list(schema.relation_arities) != list(
+            relation_arities
+        ):
+            raise ValueError(
+                f"The run was trained on relations of arities {list(relation_arities)}, but {hparams['domain_path']} gives {dict(zip(schema.relation_names, schema.relation_arities))}."
+            )
+        return schema
 
 
 def argument_positions(
@@ -119,7 +129,7 @@ def argument_positions(
     action_arguments: bool,
     strips_plus_actions: bool,
 ) -> list[tuple[int, ...]]:
-    """Which argument positions of each action are observed."""
+    """Per action, the argument positions its labels name."""
     if not action_arguments:
         return [() for _ in actions]
     if strips_plus_actions:
@@ -129,7 +139,7 @@ def argument_positions(
 
 
 def read_metadata(domain, problem) -> dict:
-    """The raw lists a pymimir domain and problem describe themselves with."""
+    """The objects, predicates and actions of a pymimir domain and problem."""
     objects = {str(o.get_index()): o.get_name() for o in problem.get_objects()}
     object_name_to_idx = {o.get_name(): o.get_index() for o in problem.get_objects()}
     predicates = sorted(
@@ -153,27 +163,20 @@ def read_metadata(domain, problem) -> dict:
 
 
 def tensor_relations(
-    predicates: Sequence[Mapping],
-    *,
-    include_statics: bool = False,
-    default_statics: Sequence[str] | None = None,
+    predicates: Sequence[Mapping], *, include_equality: bool = False
 ) -> list[Mapping]:
-    """The predicates that become channels of the adjacency tensor: arity at most two, and statics only when asked for, minus the ones every domain declares."""
-    default_statics = default_statics or DEFAULT_STATICS
-    keep = []
-    for p in predicates:
-        if p["arity"] > 2:
-            continue
-        if not include_statics and p["static"]:
-            continue
-        if include_statics and p["static"] and p["name"] in default_statics:
-            continue
-        keep.append(p)
-    return keep
+    """The predicates that are channels of the adjacency tensor: arity at most two, not in `OMITTED_PREDICATES`, and equality only if included."""
+    return [
+        p
+        for p in predicates
+        if p["arity"] <= 2
+        and not (p["static"] and p["name"] in OMITTED_PREDICATES)
+        and (include_equality or not is_equality_predicate(p["name"], p["arity"]))
+    ]
 
 
 def strips_plus_arguments(domain_path: str | Path) -> dict[str, list[int]]:
-    """Per action, which argument positions a STRIPS+ domain leaves free."""
+    """Per action, the argument positions STRIPS+ labels name, from the domain's strips+.yaml."""
     import yaml
 
     yaml_path = Path(domain_path).parent / "strips+.yaml"

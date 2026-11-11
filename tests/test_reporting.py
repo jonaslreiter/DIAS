@@ -51,7 +51,7 @@ class VegaSpecTest(unittest.TestCase):
                 )
 
     def test_nothing_names_the_axis_it_sits_on(self):
-        """The values say what they are; a title would repeat it per panel."""
+        """The values say what they are, so a title would repeat it per panel."""
         for name, spec in SPECS.items():
             panel = spec.get("spec", spec)
             titled = [
@@ -68,7 +68,7 @@ class VegaSpecTest(unittest.TestCase):
                 self.assertEqual(titled, [])
 
     def test_no_panel_carries_a_colour_bar(self):
-        """Every cell is labelled with its value; a legend repeats it.
+        """Every cell is labelled with its value, so a legend would repeat it.
 
         `false`, not the schema's `null`, which W&B draws a bar for anyway.
         """
@@ -79,12 +79,8 @@ class VegaSpecTest(unittest.TestCase):
                     self.assertIs(layer["encoding"]["color"]["legend"], False)
 
 
-class ChartQueryTest(unittest.TestCase):
-    def test_the_panel_reads_the_table_from_history_at_a_step(self):
-        """The two together are what put a working step slider under the panel.
-
-        wandb.plot_table binds to summaryTable, which holds only the last table logged under a key. historyTable keeps every step, but without `index` the panel has no step to draw and comes up empty.
-        """
+class ChartTest(unittest.TestCase):
+    def test_a_heatmap_binds_its_table_to_the_specification(self):
         from dias.reporting.charts import heatmap
 
         chart = heatmap(
@@ -94,29 +90,9 @@ class ChartQueryTest(unittest.TestCase):
             columns=("row", "column", "probability"),
             axis_labels=(["a", "b"], ["x", "y"]),
             fields={"x": "column", "y": "row", "value": "probability"},
-            step=150,
         )
-        chart.set_key("add_effects")
-        panel = chart.spec.config_value["panel_config"]
-        query = panel["userQuery"]
-        fields = query["queryFields"][0]["fields"]
-        names = [f["name"] for f in fields]
-
-        self.assertIn("historyTable", names)
-        self.assertNotIn("summaryTable", names)
-
-        (history,) = [f for f in fields if f["name"] == "historyTable"]
-        self.assertEqual(
-            history["args"],
-            [
-                {"name": "extraKeys", "value": []},
-                {"name": "tableKey", "value": "add_effects_table"},
-                {"name": "index", "value": 150},
-            ],
-        )
-        self.assertIs(panel["showStepSelector"], True)
-        # Deliberately absent: naming an opening position the table has not finished uploading to made a live run's panels blink in and out.
-        self.assertNotIn("defaultViewedStepIndex", panel)
+        self.assertEqual(chart.table.columns, ["row", "column", "probability"])
+        self.assertEqual(len(chart.table.data), 4)
 
 
 def trainer(logger=None, sanity_checking=False, global_step=7, datamodule=None):
@@ -148,20 +124,12 @@ class CadenceTest(unittest.TestCase):
             SchemaChartCallback(log_every_n_validations=0)
 
 
-class PanelStepTest(unittest.TestCase):
-    def test_the_query_names_one_step_for_the_whole_run(self):
-        """A configuration that keeps moving points the page at a table that has not finished uploading, which makes a live run's panels blink."""
-        callback = SchemaChartCallback()
-        named = [callback._panel_step(trainer(global_step=s)) for s in (50, 100, 150)]
-        self.assertEqual(named, [50, 50, 50])
-
-
 class ChartSetTest(unittest.TestCase):
     """What a logging pass produces, without a W&B run to send it to."""
 
     def charts(self, callback, **overrides):
         model, _ = build_model(**overrides)
-        return callback._charts(trainer(), model, SPEC_IDS, 0)
+        return callback._charts(trainer(), model, SPEC_IDS)
 
     def test_the_full_model_reports_effects_preconditions_and_selection(self):
         callback = SchemaChartCallback()
@@ -178,9 +146,8 @@ class ChartSetTest(unittest.TestCase):
             },
         )
 
-    def test_state_dependent_effects_have_no_lifted_panel_to_draw(self):
-        """The MLP-effects model: preconditions are a schema, its effects are not."""
-        charts = self.charts(SchemaChartCallback(), state_dependent_effects=True)
+    def test_mlp_effects_have_no_lifted_panel_to_draw(self):
+        charts = self.charts(SchemaChartCallback(), mlp_effects=True)
         self.assertEqual(
             set(charts), {"positive_preconditions", "negative_preconditions"}
         )
@@ -209,7 +176,7 @@ class ChartSetTest(unittest.TestCase):
 
     def test_a_table_holds_one_row_per_cell_of_the_tensor(self):
         model, _ = build_model()
-        charts = SchemaChartCallback()._charts(trainer(), model, SPEC_IDS, 0)
+        charts = SchemaChartCallback()._charts(trainer(), model, SPEC_IDS)
         chart = charts["add_effects"]
         schema = model.schema_logits()
         self.assertEqual(len(chart.table.data), schema.effects[..., 0].numel())
@@ -269,7 +236,7 @@ class ImportLayeringTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_matplotlib_left_the_package(self):
-        """It went with the rendered heatmaps; the charts are drawn in the browser."""
+        """The charts are drawn in the browser."""
         root = Path(dias.__file__).parent
         offenders = [
             str(path.relative_to(root))

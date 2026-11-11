@@ -2,10 +2,6 @@ data:
   init_args:
     domain_path: pddl/sokoban/domain.pddl
     problem_path: pddl/sokoban/train.pddl
-    min_per_action_train: 20
-    min_per_action_valid: 10
-    max_per_action_train: 1000
-    max_per_action_valid: 500
 model:
   init_args:
-    aux_loss_alpha: 1.0
+    aux_loss_alpha: 0.1

@@ -1,4 +1,4 @@
-"""Loading a trained run: its model, its datamodule settings, its domain."""
+"""Loading a trained run: its model, data settings and domain metadata."""
 
 from __future__ import annotations
 
@@ -9,18 +9,7 @@ import torch
 
 from dias.models.dias import DIAS
 from dias.schema import DomainSchema
-
-# Sampling parameters PddlGraphDataModule no longer accepts; dropped so older checkpoints still load.
-RETIRED_HPARAMS = frozenset(
-    {
-        "method",
-        "num_val",
-        "num_test",
-        "balanced_min_per_label",
-        "balanced_max_steps",
-        "inapplicable_actions_ratio",
-    }
-)
+from dias.schema.export import learned_domain
 
 
 @dataclass(frozen=True)
@@ -37,35 +26,31 @@ class TrainedRun:
         return self.datamodule_hparams["domain_path"]
 
 
-def resolve_best_checkpoint(checkpoint_dir: Path) -> Path:
-    """The ``best-epoch*.ckpt`` most recently written in `checkpoint_dir`.
-
-    Re-running a seed reuses the directory and Lightning keeps the old file under a ``-v1`` suffix, so mtime picks the current attempt rather than an arbitrary glob hit.
-    """
-    matches = list(checkpoint_dir.glob("best-epoch*.ckpt"))
+def resolve_checkpoint(checkpoint_dir: Path, name: str = "final") -> Path:
+    """The newest ``<name>-epoch*.ckpt`` in `checkpoint_dir`: ``final`` is the model at the end of training, ``best`` the one with the lowest validation loss."""
+    matches = list(checkpoint_dir.glob(f"{name}-epoch*.ckpt"))
     if not matches:
         raise FileNotFoundError(
-            f"No best-epoch*.ckpt found in {checkpoint_dir} (run did not finish?)"
+            f"No {name}-epoch*.ckpt found in {checkpoint_dir} (run did not start?)"
         )
     return max(matches, key=lambda path: path.stat().st_mtime)
 
 
-def load_run(model_id: str, logs_path: str) -> TrainedRun:
-    """Load the model and domain metadata of one run under `logs_path`."""
-    checkpoint_path = resolve_best_checkpoint(
-        Path(logs_path) / "dias" / model_id / "checkpoints"
+def load_run(model_id: str, logs_path: str, checkpoint: str = "final") -> TrainedRun:
+    """Load the model and domain metadata of one run under `logs_path`, from its `checkpoint` (see `resolve_checkpoint`)."""
+    checkpoint_path = resolve_checkpoint(
+        Path(logs_path) / "dias" / model_id / "checkpoints", checkpoint
     )
     checkpoint = torch.load(checkpoint_path, map_location="cpu")
 
     hparams = {
         key: value
         for key, value in checkpoint["datamodule_hyper_parameters"].items()
-        if not key.startswith("_") and key not in RETIRED_HPARAMS
+        if not key.startswith("_")
     }
-    # Paths in a checkpoint are relative to the repository root, where the run was launched.
-    for key in ("domain_path", "problem_path", "pt_file"):
-        if hparams.get(key) is not None:
-            hparams[key] = str(Path(hparams[key]).resolve())
+    # Relative to the directory the run was launched from.
+    for key in ("domain_path", "problem_path"):
+        hparams[key] = str(Path(hparams[key]).resolve())
 
     model = DIAS.load_from_checkpoint(str(checkpoint_path), map_location="cpu")
     model.to("cpu")
@@ -75,12 +60,18 @@ def load_run(model_id: str, logs_path: str) -> TrainedRun:
         checkpoint_path=str(checkpoint_path),
         model=model,
         datamodule_hparams=hparams,
-        schema=DomainSchema.from_pddl(
-            hparams["domain_path"],
-            hparams["problem_path"],
-            include_statics=hparams.get("include_statics", False),
-            default_statics=hparams.get("default_statics"),
-            action_arguments=hparams.get("action_arguments", False),
-            strips_plus_actions=hparams.get("strips_plus_actions", False),
-        ),
+        schema=DomainSchema.from_run(hparams, model.hparams["relation_arities"]),
+    )
+
+
+def learned_pddl(run: TrainedRun, threshold: float | None = None) -> tuple[str, float]:
+    """The run's learned domain and its derivation threshold: the domain written beside the checkpoint, or derived anew at `threshold` if given."""
+    written = Path(run.checkpoint_path).with_suffix(".pddl")
+    if threshold is None and written.exists():
+        return written.read_text(), run.model.hparams.derivation_threshold
+    if threshold is None:
+        threshold = run.model.hparams.derivation_threshold
+    return (
+        learned_domain(run.model, run.schema, run.datamodule_hparams, threshold),
+        threshold,
     )

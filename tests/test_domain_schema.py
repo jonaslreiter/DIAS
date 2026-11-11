@@ -2,7 +2,8 @@
 
 import unittest
 
-from checkpoints import DOMAIN, TRAIN_PROBLEM
+from checkpoints import DOMAIN, TRAIN_PROBLEM, datamodule_hparams
+from dias.schema import DomainSchema
 from dias.schema.domain import read_metadata, tensor_relations
 
 
@@ -26,10 +27,10 @@ class ReadMetadataTest(unittest.TestCase):
         predicates = self.metadata["predicates"]
         self.assertEqual(
             [p["name"] for p in predicates],
-            ["clear", "eq", "number", "object", "on", "on-table"],
+            ["=", "clear", "number", "object", "on", "on-table"],
         )
         self.assertEqual(
-            {p["name"] for p in predicates if p["static"]}, {"eq", "number", "object"}
+            {p["name"] for p in predicates if p["static"]}, {"=", "number", "object"}
         )
         self.assertEqual(predicates[4], {"name": "on", "arity": 2, "static": False})
 
@@ -56,17 +57,39 @@ class TensorRelationsTest(unittest.TestCase):
     def names(self, **kwargs) -> list[str]:
         return [p["name"] for p in tensor_relations(self.PREDICATES, **kwargs)]
 
-    def test_arity_above_two_and_statics_are_dropped(self):
-        self.assertEqual(self.names(), ["one", "two"])
+    def test_arity_above_two_and_the_object_type_are_dropped(self):
+        self.assertEqual(self.names(), ["one", "two", "static"])
 
-    def test_asking_for_statics_still_drops_the_universal_ones(self):
-        self.assertEqual(self.names(include_statics=True), ["one", "two", "static"])
-
-    def test_which_statics_count_as_universal_can_be_named(self):
+    def test_equality_is_a_relation_only_when_asked_for(self):
+        equality = [
+            {"name": "=", "arity": 2, "static": True},
+            {"name": "Equal", "arity": 2, "static": True},
+            {"name": "eq", "arity": 1, "static": True},
+        ]
+        names = lambda **kwargs: [
+            p["name"] for p in tensor_relations(self.PREDICATES + equality, **kwargs)
+        ]
+        self.assertEqual(names(), ["one", "two", "static", "eq"])
         self.assertEqual(
-            self.names(include_statics=True, default_statics=["static"]),
-            ["one", "two", "object"],
+            names(include_equality=True),
+            ["one", "two", "static", "=", "Equal", "eq"],
         )
+
+
+class CheckpointSchemaTest(unittest.TestCase):
+    """A stored run rebuilds the relations it was trained with."""
+
+    def relation_names(self, equality: bool) -> tuple[str, ...]:
+        checkpoint = {"datamodule_hyper_parameters": datamodule_hparams(equality)}
+        return DomainSchema.from_checkpoint(checkpoint).relation_names
+
+    def test_equality_is_a_relation_only_where_the_run_had_it(self):
+        self.assertIn("=", self.relation_names(equality=True))
+        self.assertNotIn("=", self.relation_names(equality=False))
+
+    def test_a_domain_that_changed_since_the_run_is_refused(self):
+        with self.assertRaisesRegex(ValueError, "gives"):
+            DomainSchema.from_run(datamodule_hparams(), [1, 1, 1])
 
 
 if __name__ == "__main__":

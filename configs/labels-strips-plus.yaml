@@ -1,0 +1,8 @@
+# Transitions are labelled with STRIPS+ actions, whose arguments are those at the positions in pddl/<domain>/strips+.yaml.
+data:
+  init_args:
+    action_arguments: true
+    strips_plus_actions: true
+model:
+  init_args:
+    force_action_args: true

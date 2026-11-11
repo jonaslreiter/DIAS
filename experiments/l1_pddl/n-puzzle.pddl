@@ -1,0 +1,78 @@
+(define (domain cell-npuzzle)
+  (:requirements :strips :negative-preconditions)
+  (:predicates
+    (tile ?t)
+    (cell ?c)
+    (at ?t ?c)
+    (blank ?c)
+    (above ?c ?cc)
+    (right ?c ?pccp))
+
+  (:action move-down
+    :parameters (?untyped1 ?untyped2 ?untyped3)
+    :precondition (and
+      (above ?untyped2 ?untyped3)
+      (at ?untyped1 ?untyped2)
+      (blank ?untyped3)
+      (cell ?untyped2)
+      (cell ?untyped3)
+      (not (at ?untyped1 ?untyped3))
+      (not (blank ?untyped2))
+      (tile ?untyped1))
+    :effect (and
+      (at ?untyped1 ?untyped3)
+      (blank ?untyped2)
+      (not (at ?untyped1 ?untyped2))
+      (not (blank ?untyped3))))
+
+  (:action move-up
+    :parameters (?untyped1 ?untyped2 ?untyped3)
+    :precondition (and
+      (above ?untyped3 ?untyped2)
+      (at ?untyped1 ?untyped2)
+      (blank ?untyped3)
+      (cell ?untyped2)
+      (cell ?untyped3)
+      (not (at ?untyped1 ?untyped3))
+      (not (blank ?untyped2))
+      (tile ?untyped1))
+    :effect (and
+      (at ?untyped1 ?untyped3)
+      (blank ?untyped2)
+      (not (at ?untyped1 ?untyped2))
+      (not (blank ?untyped3))))
+
+  (:action move-left
+    :parameters (?untyped1 ?untyped2 ?untyped3)
+    :precondition (and
+      (at ?untyped1 ?untyped2)
+      (blank ?untyped3)
+      (cell ?untyped2)
+      (cell ?untyped3)
+      (not (at ?untyped1 ?untyped3))
+      (not (blank ?untyped2))
+      (right ?untyped2 ?untyped3)
+      (tile ?untyped1))
+    :effect (and
+      (at ?untyped1 ?untyped3)
+      (blank ?untyped2)
+      (not (at ?untyped1 ?untyped2))
+      (not (blank ?untyped3))))
+
+  (:action move-right
+    :parameters (?untyped1 ?untyped2 ?untyped3)
+    :precondition (and
+      (at ?untyped1 ?untyped2)
+      (blank ?untyped3)
+      (cell ?untyped2)
+      (cell ?untyped3)
+      (not (at ?untyped1 ?untyped3))
+      (not (blank ?untyped2))
+      (right ?untyped3 ?untyped2)
+      (tile ?untyped1))
+    :effect (and
+      (at ?untyped1 ?untyped3)
+      (blank ?untyped2)
+      (not (at ?untyped1 ?untyped2))
+      (not (blank ?untyped3))))
+)

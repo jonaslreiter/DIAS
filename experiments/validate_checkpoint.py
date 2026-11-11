@@ -1,11 +1,8 @@
-"""Validate one learned action model on one PDDL problem and print the result, where ``experiments/validate_runs.py`` walks a whole grid.
+"""Score one learned domain on one problem and print the result: a training run's (``--validator dias`` or ``mlp``, given by ``--model-id``) or any learned PDDL domain (``--validator l1``). The test states are drawn as validation.yaml says.
 
-``--validator`` picks what is scored: ``dias`` a trained checkpoint, whose lifted schema is binarized at ``--threshold``; ``mlp`` an MLP-effects checkpoint, which has no lifted schema; ``l1`` a learned PDDL domain from outside this repository, given as ``--original-domain`` / ``--learned-domain`` rather than a run id. Sampling defaults come from ``experiments/configs/validation.yaml``.
-
-Examples
---------
+Examples:
     python experiments/validate_checkpoint.py --validator dias --model-id <run-id> --problem pddl/satellite/test-1.pddl
-    python experiments/validate_checkpoint.py --validator l1 --original-domain pddl/satellite/domain.pddl --learned-domain learned/satellite.pddl --problem pddl/satellite/test-1.pddl
+    python experiments/validate_checkpoint.py --validator l1 --original-domain pddl/satellite/domain.pddl --learned-domain experiments/l1_pddl/satellite.pddl --problem pddl/satellite/test-1.pddl
 """
 
 from __future__ import annotations
@@ -15,10 +12,11 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))  # for `import pipeline`
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from pipeline import configure_logging  # noqa: E402
 from pipeline import (
+    CHECKPOINTS,
     LOGS_DIR,
     VALIDATION_CONFIG,
     VALIDATORS,
@@ -33,16 +31,21 @@ def _validator_help() -> str:
 
 
 def _construction_kwargs(args: argparse.Namespace) -> dict:
-    """The arguments that differ between a checkpoint and a learned domain."""
+    """The validator's arguments."""
     validator = VALIDATORS[args.validator]
     common = {
-        "logs_path": str(args.log_dir.resolve()),
         "problem_path": str(args.problem.resolve()),
+        "force_injective": args.force_injective,
+        "num_workers": args.num_workers,
     }
     if not validator.from_checkpoint:
         if not (args.original_domain and args.learned_domain):
             raise SystemExit(
                 f"--validator {args.validator} scores a learned PDDL domain: pass --original-domain and --learned-domain"
+            )
+        if args.threshold is not None or args.checkpoint != "final":
+            raise SystemExit(
+                f"--threshold and --checkpoint pick a training run's learned domain; {validator.summary}"
             )
         return {
             **common,
@@ -51,16 +54,33 @@ def _construction_kwargs(args: argparse.Namespace) -> dict:
         }
     if not args.model_id:
         raise SystemExit(f"--validator {args.validator} needs --model-id")
-    kwargs = {**common, "model_id": args.model_id}
-    if validator.binarizes_schema:
-        kwargs["threshold"] = args.threshold
-    elif args.threshold != 0.5:
-        raise SystemExit(
-            f"--threshold applies to a validator that reads a lifted schema; {validator.summary}"
-        )
+    kwargs = {
+        **common,
+        "model_id": args.model_id,
+        "logs_path": str(args.log_dir.resolve()),
+        "threshold": args.threshold,
+        "checkpoint": args.checkpoint,
+    }
     if args.validator == "mlp":
-        kwargs |= {"num_workers": args.num_workers, "batch_size": args.batch_size}
+        kwargs["batch_size"] = args.batch_size
     return kwargs
+
+
+SAMPLING_SETTINGS = ("num_samples", "walk_length", "min_walks")
+
+
+def _sampling(args: argparse.Namespace, configured: dict):
+    """validation.yaml's sampling with the settings given on the command line."""
+    from dias.validation.successors import sampling_from_record
+
+    record = dict(configured)
+    for setting in SAMPLING_SETTINGS:
+        if getattr(args, setting) is not None:
+            record[setting] = getattr(args, setting)
+    try:
+        return sampling_from_record(record)
+    except ValueError as error:
+        raise SystemExit(str(error))
 
 
 def main() -> int:
@@ -83,39 +103,56 @@ def main() -> int:
     p.add_argument("--original-domain", type=Path, default=None, help="l1 only.")
     p.add_argument("--learned-domain", type=Path, default=None, help="l1 only.")
     p.add_argument("--log-dir", type=Path, default=LOGS_DIR)
-    # From validation.yaml, so a single-problem check samples what the sweep does.
-    p.add_argument("--num-samples", type=int, default=int(defaults["num_samples"]))
-    p.add_argument(
-        "--sample-population", type=int, default=int(defaults["sample_population"])
-    )
+    p.add_argument("--num-samples", type=int, default=None)
+    p.add_argument("--walk-length", type=int, default=None)
+    p.add_argument("--min-walks", type=int, default=None)
     p.add_argument(
         "--sample-seed",
         type=int,
         default=defaults.get("sample_seed"),
-        help="Fix the state draw. Unset draws freshly; either way the seed is reported and reproduces the states.",
+        help="The seed of the state draw. Default: drawn and reported.",
     )
     p.add_argument(
         "--threshold",
         type=float,
-        default=0.5,
-        help="Binarization threshold for the learned schema (dias only). Default 0.5, what the paper reports.",
+        default=None,
+        help="Derive the learned domain at this threshold instead of scoring the one beside the checkpoint (dias and mlp).",
     )
-    p.add_argument("--num-workers", type=int, default=1, help="mlp only.")
+    p.add_argument(
+        "--checkpoint",
+        default="final",
+        choices=CHECKPOINTS,
+        help="The checkpoint to score: final (default) or best (dias and mlp).",
+    )
+    p.add_argument(
+        "--force-injective",
+        action=argparse.BooleanOptionalAction,
+        default=bool(defaults.get("force_injective", False)),
+        help="Replace what the learned domain says about equality with the distinctness of every two parameters. Default: validation.yaml's.",
+    )
+    p.add_argument(
+        "--num-workers",
+        type=int,
+        default=1,
+        help="Worker processes to score states in.",
+    )
     p.add_argument("--batch-size", type=int, default=4096, help="mlp only.")
     p.add_argument("--out", type=Path, default=None, help="Write the result JSON here.")
     add_logging_arguments(p)
     args = p.parse_args()
     configure_logging(args)
 
+    sampling = _sampling(args, defaults["sampling"])
     validation = validator_class(args.validator)(**_construction_kwargs(args))
-    validation.setup(
-        num_samples=args.num_samples,
-        sample_population=args.sample_population,
-        seed=args.sample_seed,
-    )
+    validation.setup(sampling, seed=args.sample_seed)
     result = validation.validate()
-    # Passing this back as --sample-seed scores the next run on these exact states.
-    result = {"sample_seed": validation.sample_seed, **result}
+    result = {
+        "sample_seed": validation.sample_seed,
+        "sampling": sampling.record(),
+        "threshold": validation.threshold,
+        "force_injective": args.force_injective,
+        **result,
+    }
 
     text = json.dumps(result, indent=2, default=str)
     print(text)

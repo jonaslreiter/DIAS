@@ -1,25 +1,20 @@
-# Lightning overlay for the instance-size scaling benchmark, composed last, after `configs/main.yaml` and `pddl/<domain>/config.yaml`. experiments/scaling/benchmark.py builds that chain and adds the timing callback, so what is measured is the ordinary DIAS training step and not a stand-in.
-#
-# The point of the overlay is to hold everything except the *instance* fixed, so the only thing that varies along a curve is the number of objects.
+# This overlay of the scaling study is composed after configs/main.yaml and pddl/<domain>/config.yaml. It sets the same number of transitions and the same batch size in every domain, and turns off validation, logging and checkpoints.
 
 data:
   init_args:
-    # Pinned rather than a min/max window: otherwise delivery would sample 10x more than blocks-3 and the domains would not be comparable, and the per-instance sampling time would leak into a benchmark about the training step.
     min_per_action_train: 100
     min_per_action_valid: 50
     max_per_action_train: 100
     max_per_action_valid: 50
-    # The other multiplier on the B x R x N x N adjacency tensors whose growth this study measures, so it stays constant across the ladder.
     batch_size: 200
     num_workers: 0
 
 trainer:
-  # This run produces timings, not a model.
   limit_val_batches: 0
   num_sanity_val_steps: 0
   logger: false
   enable_checkpointing: false
   enable_progress_bar: false
   enable_model_summary: false
-  # Backstop only: benchmark.py sets this to warmup + measure steps.
+  # benchmark.py sets this to the number of warm-up and measured steps.
   max_steps: 120

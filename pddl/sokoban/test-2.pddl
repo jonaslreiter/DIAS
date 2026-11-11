@@ -1,14 +1,6 @@
 (define (problem sokoban-7x7-4)
   (:domain sokoban-domain)
-  (:objects 
-    s_1_1 s_1_2 s_1_3 s_1_4 s_1_5 s_1_6 s_1_7
-    s_2_1 s_2_2 s_2_3 s_2_4 s_2_5 s_2_6 s_2_7
-    s_3_1 s_3_2 s_3_3 s_3_4 s_3_5 s_3_6 s_3_7
-    s_4_1 s_4_2 s_4_3 s_4_4 s_4_5 s_4_6 s_4_7
-    s_5_1 s_5_2 s_5_3 s_5_4 s_5_5 s_5_6 s_5_7
-    s_6_1 s_6_2 s_6_3 s_6_4 s_6_5 s_6_6 s_6_7
-    s_7_1 s_7_2 s_7_3 s_7_4 s_7_5 s_7_6 s_7_7
-  )
+  (:objects s_1_1 s_1_2 s_1_3 s_1_4 s_1_5 s_1_6 s_1_7 s_2_1 s_2_2 s_2_3 s_2_4 s_2_5 s_2_6 s_2_7 s_3_1 s_3_2 s_3_3 s_3_4 s_3_5 s_3_6 s_3_7 s_4_1 s_4_2 s_4_3 s_4_4 s_4_5 s_4_6 s_4_7 s_5_1 s_5_2 s_5_3 s_5_4 s_5_5 s_5_6 s_5_7 s_6_1 s_6_2 s_6_3 s_6_4 s_6_5 s_6_6 s_6_7 s_7_1 s_7_2 s_7_3 s_7_4 s_7_5 s_7_6 s_7_7)
   (:init
     (adjacent s_1_1 s_1_2)
     (adjacent s_1_2 s_1_1)
@@ -322,7 +314,10 @@
     (has_box s_2_1)
     (has_box s_1_2)
     (has_box s_3_4)
-    (has_box s_3_2)
-  )
-  (:goal (and (has_box s_3_1) (has_box s_2_2) (has_box s_1_7) (has_box s_5_7)))
+    (has_box s_3_2))
+  (:goal (and
+    (has_box s_3_1)
+    (has_box s_2_2)
+    (has_box s_1_7)
+    (has_box s_5_7)))
 )

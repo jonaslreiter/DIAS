@@ -1,7 +1,4 @@
-"""The MLP-effects validator's worker side: one sampled state's expected successors and learned groundings. It imports no torch, since workers are respawned every few states to release the ground actions pymimir keeps until a process exits.
-
-A successor is identified by the cells it flips relative to its state, as the XOR of a random 128-bit key per ``(relation, object, object)`` cell, which the GPU side computes from the bound objects alone.
-"""
+"""The MLP-effects validator's worker side: a state's expected successors and the groundings of its learned actions. A successor is identified by the XOR of a random 128-bit key per cell it flips. Imports no torch, since workers run under an address-space limit."""
 
 from __future__ import annotations
 
@@ -11,8 +8,8 @@ from pathlib import Path
 
 import numpy as np
 import pymimir
-from pymimir.advanced.formalism import FluentGroundAtomList, ObjectList
-from pymimir.wrapper_formalism import State
+
+from dias.pddl.states import rebuild_state
 
 _KEY_SEED = 0x5EED_D1A5
 
@@ -20,7 +17,7 @@ _WORKER: dict = {}
 
 
 def successor_keys(num_relations: int, num_objects: int) -> np.ndarray:
-    """One key per cell as two int64 words, ``(R, N, N, 2)``, the same in every process."""
+    """One key per cell as two int64 words, ``(R, O, O, 2)``, the same in every process."""
     return np.random.default_rng(_KEY_SEED).integers(
         np.iinfo(np.int64).min,
         np.iinfo(np.int64).max,
@@ -36,23 +33,17 @@ def signature_from_words(high: int, low: int) -> int:
 
 
 def flip_signature(keys: np.ndarray, flips: np.ndarray) -> int:
-    """The signature of a successor differing from its state at `flips`, ``(R, N, N)`` bool."""
+    """The signature of a successor differing from its state at `flips`, ``(R, O, O)``."""
     words = np.bitwise_xor.reduce(keys[flips], axis=0) if flips.any() else (0, 0)
     return signature_from_words(words[0], words[1])
 
 
 def init_worker(config: dict) -> None:
-    original_domain = pymimir.Domain(Path(config["original_domain_path"]))
-    learned_domain = pymimir.Domain(Path(config["learned_domain_path"]))
     _WORKER.clear()
     _WORKER.update(
         config=config,
-        original_problem=pymimir.Problem(
-            original_domain, Path(config["original_problem_path"])
-        ),
-        learned_problem=pymimir.Problem(
-            learned_domain, Path(config["learned_problem_path"])
-        ),
+        original_domain=pymimir.Domain(Path(config["original_domain_path"])),
+        learned_domain=pymimir.Domain(Path(config["learned_domain_path"])),
         keys=successor_keys(config["num_relations"], config["num_objects"]),
         learned_actions={},
     )
@@ -78,38 +69,21 @@ def _adjacency(state, config: dict) -> np.ndarray:
     return adjacency
 
 
-def _reconstruct_state(payload, target_problem):
-    adv_problem = target_problem._advanced_problem
-    fluent_pred_by_name = {
-        p.get_name(): p for p in adv_problem.get_domain().get_fluent_predicates()
-    }
-    obj_by_name = {o.get_name(): o for o in adv_problem.get_objects()}
-    atoms = [
-        adv_problem.get_or_create_ground_atom(
-            fluent_pred_by_name[pred_name],
-            ObjectList([obj_by_name[n] for n in term_names]),
-        )
-        for pred_name, term_names in payload
-        if pred_name in fluent_pred_by_name
-    ]
-    (
-        adv_state,
-        _,
-    ) = target_problem._search_context.get_state_repository().get_or_create_state(
-        FluentGroundAtomList(atoms), []
-    )
-    return State(adv_state, target_problem)
-
-
 def ground_state(payload) -> tuple:
-    """A state's adjacency, its expected successor signatures by action name, and one action index and ``(K,)`` slot binding (-1 when inactive) per learned grounding."""
+    """A state's adjacency, its expected successor signatures by action, and per learned grounding its action index and slot binding ``(M,)``, -1 for an inactive slot. Grounded on problems of its own, since pymimir keeps every action a problem grounds."""
     config = _WORKER["config"]
     channels = np.ones(config["num_relations"], dtype=bool)
     if config["eq_channel_idx"] is not None:
         channels[config["eq_channel_idx"]] = False
 
-    original_state = _reconstruct_state(payload, _WORKER["original_problem"])
-    learned_state = _reconstruct_state(payload, _WORKER["learned_problem"])
+    original_problem = pymimir.Problem(
+        _WORKER["original_domain"], Path(config["original_problem_path"])
+    )
+    learned_problem = pymimir.Problem(
+        _WORKER["learned_domain"], Path(config["learned_problem_path"])
+    )
+    original_state = rebuild_state(payload, original_problem)
+    learned_state = rebuild_state(payload, learned_problem)
     adjacency = _adjacency(original_state, config)
 
     expected: dict[str, set[int]] = defaultdict(set)
@@ -120,7 +94,6 @@ def ground_state(payload) -> tuple:
             flip_signature(_WORKER["keys"], flips)
         )
 
-    # Typed buffers: tens of millions of groundings per state do not fit as Python ints.
     actions = array("h")
     slot_objects = array("h")
     learned = _WORKER["learned_actions"]

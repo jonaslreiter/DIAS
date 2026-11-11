@@ -22,7 +22,6 @@ class DIASForwardTest(unittest.TestCase):
             num_slots=2,
             action_arities=[2],
             action_arg_positions=[[]],
-            successor_relations=True,
         )
         model.eval()
 
@@ -45,7 +44,6 @@ class DIASForwardTest(unittest.TestCase):
         )
 
         self.assertEqual(prediction.adjacency.shape, (1, 2, 2, 2))
-        # What this seed builds. float32 sums, so the tolerance sits above the accumulation error; more digits than this would fail on any BLAS or torch version change.
         torch.testing.assert_close(
             prediction.adjacency.sum(), torch.tensor(2.2110720), rtol=0, atol=1e-6
         )

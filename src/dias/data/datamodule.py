@@ -1,21 +1,18 @@
+"""The training data: transitions sampled from one problem instance (paper, App. C.2)."""
+
 import logging
 import random
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 import lightning as L
 import pymimir
 import torch
-from torch.utils.data import IterableDataset
 from torch_geometric.loader import DataLoader as PyGDataLoader
 
-from dias.data.datasets import (
-    PddlGraphDataset,
-    PddlTransitionDataset,
-    StratifiedActionIterableDataset,
-)
+from dias.data.datasets import PddlTransitionDataset, StratifiedActionIterableDataset
 from dias.data.noise import ExpectedCount, NoiseModel, Ratio, RelationStats
-from dias.data.quota import SampleQuota
 from dias.data.splitting import (
     cap_per_action,
     check_every_action_survives,
@@ -35,11 +32,9 @@ logger = logging.getLogger(__name__)
 
 
 class PddlGraphDataModule(L.LightningDataModule):
-    """One problem instance, as the transitions a training run reads.
+    """Transitions of one problem instance, sampled by a random walk until every action has its quota, split by action into training and validation, and drawn in action-balanced batches without end.
 
-    A random walk draws transitions until `SampleQuota` is met, they are split by action, and the train half is optionally corrupted by a `NoiseModel`. `batch_sampling_strategy` is ``"random"`` (a shuffled pass over the split) or ``"stratified"`` (an unbounded action-balanced stream, in which case training length comes from ``trainer.max_steps``).
-
-    The sampling arguments stay flat rather than nesting into the quota: they are what configs, sweeps and archived hyper-parameters name.
+    The training length is therefore ``trainer.max_steps``.
     """
 
     def __init__(
@@ -47,80 +42,56 @@ class PddlGraphDataModule(L.LightningDataModule):
         domain_path: str,
         problem_path: str,
         seed: Optional[int] = None,
-        include_statics: bool = True,
-        default_statics: list[str] = ["number", "object"],
+        include_equality: bool = False,
         action_arguments: bool = False,
         strips_plus_actions: bool = False,
-        pt_file: Optional[str] = None,
         min_per_action_train: Optional[int] = None,
         min_per_action_valid: Optional[int] = None,
-        min_per_action_train_floor: Optional[int] = None,
-        min_per_action_valid_floor: Optional[int] = None,
         max_per_action_train: Optional[int] = None,
         max_per_action_valid: Optional[int] = None,
         num_train: Optional[int] = None,
         num_valid: Optional[int] = None,
-        max_steps: int = 1_000_000,
+        max_walk_steps: int = 1_000_000,
         batch_size: int = 200,
-        batch_sampling_strategy: str = "stratified",
-        shuffle_train: bool = True,
         num_workers: int = 0,
         noise: NoiseModel | None = None,
     ):
         """
         Args:
-            domain_path: PDDL domain to learn the action schemas of.
-            problem_path: Instance whose transitions are the training data.
-            seed: Seed for the walk and the split. Unset follows the run's own seed.
-            include_statics: Give static predicates channels of their own, so preconditions can name types.
-            default_statics: Static predicates to leave out even then.
-            action_arguments: Label a transition with the action's arguments, not only its name.
-            strips_plus_actions: Restrict those labels to the STRIPS+ positions in strips+.yaml.
-            pt_file: Load transitions from this file instead of exploring the state space.
-            min_per_action_train: Transitions per action sampled for the training split.
-            min_per_action_valid: The same for the validation split; their ratio divides the pool.
-            min_per_action_train_floor: Raise (never lower) min_per_action_train to this.
-            min_per_action_valid_floor: The same for min_per_action_valid.
-            max_per_action_train: Cap per action, trimming a walk that overshot.
-            max_per_action_valid: The same for the validation split. Set both or neither.
-            num_train: Total training transitions, an alternative to the per-action minima.
-            num_valid: The same for the validation split.
-            max_steps: Walk length at which sampling gives up on an unmet quota.
-            batch_size: Transitions per batch, in both splits.
-            batch_sampling_strategy: 'stratified' for an endless action-balanced stream, 'random' for a shuffled pass per epoch.
-            shuffle_train: Shuffle the training split. The stratified stream ignores this.
-            num_workers: Dataloader worker processes.
-            noise: Corruption applied to the training split's states. Unset trains on clean transitions.
+            domain_path: PDDL domain whose action schemas are learned.
+            problem_path: Instance the transitions are sampled from.
+            seed: Seed of the walk and the split. Unset takes the run's seed.
+            include_equality: Give equality (`=`, or a binary `eq` or `equal`) a channel. Without it, the learned domain requires every schema's parameters to be distinct.
+            action_arguments: Label a transition with the action's arguments too, not only its name.
+            strips_plus_actions: Label it with the arguments at the STRIPS+ positions of strips+.yaml only.
+            min_per_action_train: N_min^tr, the training transitions per action the walk samples at least.
+            min_per_action_valid: N_min^val, the same for validation. The ratio of the two splits the transitions.
+            max_per_action_train: N_max^tr, the training transitions per action kept at most.
+            max_per_action_valid: N_max^val, the same for validation. Set both maxima or neither.
+            num_train: Training transitions the walk samples at least, in total.
+            num_valid: The same for validation.
+            max_walk_steps: Steps after which the walk stops, met quota or not.
+            batch_size: Transitions per batch.
+            num_workers: Data loader worker processes.
+            noise: Corruption of the training states. Unset trains on clean transitions.
         """
         super().__init__()
         self.save_hyperparameters()
 
         self.domain_path = domain_path
         self.problem_path = problem_path
-        # Unset means the run's own seed: dias.main fills it in from `seed_everything`, and outside the CLI it comes off torch, which `seed_everything` set.
         self.seed = torch.initial_seed() if seed is None else seed
         self.hparams["seed"] = self.seed
-        self.pt_file = pt_file
-        self.max_steps = max_steps
+        self.max_walk_steps = max_walk_steps
         self.batch_size = batch_size
-        self.batch_sampling_strategy = batch_sampling_strategy
-        self.shuffle_train = shuffle_train
         self.num_workers = num_workers
         self.action_arguments = action_arguments
         self.strips_plus_actions = strips_plus_actions
-        self.include_statics = include_statics
-        self.default_statics = default_statics
+        self.include_equality = include_equality
 
-        if batch_sampling_strategy not in ("random", "stratified"):
-            raise ValueError(
-                f"batch_sampling_strategy must be 'random' or 'stratified', got {batch_sampling_strategy!r}."
-            )
-        # The floors raise the minima, so `hparams` keep the per-domain values as written.
-        self.quota = SampleQuota.with_floors(
+        self.quota = SampleQuota(
             min_per_action_train=min_per_action_train,
             min_per_action_valid=min_per_action_valid,
-            min_per_action_train_floor=min_per_action_train_floor,
-            min_per_action_valid_floor=min_per_action_valid_floor,
             max_per_action_train=max_per_action_train,
             max_per_action_valid=max_per_action_valid,
             num_train=num_train,
@@ -129,7 +100,6 @@ class PddlGraphDataModule(L.LightningDataModule):
         self.noise = (
             None if noise is None else from_mapping(noise, (Ratio, ExpectedCount))
         )
-        # Hyper-parameters must stay primitive; see dias.hparams.
         self.hparams["noise"] = None if self.noise is None else to_mapping(self.noise)
 
         logger.info("Loading domain %s, problem %s", domain_path, problem_path)
@@ -138,8 +108,7 @@ class PddlGraphDataModule(L.LightningDataModule):
         self.metadata = read_metadata(self.domain, self.problem)
         self.schema = DomainSchema.from_metadata(
             self.metadata,
-            include_statics=include_statics,
-            default_statics=default_statics,
+            include_equality=include_equality,
             action_arg_positions=argument_positions(
                 self.metadata["actions"],
                 domain_path=domain_path,
@@ -160,7 +129,6 @@ class PddlGraphDataModule(L.LightningDataModule):
         assert self._base is not None, "Call .setup() first."
         return self._base
 
-    # From the schema, so available before setup().
     @property
     def num_relations(self) -> int:
         return self.schema.num_relations
@@ -202,17 +170,11 @@ class PddlGraphDataModule(L.LightningDataModule):
         return len(self.base)
 
     def setup(self, stage: Optional[str] = None) -> None:
-        if self.pt_file is not None:
-            data = torch.load(self.pt_file, weights_only=False)
-        else:
-            samples = self._sample_transitions()
-            self._postprocess_action_args(samples)
-            data = samples_to_tensors(
-                samples,
-                self.metadata,
-                include_statics=self.include_statics,
-                default_statics=self.default_statics,
-            )
+        samples = self._sample_transitions()
+        self._label_actions(samples)
+        data = samples_to_tensors(
+            samples, self.metadata, include_equality=self.include_equality
+        )
         self._base = PddlTransitionDataset(data)
 
         total = len(self._base)
@@ -224,29 +186,20 @@ class PddlGraphDataModule(L.LightningDataModule):
             self._log_action_distribution()
 
         train_noisy_s, train_noisy_ns = self._build_train_noise(self._train_idx)
-
-        if self.batch_sampling_strategy == "stratified":
-            check_every_action_survives(
-                self._base.action_indices,
-                self._base.action_names,
-                {"train": self._train_idx, "valid": self._valid_idx},
-            )
-            self._train_ds = self._make_stratified(
-                self._train_idx, 2, train_noisy_s, train_noisy_ns
-            )
-            self._valid_ds = self._make_stratified(self._valid_idx, 3)
-        else:
-            self._train_ds = PddlGraphDataset(
-                self._base, self._train_idx, train_noisy_s, train_noisy_ns
-            )
-            self._valid_ds = PddlGraphDataset(self._base, self._valid_idx)
-
+        check_every_action_survives(
+            self._base.action_indices,
+            self._base.action_names,
+            {"train": self._train_idx, "valid": self._valid_idx},
+        )
+        self._train_ds = self._make_stratified(
+            self._train_idx, 2, train_noisy_s, train_noisy_ns
+        )
+        self._valid_ds = self._make_stratified(self._valid_idx, 3)
         logger.info(
-            "%d samples: train=%d, valid=%d, batched %s.",
+            "%d samples: train=%d, valid=%d.",
             total,
             len(self._train_idx),
             len(self._valid_idx),
-            self.batch_sampling_strategy,
         )
 
     def _sample_transitions(self) -> list[dict]:
@@ -258,28 +211,27 @@ class PddlGraphDataModule(L.LightningDataModule):
             [a["name"] for a in self.metadata["actions"]],
         )
         logger.info(
-            "Sampling transitions: at least %d per action%s, walking at most %d steps. This is the slow part on a large instance.",
+            "Sampling transitions: at least %d per action%s, walking at most %d steps.",
             self.quota.min_total,
             f" and {self.quota.num_total} in total" if self.quota.num_total else "",
-            self.max_steps,
+            self.max_walk_steps,
         )
         samples = generate_random_walk(
             problem=self.problem,
             min_total_samples=self.quota.num_total,
             min_per_action=self.quota.min_total,
-            only_unseen_states=False,
-            max_steps=self.max_steps,
-            include_statics=self.include_statics,
+            max_steps=self.max_walk_steps,
         )
         if self.quota.cap is None:
             return samples
         return cap_per_action(samples, self.quota.cap)
 
-    def _postprocess_action_args(self, samples: list[dict]) -> None:
+    def _label_actions(self, samples: list[dict]) -> None:
+        """Hide the arguments the action labels do not name, as -1."""
         if self.action_arguments and self.strips_plus_actions:
-            free = strips_plus_arguments(self.domain_path)
+            named = strips_plus_arguments(self.domain_path)
             for s in samples:
-                allowed = free.get(s["action"], [])
+                allowed = named.get(s["action"], [])
                 s["action_args"] = [
                     a if p in allowed else -1 for p, a in enumerate(s["action_args"])
                 ]
@@ -290,7 +242,7 @@ class PddlGraphDataModule(L.LightningDataModule):
     def _build_train_noise(
         self, train_idx: list[int]
     ) -> tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
-        """Noisy copies of the train split's states, or None for a clean run."""
+        """Noisy copies of the training states, or None for clean training."""
         if self.noise is None or not self.noise.enabled or not train_idx:
             return None, None
         logger.info("Train split gets %s", self.noise.describe(self.relation_stats))
@@ -302,7 +254,6 @@ class PddlGraphDataModule(L.LightningDataModule):
         )
 
     def _measure_relations(self) -> RelationStats:
-        """How often each relation holds, and which an action can change."""
         base = self._base
         static_names = {p["name"] for p in self.metadata["predicates"] if p["static"]}
         is_fluent = [name not in static_names for name in base.relation_names]
@@ -346,7 +297,7 @@ class PddlGraphDataModule(L.LightningDataModule):
         noisy_next_states: Optional[torch.Tensor] = None,
     ):
         if not indices:
-            return PddlGraphDataset(self._base, [])
+            return []
         return StratifiedActionIterableDataset(
             base=self._base,
             indices=indices,
@@ -356,18 +307,107 @@ class PddlGraphDataModule(L.LightningDataModule):
             noisy_next_states=noisy_next_states,
         )
 
-    def _make_loader(self, dataset, shuffle: bool):
+    def _make_loader(self, dataset):
         return PyGDataLoader(
             dataset,
             batch_size=self.batch_size,
-            # A stream decides its own order.
-            shuffle=shuffle and not isinstance(dataset, IterableDataset),
             num_workers=self.num_workers,
             drop_last=False,
         )
 
     def train_dataloader(self):
-        return self._make_loader(self._train_ds, shuffle=self.shuffle_train)
+        return self._make_loader(self._train_ds)
 
     def val_dataloader(self):
-        return self._make_loader(self._valid_ds, shuffle=False)
+        return self._make_loader(self._valid_ds)
+
+
+@dataclass(frozen=True)
+class SampleQuota:
+    """How many transitions the walk samples: at least ``min_per_action_*`` per action, or ``num_*`` in total, or both with the same train-to-validation ratio. At most ``max_per_action_*`` per action are kept."""
+
+    min_per_action_train: int | None = None
+    min_per_action_valid: int | None = None
+    max_per_action_train: int | None = None
+    max_per_action_valid: int | None = None
+    num_train: int | None = None
+    num_valid: int | None = None
+
+    def __post_init__(self):
+        if not self.has_min and not self.has_num:
+            raise ValueError(
+                "Nothing says how much to sample: set min_per_action_train and min_per_action_valid, or num_train and num_valid, or both."
+            )
+        if (
+            self.has_min
+            and min(self.min_per_action_train, self.min_per_action_valid) <= 0
+        ):
+            raise ValueError(
+                "min_per_action_train and min_per_action_valid must be > 0."
+            )
+        if self.has_num and min(self.num_train, self.num_valid) <= 0:
+            raise ValueError("num_train and num_valid must be > 0.")
+        if (self.max_per_action_train is None) != (self.max_per_action_valid is None):
+            raise ValueError(
+                "max_per_action_train and max_per_action_valid must be set together."
+            )
+        if (
+            self.has_max
+            and min(self.max_per_action_train, self.max_per_action_valid) <= 0
+        ):
+            raise ValueError(
+                "max_per_action_train and max_per_action_valid must be > 0."
+            )
+        if self.has_max and self.has_min and self.cap < self.min_total:
+            raise ValueError(
+                f"max_per_action_* must be >= min_per_action_*: max=({self.max_per_action_train},{self.max_per_action_valid}) vs min=({self.min_per_action_train},{self.min_per_action_valid})."
+            )
+        if (
+            self.has_min
+            and self.has_num
+            and (
+                self.min_per_action_train * self.num_valid
+                != self.num_train * self.min_per_action_valid
+            )
+        ):
+            raise ValueError(
+                f"One pool cannot satisfy both ratios: min_per_action_train:min_per_action_valid = {self.min_per_action_train}:{self.min_per_action_valid}, but num_train:num_valid = {self.num_train}:{self.num_valid}."
+            )
+
+    @property
+    def has_min(self) -> bool:
+        return None not in (self.min_per_action_train, self.min_per_action_valid)
+
+    @property
+    def has_num(self) -> bool:
+        return None not in (self.num_train, self.num_valid)
+
+    @property
+    def has_max(self) -> bool:
+        return None not in (self.max_per_action_train, self.max_per_action_valid)
+
+    @property
+    def min_total(self) -> int:
+        """Transitions per action sampled at least, both splits together."""
+        return (
+            self.min_per_action_train + self.min_per_action_valid if self.has_min else 0
+        )
+
+    @property
+    def num_total(self) -> int:
+        """Transitions sampled at least, both splits together."""
+        return self.num_train + self.num_valid if self.has_num else 0
+
+    @property
+    def cap(self) -> int | None:
+        """Transitions per action kept at most, both splits together."""
+        if not self.has_max:
+            return None
+        return self.max_per_action_train + self.max_per_action_valid
+
+    @property
+    def split_weights(self) -> tuple[int, int]:
+        """The train-to-validation ratio of the split."""
+        if self.has_num:
+            return self.num_train, self.num_valid
+        return self.min_per_action_train, self.min_per_action_valid

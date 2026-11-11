@@ -1,4 +1,4 @@
-"""The gradient combiners, on losses linear in the parameters: each gradient *is* the vector it was built from, so the expected result is written down rather than recomputed by the code under test."""
+"""The gradient combiners, on losses linear in the parameters, whose gradients are the vectors they are built from."""
 
 import unittest
 
@@ -39,84 +39,60 @@ class GradientCombinerTest(unittest.TestCase):
 
 
 class PCGradTest(unittest.TestCase):
-    def combine(self, primary, auxiliary, **kwargs):
+    def combine(self, main, aux):
         weights = parameter(0.0, 0.0)
-        PCGrad(AUXILIARY_WEIGHT, **kwargs).backward(
-            linear_loss(weights, primary), linear_loss(weights, auxiliary), [weights]
+        PCGrad(AUXILIARY_WEIGHT).backward(
+            linear_loss(weights, main), linear_loss(weights, aux), [weights]
         )
         return weights.grad
 
     def test_agreeing_gradients_are_summed_unchanged(self):
-        # (1, 0) . (1, 1) > 0, and the auxiliary norm stays under the primary's.
         grad = self.combine([4.0, 0.0], [0.5, 0.5])
         torch.testing.assert_close(grad, torch.tensor([4.0 + 1.0, 1.0]))
 
     def test_a_conflicting_gradient_keeps_only_its_orthogonal_part(self):
-        """g_aux - (g_adj . g_aux / |g_adj|^2) g_adj, then g_adj + that."""
-        # The clip is disabled here: it has its own test, and the projected gradient below is longer than the primary one, so it would fire.
-        primary, auxiliary = [2.0, 0.0], [-1.0, 1.5]
-        grad = self.combine(primary, auxiliary, norm_cap=False)
-
-        g_primary = torch.tensor(primary)
-        g_auxiliary = AUXILIARY_WEIGHT * torch.tensor(auxiliary)
-        opposition = torch.dot(g_primary, g_auxiliary)
-        self.assertLess(opposition.item(), 0.0)
-        projected = (
-            g_auxiliary - opposition / torch.dot(g_primary, g_primary) * g_primary
-        )
-        # The conflicting component is gone: what is left is orthogonal.
-        torch.testing.assert_close(torch.dot(g_primary, projected), torch.tensor(0.0))
-        torch.testing.assert_close(grad, g_primary + projected)
-
-    def test_the_norm_cap_caps_the_auxiliary_gradient_at_the_primary_norm(self):
-        primary, auxiliary = [0.5, 0.0], [0.0, 10.0]
-        clipped = self.combine(primary, auxiliary)
-        unclipped = self.combine(primary, auxiliary, norm_cap=False)
-
-        g_primary = torch.tensor(primary)
-        # Orthogonal already, so only the clip separates the two results.
+        """g_aux - (g_main . g_aux / |g_main|^2) g_main."""
+        g_main = torch.tensor([2.0, 0.0])
+        g_aux = torch.tensor([-1.0, 1.5])
+        projected = PCGrad._project(g_main, g_aux)
+        torch.testing.assert_close(projected, torch.tensor([0.0, 1.5]))
         torch.testing.assert_close(
-            unclipped, g_primary + AUXILIARY_WEIGHT * torch.tensor(auxiliary)
+            self.combine([2.0, 0.0], [-1.0, 1.5]),
+            g_main + PCGrad._cap_norm(g_main, AUXILIARY_WEIGHT * projected),
         )
-        torch.testing.assert_close(
-            torch.norm(clipped - g_primary), torch.norm(g_primary)
-        )
+
+    def test_the_auxiliary_gradient_is_capped_at_the_main_norm(self):
+        main = torch.tensor([0.5, 0.0])
+        grad = self.combine([0.5, 0.0], [0.0, 10.0])
+        torch.testing.assert_close(torch.norm(grad - main), torch.norm(main))
 
     def test_a_parameter_only_one_loss_reaches_gets_that_gradient(self):
-        primary_only = parameter(0.0, 0.0)
-        auxiliary_only = parameter(0.0, 0.0)
+        main_only = parameter(0.0, 0.0)
+        aux_only = parameter(0.0, 0.0)
         untouched = parameter(0.0, 0.0)
         PCGrad(AUXILIARY_WEIGHT).backward(
-            linear_loss(primary_only, [1.0, 1.0]),
-            linear_loss(auxiliary_only, [3.0, 3.0]),
-            [primary_only, auxiliary_only, untouched],
+            linear_loss(main_only, [1.0, 1.0]),
+            linear_loss(aux_only, [3.0, 3.0]),
+            [main_only, aux_only, untouched],
         )
-        self.assertEqual(primary_only.grad.tolist(), [1.0, 1.0])
-        self.assertEqual(auxiliary_only.grad.tolist(), [6.0, 6.0])
+        self.assertEqual(main_only.grad.tolist(), [1.0, 1.0])
+        self.assertEqual(aux_only.grad.tolist(), [6.0, 6.0])
         self.assertIsNone(untouched.grad)
 
-    def test_a_vanishing_primary_gradient_leaves_the_auxiliary_one_alone(self):
-        """There is no direction to project onto, so nothing is removed."""
-        weights = parameter(0.0, 0.0)
-        PCGrad(1.0, norm_cap=False).backward(
-            linear_loss(weights, [0.0, 0.0]),
-            linear_loss(weights, [-1.0, 2.0]),
-            [weights],
-        )
-        self.assertEqual(weights.grad.tolist(), [-1.0, 2.0])
+    def test_a_vanishing_main_gradient_is_not_projected_against(self):
+        g_aux = torch.tensor([-1.0, 2.0])
+        torch.testing.assert_close(PCGrad._project(torch.zeros(2), g_aux), g_aux)
 
 
 class FactoryTest(unittest.TestCase):
     def test_the_combiner_matches_the_configured_ablation(self):
         self.assertIsInstance(
-            gradient_combiner(True, 1.0, auxiliary_active=False), SingleObjective
+            gradient_combiner(True, 1.0, aux_active=False), SingleObjective
         )
         self.assertIsInstance(
-            gradient_combiner(False, 1.0, auxiliary_active=True), WeightedSum
+            gradient_combiner(False, 1.0, aux_active=True), WeightedSum
         )
-        self.assertIsInstance(
-            gradient_combiner(True, 1.0, auxiliary_active=True), PCGrad
-        )
+        self.assertIsInstance(gradient_combiner(True, 1.0, aux_active=True), PCGrad)
 
 
 if __name__ == "__main__":

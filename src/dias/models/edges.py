@@ -1,4 +1,4 @@
-"""How the encoder's edge types are numbered, and the edges themselves."""
+"""The edges of a transition's graph and how their types are numbered (paper, Sec. 4.1)."""
 
 from __future__ import annotations
 
@@ -10,18 +10,14 @@ import torch.nn.functional as F
 
 
 class EdgeTypeLayout(nn.Module):
-    """The one place that knows what an edge type id means.
-
-    The encoder reads one graph per transition, whose edges carry a type from four consecutive bands. Over `R` relations and `A` action-argument positions:
+    """The edge types of a transition's graph, in four consecutive bands over `R` relations and `A` observed action-argument positions:
 
     band | edge types
     --- | ---
     `[0, R)` | the state's atoms
     `[R, 2R)` | the same, reversed
     `[2R, 2R + A)` | action self-loops: which argument of the action this object was passed as
-    `[2R + A, 2R + A + 4R)` | what the transition changed: deleted, deleted reversed, added, added reversed
-
-    The last band exists only with `successor_relations`, which shows the encoder the answer.
+    `[2R + A, 6R + A)` | what the transition changed: deleted, deleted reversed, added, added reversed
     """
 
     def __init__(
@@ -29,13 +25,11 @@ class EdgeTypeLayout(nn.Module):
         num_relations: int,
         num_actions: int,
         action_arg_positions: Sequence[Sequence[int]] | None = None,
-        successor_relations: bool = False,
     ):
         super().__init__()
         self.num_relations = num_relations
-        self.successor_relations = successor_relations
 
-        # One relation per used (action, argument position) pair.
+        # One edge type per observed (action, argument position) pair.
         positions = action_arg_positions or [[] for _ in range(num_actions)]
         width = max((max(p) + 1 for p in positions if p), default=1)
         lookup = torch.full((num_actions, width), -1, dtype=torch.long)
@@ -44,16 +38,11 @@ class EdgeTypeLayout(nn.Module):
             for position in argument_positions:
                 lookup[action, position] = self.num_action_relations
                 self.num_action_relations += 1
-        # Derived from the constructor arguments, so it is not checkpointed.
         self.register_buffer("_argument_relation", lookup, persistent=False)
 
     @property
     def num_edge_types(self) -> int:
-        return (
-            2 * self.num_relations
-            + self.num_action_relations
-            + (4 * self.num_relations if self.successor_relations else 0)
-        )
+        return 6 * self.num_relations + self.num_action_relations
 
     def forward(
         self, batch_state, batch_next_state=None
@@ -70,7 +59,7 @@ class EdgeTypeLayout(nn.Module):
                 batch_state.y_action, batch_state.y_action_args, num_objects
             ),
         ]
-        if self.successor_relations and batch_next_state is not None:
+        if batch_next_state is not None:
             parts.append(self._change_edges(batch_state, batch_next_state))
         return (
             torch.cat([index for index, _ in parts], dim=1),
@@ -91,7 +80,6 @@ class EdgeTypeLayout(nn.Module):
 
         samples, positions = (arguments >= 0).nonzero(as_tuple=True)
         relations = self._argument_relation[y_action[samples], positions]
-        # A position the action does not declare as an argument has no relation.
         used = relations >= 0
         samples, positions, relations = samples[used], positions[used], relations[used]
 

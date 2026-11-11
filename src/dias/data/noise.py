@@ -1,7 +1,4 @@
-"""Corrupting observed states, for the noise ablations.
-
-Both models flip cells of the adjacency tensor and differ in how the budget is chosen: `Ratio` per cell, `ExpectedCount` per tensor. Applied to the training split only.
-"""
+"""Corrupting training states by flipping atoms (paper, App. C.4): `ExpectedCount` draws a number of flips per state, `Ratio` flips each atom with a probability."""
 
 from __future__ import annotations
 
@@ -15,7 +12,7 @@ from dias.adjacency import valid_cells
 
 @dataclass(frozen=True)
 class RelationStats:
-    """Per relation: `true_ratio`, how many cells hold against how many do not within the region its arity allows, and `is_fluent`, false when no action can change it."""
+    """Per relation, its arity, the ratio of its true to its false atoms, and whether an action can change it."""
 
     arities: list[int] = field(default_factory=list)
     true_ratio: list[float] = field(default_factory=list)
@@ -28,7 +25,7 @@ class RelationStats:
         arities: Sequence[int],
         is_fluent: Sequence[bool],
     ) -> "RelationStats":
-        """Count how often each relation holds across a ``[N, R, O, O]`` stack."""
+        """The statistics of a ``[N, R, O, O]`` stack of states."""
         num_objects = states.size(-1)
         ratios = []
         for relation, arity in enumerate(arities):
@@ -45,7 +42,7 @@ class RelationStats:
 def _partition(
     state: torch.Tensor, arity: int, num_objects: int
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """The flat indices of a relation's true and false cells, where it has any."""
+    """The flat indices of a relation's true and false atoms."""
     cells = valid_cells(arity, num_objects)
     if cells is None:
         empty = torch.empty(0, dtype=torch.long)
@@ -56,7 +53,7 @@ def _partition(
 
 @dataclass(frozen=True)
 class Ratio:
-    """Flip every eligible cell independently. `add` is scaled by how often the relation holds, so a sparse one is not swamped by spurious atoms."""
+    """Remove each true atom with probability `remove`, and add each false atom with probability `add` times the relation's ratio of true to false atoms."""
 
     remove: float = 0.0
     add: float = 0.0
@@ -97,14 +94,11 @@ class Ratio:
 
 @dataclass(frozen=True)
 class ExpectedCount:
-    """Spend a Poisson budget of atom flips across the relations.
-
-    Each relation's share is proportional to ``min(num_true, num_false)``, so the ones closest to an even split carry most of the noise. Being per tensor rather than per cell, the corruption does not grow with the instance.
-    """
+    """Remove and add Poisson-distributed numbers of atoms per state, `removed_atoms` and `added_atoms` in expectation, each relation's share proportional to ``min(num_true, num_false)``. With `fluents_only`, static relations stay clean."""
 
     removed_atoms: float = 0.0
     added_atoms: float = 0.0
-    fluents_only: bool = True
+    fluents_only: bool = False
 
     def __post_init__(self):
         if self.removed_atoms < 0.0 or self.added_atoms < 0.0:
@@ -145,7 +139,6 @@ class ExpectedCount:
             if weight <= 0.0:
                 continue
             share = weight / total
-            # Both counts are drawn before either is spent, so changing one budget does not shift the other's draws.
             remove_count = _poisson(self.removed_atoms * share, generator)
             add_count = _poisson(self.added_atoms * share, generator)
             removed = _sample_without_replacement(ones, remove_count, generator)

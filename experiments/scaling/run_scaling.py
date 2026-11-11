@@ -1,11 +1,8 @@
 #!/usr/bin/env python
-"""Walk one domain's size ladder for one seed: what a Slurm array task runs, and the analogue of ``experiments/validate_runs.py``.
+"""Benchmark one domain's instances for one seed, each in a ``benchmark.py`` subprocess, so that an out-of-memory error costs one point. It is the task of a scaling array.
 
-Every size is its own ``benchmark.py`` subprocess, which is the point of the indirection: a CUDA OOM is expected at the top of the ladder, and one dead subprocess costs one point rather than the whole ladder. All sizes of one (domain, seed) share a task, hence one physical GPU, so a curve is never stitched across cards.
-
-Usage
------
-    python experiments/scaling/run_scaling.py --domain blocks-3 --seed 0 [--experiment scaling-a10]
+Example:
+    python experiments/scaling/run_scaling.py --domain blocks-3 --seed 0
 """
 
 from __future__ import annotations
@@ -19,29 +16,22 @@ from pathlib import Path
 
 import yaml
 
-from benchmark import DEFAULT_RESULTS_DIR, SIZES_CONFIG, instance_path, result_path
-from generate_instances import OBJECT_COUNT, instance_id
+from benchmark import SIZES_CONFIG, instance_path, result_path, results_dir
+from pipeline import LOGS_DIR
 
 SCALING_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCALING_DIR.parents[1]
 
 
 def ladder_for(domain: str, cfg: dict) -> list[tuple[int, str]]:
-    """(target rung, instance id) of a domain's ladder, smallest first. The rung is what makes the domains comparable: they scale in different units."""
-    spec = cfg["domains"][domain]
-    generator = spec["generator"]
-    rungs = [
-        (int(size["target"]), instance_id(OBJECT_COUNT[generator](size)))
-        for size in spec["sizes"]
-    ]
-    targets = [t for t, _ in rungs]
-    if len(set(targets)) != len(targets):
-        raise SystemExit(f"{domain}: duplicate `target` in sizes.yaml ({targets}).")
-    return rungs
+    """A domain's (target number of objects, instance), smallest first."""
+    return sorted(
+        (int(target), instance) for target, instance in cfg["domains"][domain].items()
+    )
 
 
 def instances_for(domain: str, cfg: dict) -> list[str]:
-    """Instance ids of a domain's ladder, smallest first."""
+    """A domain's instances, smallest first."""
     return [instance for _, instance in ladder_for(domain, cfg)]
 
 
@@ -50,24 +40,24 @@ def run_ladder(
     seed: int,
     experiment: str,
     cfg: dict,
-    results_dir: Path,
+    log_dir: Path,
     skip_existing: bool,
     accelerator: str | None = None,
 ) -> int:
     instances = instances_for(domain, cfg)
     print(
-        f"[{domain} seed={seed}] ladder: {', '.join(instances)} -> {results_dir / experiment / domain}",
+        f"[{domain} seed={seed}] ladder: {', '.join(instances)} -> {results_dir(log_dir, experiment) / domain}",
         flush=True,
     )
     failures = 0
     for instance in instances:
-        out = result_path(results_dir, experiment, domain, instance, seed)
+        out = result_path(log_dir, experiment, domain, instance, seed)
         if skip_existing and out.exists():
             print(f"[{domain} seed={seed}] {instance}: exists, skipping", flush=True)
             continue
         if not instance_path(domain, instance).exists():
             print(
-                f"[{domain} seed={seed}] {instance}: missing instance file, run experiments/scaling/generate_instances.py first",
+                f"[{domain} seed={seed}] {instance}: no instance file",
                 file=sys.stderr,
                 flush=True,
             )
@@ -83,7 +73,7 @@ def run_ladder(
             "--experiment", experiment,
             "--warmup", str(cfg["warmup_steps"]),
             "--measure", str(cfg["measure_steps"]),
-            "--results-dir", str(results_dir),
+            "--log-dir", str(log_dir),
         ]  # fmt: skip
         if accelerator:
             cmd += ["--accelerator", accelerator]
@@ -92,7 +82,6 @@ def run_ladder(
         proc = subprocess.run(cmd)
         elapsed = time.perf_counter() - t0
         if proc.returncode != 0:
-            # An OOM exits 0 with status="oom" recorded; a non-zero exit is a real failure.
             failures += 1
             print(
                 f"[{domain} seed={seed}] {instance}: benchmark failed (exit {proc.returncode}, {elapsed:.0f}s)",
@@ -109,14 +98,14 @@ def main() -> int:
     p.add_argument("--domain", required=True)
     p.add_argument("--seed", type=int, required=True)
     p.add_argument("--experiment", default="scaling")
-    p.add_argument("--results-dir", type=Path, default=DEFAULT_RESULTS_DIR)
+    p.add_argument("--log-dir", type=Path, default=LOGS_DIR)
     p.add_argument("--sizes-config", type=Path, default=SIZES_CONFIG)
     p.add_argument(
         "--skip-existing",
         action="store_true",
-        help="Leave points that already have a result JSON alone (resume a task).",
+        help="Skip the points that have a result.",
     )
-    p.add_argument("--accelerator", default=None, help="Passed through (e.g. cpu).")
+    p.add_argument("--accelerator", default=None, help="e.g. cpu.")
     args = p.parse_args()
 
     cfg = yaml.safe_load(args.sizes_config.read_text())
@@ -130,13 +119,15 @@ def main() -> int:
         seed=args.seed,
         experiment=args.experiment,
         cfg=cfg,
-        results_dir=args.results_dir,
+        log_dir=args.log_dir,
         skip_existing=args.skip_existing,
         accelerator=args.accelerator,
     )
 
     written = sorted(
-        (args.results_dir / args.experiment / args.domain).glob(f"*-s{args.seed}.json")
+        (results_dir(args.log_dir, args.experiment) / args.domain).glob(
+            f"*-s{args.seed}.json"
+        )
     )
     print(f"\n[{args.domain} seed={args.seed}] {len(written)} result(s):", flush=True)
     for path in written:

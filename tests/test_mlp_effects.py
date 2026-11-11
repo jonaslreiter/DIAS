@@ -1,6 +1,6 @@
 """End-to-end coverage for the MLP-effects validator.
 
-Its effects come from an MLP over the state, so a schema cannot be planted by hand the way the DIAS validator's can; these pin the contract, the internal consistency of the counts and the worker-process path instead.
+Its effects come from an MLP over the state, so a schema cannot be planted by hand the way the DIAS validator's can. These pin the contract, the internal consistency of the counts and the worker-process path instead.
 """
 
 import json
@@ -21,20 +21,24 @@ from dias.validation.grounding import (
     successor_keys,
 )
 from dias.validation.mlp_effects import MlpEffectsValidator
-from dias.validation.successors import combine_scores, score_successors
+from dias.validation.successors import (
+    WalkSampling,
+    combine_scores,
+    score_successors,
+)
 from support import temp_dir
 
 torch.set_num_threads(1)
 
 SAMPLE_SEED = 0
 NUM_SAMPLES = 6
-SAMPLE_POPULATION = 20
+SAMPLING = WalkSampling(num_samples=NUM_SAMPLES, walk_length=20, min_walks=2)
 
 
 class MlpEffectsTest(unittest.TestCase):
     def setUp(self):
         self.directory = temp_dir(self)
-        model, hparams = build_model(state_dependent_effects=True)
+        model, hparams = build_model(mlp_effects=True)
         self.model_id = save(self.directory, model, hparams)
 
     def validate(self, progress_path=None, seed=SAMPLE_SEED, **kwargs) -> dict:
@@ -45,8 +49,7 @@ class MlpEffectsTest(unittest.TestCase):
             **{"batch_size": 256, **kwargs},
         )
         validation.setup(
-            num_samples=NUM_SAMPLES,
-            sample_population=SAMPLE_POPULATION,
+            SAMPLING,
             seed=seed,
         )
         return validation.validate(progress_path)
@@ -74,10 +77,7 @@ class MlpEffectsTest(unittest.TestCase):
         self.assertEqual(result["total"], NUM_SAMPLES)
 
     def test_the_reported_counts_are_the_per_action_counts(self):
-        """One measure, not two views that have to be kept in agreement.
-
-        `tp`/`fp`/`fn` are the sums of `action_stats`: a successor reached under the wrong operator is an error, and a successor two operators both reach is two predictions. There is no second, union-level count beside them to be confused with them.
-        """
+        """`tp`, `fp` and `fn` are the sums of `action_stats`."""
         result = self.validate()
         stats = result["action_stats"].values()
 
@@ -111,27 +111,59 @@ class MlpEffectsTest(unittest.TestCase):
             SAMPLE_SEED,
         )
 
+    def learned_groundings(
+        self, equality: bool, force_injective: bool = False
+    ) -> list[tuple[int, ...]]:
+        # Every slot on, so the actions have parameters to repeat. The untrained preconditions decode to none.
+        directory = temp_dir(self)
+        model, hparams = build_model(equality=equality, mlp_effects=True)
+        with torch.no_grad():
+            model.predictor.selector.slot_weight_logits.fill_(10.0)
+        validation = MlpEffectsValidator(
+            save(directory, model, hparams, equality=equality),
+            str(directory),
+            str(TEST_PROBLEM),
+            force_injective=force_injective,
+        )
+        validation.setup(
+            SAMPLING,
+            seed=SAMPLE_SEED,
+        )
+        return [
+            tuple(o.get_index() for o in ground_action.get_objects())
+            for _, learned_state in validation.state_pairs
+            for ground_action in learned_state.generate_applicable_actions()
+        ]
+
+    def test_groundings_repeat_an_object_only_where_equality_was_learned(self):
+        """The planted schema requires nothing, so repeats are applicable unless the distinctness holds, which needs the equality facts to survive the rebuilt state."""
+        repeats = lambda groundings: [g for g in groundings if len(set(g)) < len(g)]
+        self.assertTrue(repeats(self.learned_groundings(equality=True)))
+        for groundings in (
+            self.learned_groundings(equality=False),
+            self.learned_groundings(equality=True, force_injective=True),
+        ):
+            self.assertTrue(any(len(g) > 1 for g in groundings))
+            self.assertEqual(repeats(groundings), [])
+
     def test_a_static_effects_checkpoint_is_refused(self):
         directory = temp_dir(self)
         model, hparams = build_model()
         model_id = save(directory, model, hparams)
-        with self.assertRaisesRegex(ValueError, "state_dependent_effects"):
+        with self.assertRaisesRegex(ValueError, "mlp_effects"):
             MlpEffectsValidator(
                 model_id, str(directory), problem_path=str(TEST_PROBLEM)
             )
 
 
 class BoundObjectGridTest(unittest.TestCase):
-    """Predicting on the grid of bound objects must match `apply_schema` on the whole instance.
-
-    The untrained effect MLP predicts almost nothing, which would make agreement trivial, so its last layer is scaled until successors flip often; bindings repeat objects and leave slots inactive, the two cases the small grid handles differently.
-    """
+    """Predicting on the grid of bound objects matches `apply_schema` on the whole instance, with an effect MLP scaled to flip many atoms and bindings that repeat objects and leave slots inactive."""
 
     NUM_OBJECTS = 9
     NUM_GROUNDINGS = 4000
 
     def setUp(self):
-        self.model, hparams = build_model(state_dependent_effects=True)
+        self.model, hparams = build_model(mlp_effects=True)
         self.model.retarget(self.NUM_OBJECTS)
         self.model.eval()
         last = self.model.predictor.effects.mlp[5]

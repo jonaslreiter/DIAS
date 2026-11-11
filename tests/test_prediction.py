@@ -14,7 +14,7 @@ class SuccessorPredictorTest(unittest.TestCase):
             num_slots=2,
             object_dim=3,
             force_action_args=True,
-            learn_preconditions=False,
+            gate_preconditions=False,
             action_arities=[2],
         )
         module.train()
@@ -54,10 +54,10 @@ class SuccessorPredictorTest(unittest.TestCase):
     def test_forward_without_preconditions_does_not_gate_delta(self):
         torch.manual_seed(9)
         gated = SuccessorPredictor(
-            [2], 1, 1, 2, learn_preconditions=True, action_arities=[1]
+            [2], 1, 1, 2, gate_preconditions=True, action_arities=[1]
         )
         ungated = SuccessorPredictor(
-            [2], 1, 1, 2, learn_preconditions=False, action_arities=[1]
+            [2], 1, 1, 2, gate_preconditions=False, action_arities=[1]
         )
         ungated.load_state_dict(gated.state_dict())
         kwargs = {
@@ -72,7 +72,7 @@ class SuccessorPredictorTest(unittest.TestCase):
         self.assertTrue(torch.equal(gated_output.delta, ungated_output.delta))
 
     def test_tau_reaches_the_precondition_gate(self):
-        """Tau arrives as a plain value; the floor is the schedule's business."""
+        """Tau arrives as a plain value, and the floor is the schedule's business."""
         torch.manual_seed(11)
         module = SuccessorPredictor([2], 1, 1, 2, action_arities=[1])
         kwargs = {

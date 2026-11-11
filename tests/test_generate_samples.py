@@ -1,9 +1,8 @@
 import unittest
 
 from dias.data.generate_samples import (
-    generate_bfs,
     generate_random_walk,
-    reachable_states,
+    random_walk,
     samples_to_tensors,
     state_to_groundings,
 )
@@ -131,15 +130,11 @@ class FakeProblem:
 
 
 class SampleGenerationTest(unittest.TestCase):
-    def test_state_to_groundings_reads_only_the_fluents_unless_asked(self):
+    def test_state_to_groundings_reads_fluents_and_statics(self):
         fluent = FakePredicate("ready", 1)
         static = FakePredicate("type", 1, static=True)
         state = FakeState(0, [FakeAtom(fluent, [1]), FakeAtom(static, [0])])
-        self.assertEqual(state_to_groundings(state), {"ready": [[1]]})
-        self.assertEqual(
-            state_to_groundings(state, include_statics=True),
-            {"ready": [[1]], "type": [[0]]},
-        )
+        self.assertEqual(state_to_groundings(state), {"ready": [[1]], "type": [[0]]})
 
     def test_random_walk_emits_samples_and_rejects_dead_initial_state(self):
         action = FakeAction("go", 1)
@@ -158,6 +153,21 @@ class SampleGenerationTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "no applicable actions"):
             generate_random_walk(problem)
 
+    def test_the_walk_goes_back_to_the_initial_state_at_a_dead_end(self):
+        action = FakeAction("go", 0)
+        predicate = FakePredicate("ready", 1)
+        terminal = FakeState(1, [FakeAtom(predicate, [0])])
+        initial = FakeState(0, [FakeAtom(predicate, [0])])
+        initial.actions = [FakeGroundAction(action, [], terminal)]
+        problem = FakeProblem(
+            FakeDomain("demo", [predicate], [action]), initial, [FakeObject(0, "a")]
+        )
+        walk = random_walk(problem)
+        steps = [next(walk) for _ in range(3)]
+        self.assertEqual([step.state for step in steps], [initial, terminal, initial])
+        self.assertEqual(steps[0].successor, terminal)
+        self.assertEqual((steps[1].applicable, steps[1].action), ([], None))
+
     def test_random_walk_warns_when_quota_is_not_reached(self):
         action = FakeAction("go", 0)
         predicate = FakePredicate("ready", 1)
@@ -168,28 +178,24 @@ class SampleGenerationTest(unittest.TestCase):
             state,
             [FakeObject(0, "a")],
         )
-        samples = generate_random_walk(
-            problem,
-            min_per_action=2,
-            max_steps=1,
-            only_unseen_states=True,
-        )
+        samples = generate_random_walk(problem, min_per_action=2, max_steps=1)
         self.assertEqual(len(samples), 1)
 
-    def test_bfs_explores_new_states_and_emits_applicable_actions(self):
-        action = FakeAction("go", 0)
+    def test_an_action_applicable_to_one_object_twice_is_refused(self):
+        action = FakeAction("move", 2)
         predicate = FakePredicate("ready", 1)
+        a, b = FakeObject(0, "a"), FakeObject(1, "b")
         terminal = FakeState(1, [FakeAtom(predicate, [0])])
         initial = FakeState(0, [FakeAtom(predicate, [0])])
-        initial.actions = [FakeGroundAction(action, [], terminal)]
+        initial.actions = [
+            FakeGroundAction(action, [a, b], terminal),
+            FakeGroundAction(action, [a, a], initial),
+        ]
         problem = FakeProblem(
-            FakeDomain("demo", [predicate], [action]),
-            initial,
-            [FakeObject(0, "a")],
+            FakeDomain("demo", [predicate], [action]), initial, [a, b]
         )
-        samples = generate_bfs(problem, num_states=2)
-        self.assertEqual(len(samples), 1)
-        self.assertEqual(samples[0]["action"], "go")
+        with self.assertRaisesRegex(ValueError, "injective"):
+            generate_random_walk(problem, min_total_samples=1, max_steps=3)
 
     def test_samples_to_tensors_encodes_unary_binary_and_actions(self):
         metadata = {

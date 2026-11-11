@@ -1,7 +1,4 @@
-"""The config chains a run is composed from, so a renamed ``init_args`` key fails here rather than on every task of a Slurm array.
-
-Checked by parsing, not instantiating: the CLI's parser validates class paths, argument names and types, and skipping construction keeps the whole grid to a few seconds. The round trip is the one test that instantiates.
-"""
+"""The config chains a run is composed from, checked by parsing."""
 
 import contextlib
 import random
@@ -17,18 +14,13 @@ from dias.main import CLI
 ROOT = Path(__file__).resolve().parents[1]
 DOMAIN_CONFIGS = sorted((ROOT / "pddl").glob("*/config.yaml"))
 MAIN = ROOT / "configs" / "main.yaml"
-# configs/ is flat, and every file in it but the base is an overlay, so a new one is covered from the moment it is added.
 OVERLAYS = sorted(path for path in (ROOT / "configs").glob("*.yaml") if path != MAIN)
-# A domain to carry the overlays. They are domain-independent, so the whole cross product would parse the same files again for no extra cover.
 A_DOMAIN = ROOT / "pddl" / "gripper" / "config.yaml"
 SCALING_OVERLAY = ROOT / "experiments" / "scaling" / "configs" / "scaling.yaml"
 
 
 class ParseOnlyCLI(CLI):
-    """The real CLI, stopped after parsing.
-
-    ``instantiate_classes`` is where the datamodule reads its PDDL and the argument links fire; neither is needed to know that a chain composes. The seed is left alone because these run beside tests that pin a trajectory, and seeding globally from a config file would move their random stream.
-    """
+    """The CLI, stopped after parsing and without seeding."""
 
     def instantiate_classes(self):
         pass
@@ -45,10 +37,7 @@ def parse(*paths, overrides=()):
 
 
 def parse_base():
-    """The base config alone, with the domain it deliberately does not name.
-
-    ``configs/main.yaml`` carries no ``domain_path`` / ``problem_path``, and neither does the datamodule, so parsing it on its own is an error by design (see ``RequiredValuesTest``). Supplying the two on the command line is how a test reads what the base config itself sets, without a domain config layered over it.
-    """
+    """The base config with a domain given on the command line."""
     return parse(
         MAIN,
         overrides=[
@@ -60,10 +49,7 @@ def parse_base():
 
 @contextlib.contextmanager
 def unseeded():
-    """Undo the seeding a fully constructed CLI performs.
-
-    ``seed_everything`` is global, and this module runs beside tests that pin a training trajectory; leaving their random stream where a config file put it would make them pass or fail depending on test order.
-    """
+    """Restore the random state a fully constructed CLI seeds."""
     states = (random.getstate(), np.random.get_state(), torch.get_rng_state())
     try:
         yield
@@ -89,10 +75,7 @@ class CompositionTest(unittest.TestCase):
 
 
 class DomainSelectionTest(unittest.TestCase):
-    """Each domain config names its own folder's files.
-
-    A domain's files follow from its folder name, and ``pddl/<domain>/ config.yaml`` repeats two of them so that composing that config trains that domain. Repetition nothing checks is how the two drift apart, and the drift is invisible: the run trains the wrong domain under the right name.
-    """
+    """Each domain config names its own folder's files."""
 
     def test_every_domain_config_selects_its_own_domain(self):
         for config in DOMAIN_CONFIGS:
@@ -110,10 +93,7 @@ class DomainSelectionTest(unittest.TestCase):
 
 
 class RequiredValuesTest(unittest.TestCase):
-    """What no default can stand in for is refused rather than guessed.
-
-    Which transitions a run learns from is the run's own choice, so ``domain_path`` and ``problem_path`` have a default in neither the base config nor the datamodule: a base config that named a domain is how a launch trains gripper under satellite's name and nothing says so.
-    """
+    """The domain has no default."""
 
     def test_the_base_config_alone_is_not_a_runnable_configuration(self):
         with self.assertRaises(SystemExit):
@@ -126,10 +106,7 @@ class RequiredValuesTest(unittest.TestCase):
 
 
 class SeedTest(unittest.TestCase):
-    """One seed per run, not two.
-
-    The walk's seed and the run's seed were always set to the same value by the launcher, in two places, so forgetting one was silent: the run sampled different transitions under the same name. ``data.seed`` now defaults to None, and ``dias.main.CLI`` fills it in from ``seed_everything`` before anything is constructed, so the config a run saves records the number it actually sampled under.
-    """
+    """The data's seed is the run's unless set."""
 
     def test_the_walk_follows_the_runs_seed(self):
         config = parse(MAIN, A_DOMAIN, overrides=["--seed_everything=7"])
@@ -145,10 +122,9 @@ class SeedTest(unittest.TestCase):
 
 
 class PrecedenceTest(unittest.TestCase):
-    """Later layers win. This is what the launcher relies on and nothing states."""
+    """Later layers win."""
 
     def test_a_domain_config_beats_the_base_config(self):
-        # aux_loss_alpha is not in main.yaml at all: the base chain resolves it to the class default, and every domain tunes it.
         base = parse_base()
         tuned = parse(MAIN, A_DOMAIN)
         self.assertEqual(base.model.init_args.aux_loss_alpha, 0.1)
@@ -156,18 +132,24 @@ class PrecedenceTest(unittest.TestCase):
 
     def test_an_overlay_beats_the_domain_config(self):
         config = parse(MAIN, A_DOMAIN, ROOT / "configs/experiment-mlp.yaml")
-        self.assertTrue(config.model.init_args.state_dependent_effects)
+        self.assertTrue(config.model.init_args.mlp_effects)
 
-    def test_the_noise_overlay_raises_the_per_action_floors(self):
-        # A floor raises the smallest minimum without shrinking the domains that sample more.
-        config = parse(MAIN, A_DOMAIN, ROOT / "configs/experiment-noise.yaml")
-        self.assertEqual(config.data.init_args.min_per_action_train_floor, 200)
-        self.assertEqual(config.data.init_args.min_per_action_valid_floor, 100)
-        self.assertEqual(config.data.init_args.min_per_action_train, 200)
-        self.assertEqual(config.model.init_args.precondition_tau.floor, 0.1)
+    def test_the_noise_overlay_changes_two_things_beside_the_noise(self):
+        clean = parse(MAIN, A_DOMAIN)
+        noisy = parse(MAIN, A_DOMAIN, ROOT / "configs/experiment-noise.yaml")
+        self.assertEqual(noisy.model.init_args.observation_noise, 0.1)
+        self.assertEqual(noisy.data.init_args.batch_size, 50)
+        self.assertIsNotNone(noisy.data.init_args.noise)
+        for section, key in (
+            ("model", "precondition_tau"),
+            ("model", "derivation_threshold"),
+            ("data", "min_per_action_train"),
+        ):
+            self.assertEqual(
+                noisy[section].init_args[key], clean[section].init_args[key], key
+            )
 
     def test_a_command_line_override_beats_every_file(self):
-        # How a sweep point reaches a run: appended last, one dotted key, and setting one field of the schedule leaves the others alone.
         config = parse(
             MAIN,
             A_DOMAIN,
@@ -176,17 +158,13 @@ class PrecedenceTest(unittest.TestCase):
         )
         schedule = config.model.init_args.precondition_tau
         self.assertEqual(schedule.every, 100)
-        self.assertEqual(schedule.floor, 0.1)
+        self.assertEqual(schedule.floor, 0.0)
         self.assertEqual(schedule.start, 1.0)
 
 
 class SavedConfigTest(unittest.TestCase):
     def test_a_saved_config_reproduces_the_schedule_it_was_run_with(self):
-        """The config a run saves is the record of what that run was.
-
-        The parser resolves the schedule union structurally, so the dump carries its fields and no ``class_path``. That round-trips only while no two schedules share a field set.
-        """
-        # This is the one test that builds a Trainer, and main.yaml asks for a GPU and for W&B.
+        """A run's saved config rebuilds its schedule."""
         plain = ["--trainer.accelerator=cpu", "--trainer.logger=false"]
         with unseeded():
             cli = CLI(

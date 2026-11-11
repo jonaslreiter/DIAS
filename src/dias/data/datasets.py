@@ -1,4 +1,4 @@
-"""The three datasets one problem instance is read through: `PddlTransitionDataset` holds the sampled transitions as dense tensors, and the other two turn one of them into the pair of PyG graphs a training step consumes, by index list or by endless action-balanced stream."""
+"""The sampled transitions as adjacency tensors, and the endless action-balanced stream of graph pairs a training step reads."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from dias.adjacency import adj_to_pyg_data
 
 
 class PddlTransitionDataset(Dataset):
-    """Pre-computed adjacency tensors as a map-style Dataset."""
+    """The sampled transitions as adjacency tensors."""
 
     def __init__(self, data: dict):
         self.states: torch.Tensor = data["states"]
@@ -67,37 +67,8 @@ def _build_sample(
     )
 
 
-class PddlGraphDataset(Dataset):
-    """Map-style dataset returning PyG ``Data`` tuples."""
-
-    def __init__(
-        self,
-        base_dataset: PddlTransitionDataset,
-        indices: list[int],
-        noisy_states: Optional[torch.Tensor] = None,
-        noisy_next_states: Optional[torch.Tensor] = None,
-    ):
-        self.base = base_dataset
-        self.indices = indices
-        self.noisy_states = noisy_states
-        self.noisy_next_states = noisy_next_states
-
-    def __len__(self) -> int:
-        return len(self.indices)
-
-    def __getitem__(self, idx: int):
-        real_idx = self.indices[idx]
-        return _build_sample(
-            self.base,
-            real_idx,
-            self.noisy_states[idx] if self.noisy_states is not None else None,
-            self.noisy_next_states[idx] if self.noisy_next_states is not None else None,
-            torch.tensor([real_idx]),
-        )
-
-
 class StratifiedActionIterableDataset(IterableDataset):
-    """Infinite stream of action-stratified samples drawn with replacement."""
+    """An endless stream of transitions drawn with replacement, each batch an equal share per action."""
 
     def __init__(
         self,

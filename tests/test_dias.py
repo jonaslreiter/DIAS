@@ -5,8 +5,9 @@ import torch
 from torch_geometric.data import Batch, Data
 
 from dias.models.dias import DIAS
+from dias.models.outputs import IGNORE, NEGATE
 from dias.schedules import Exponential
-from dias.validation.decoding import derive_schema
+from dias.schema.derivation import derive_schema
 
 
 def make_batch(action_args=(0, 1), changed=False):
@@ -43,7 +44,6 @@ class DIASModelTest(unittest.TestCase):
             "num_slots": 2,
             "action_arities": [2],
             "action_arg_positions": [[0, 1]],
-            "successor_relations": True,
         }
         defaults.update(kwargs)
         return DIAS(**defaults)
@@ -115,7 +115,7 @@ class DIASModelTest(unittest.TestCase):
         self.assertTrue(torch.isfinite(long_output.adjacency).all())
 
     def test_forward_without_successor_batch_uses_reverse_edges_only(self):
-        model = self.make_model(successor_relations=False, random_node_embeddings=False)
+        model = self.make_model(random_node_features=False)
         model.eval()
         batch_state, _ = make_batch(action_args=(-1, -1))
         output = model(batch_state)
@@ -123,7 +123,7 @@ class DIASModelTest(unittest.TestCase):
         self.assertTrue(torch.isfinite(output.adjacency).all())
 
     def test_step_and_eval_steps_return_losses(self):
-        model = self.make_model(successor_relations=False)
+        model = self.make_model()
         model.eval()
         batch = (*make_batch(changed=True), torch.tensor([0]))
         losses = model.step(batch)
@@ -131,7 +131,7 @@ class DIASModelTest(unittest.TestCase):
             set(losses.logged(model.aux_loss_alpha)),
             {
                 "loss",
-                "loss_adjacency",
+                "loss_main",
                 "loss_aux",
                 "hamming_distance",
                 "precondition_satisfaction",
@@ -148,8 +148,35 @@ class DIASModelTest(unittest.TestCase):
         self.assertTrue(torch.isfinite(test_loss))
         self.assertEqual(model.log_results.call_count, 2)
 
+    def test_only_the_applicability_term_refutes_a_literal_a_transition_that_changed_nothing_violates(
+        self,
+    ):
+        """Where the action changes nothing, failing preconditions explain the transition as well as holding ones, so `L_adj` has nothing to say about a literal the state violates."""
+        batch = (*make_batch(changed=False), torch.tensor([0]))
+        gradients = {}
+        for use_applicability_loss in (False, True):
+            model = self.make_model(
+                force_action_args=True, use_applicability_loss=use_applicability_loss
+            )
+            with torch.no_grad():
+                model.predictor.effects.logits.zero_()
+                model.predictor.effects.logits[..., IGNORE] = 20.0
+                model.predictor.preconditions.logits.zero_()
+                model.predictor.preconditions.logits[..., IGNORE] = 20.0
+                # Forbids the unary atom the state has at object 0, which the first argument binds.
+                model.predictor.preconditions.logits[0, 0, 0, 0] = torch.tensor(
+                    [0.0, 0.0, 2.0]
+                )
+            model.step(batch).main.backward()
+            gradients[use_applicability_loss] = (
+                model.predictor.preconditions.logits.grad[0, 0, 0, 0, NEGATE].item()
+            )
+        self.assertAlmostEqual(gradients[False], 0.0, places=6)
+        # Descent lowers the forbidding logit.
+        self.assertGreater(gradients[True], 1e-4)
+
     def test_retarget_accepts_a_bigger_instance_and_refuses_a_smaller_one(self):
-        """A lifted schema transfers; the recorded instance size does not."""
+        """A lifted schema transfers, but the recorded instance size does not."""
         model = self.make_model(num_objects=4, num_slots=2, action_arities=[2])
         model.retarget(9)
         self.assertEqual(model.num_objects, 9)
@@ -173,7 +200,7 @@ class DIASModelTest(unittest.TestCase):
         self.assertTrue((successor[0, :, :2, :2] != 0).any())
 
     def test_without_slot_weights_every_slot_is_a_parameter_of_the_read_schema(self):
-        """The ablation trains every slot at full weight, so every slot must survive decoding; reading the untrained zero logits dropped them all."""
+        """The ablation trains every slot at full weight, so every slot must survive the derivation."""
         model = self.make_model(num_objects=3, num_slots=3, use_slot_weights=False)
         schema = model.schema_logits()
         *_, active = derive_schema(

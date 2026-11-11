@@ -1,13 +1,12 @@
 (define (problem prob_large3)
- (:domain spanner)
- (:objects 
-     bob - man
-     spanner1 spanner2 spanner3 spanner4 spanner5 spanner6 spanner7 spanner8 spanner9 spanner10 spanner11 spanner12 spanner13 spanner14 spanner15 spanner16 spanner17 spanner18 spanner19 spanner20 spanner21 spanner22 spanner23 spanner24 spanner25 spanner26 spanner27 spanner28 spanner29 spanner30 spanner31 spanner32 - spanner
-     nut1 nut2 nut3 nut4 nut5 nut6 nut7 nut8 nut9 nut10 nut11 nut12 nut13 nut14 nut15 nut16 nut17 nut18 nut19 nut20 nut21 - nut
-     location1 location2 location3 location4 location5 location6 location7 location8 location9 location10 location11 location12 location13 location14 location15 location16 location17 location18 location19 location20 location21 location22 location23 location24 location25 location26 location27 location28 location29 location30 location31 location32 - location
-     shed gate - location
-    )
- (:init 
+  (:domain spanner)
+  (:objects
+    bob - man
+    spanner1 spanner2 spanner3 spanner4 spanner5 spanner6 spanner7 spanner8 spanner9 spanner10 spanner11 spanner12 spanner13 spanner14 spanner15 spanner16 spanner17 spanner18 spanner19 spanner20 spanner21 spanner22 spanner23 spanner24 spanner25 spanner26 spanner27 spanner28 spanner29 spanner30 spanner31 spanner32 - spanner
+    nut1 nut2 nut3 nut4 nut5 nut6 nut7 nut8 nut9 nut10 nut11 nut12 nut13 nut14 nut15 nut16 nut17 nut18 nut19 nut20 nut21 - nut
+    location1 location2 location3 location4 location5 location6 location7 location8 location9 location10 location11 location12 location13 location14 location15 location16 location17 location18 location19 location20 location21 location22 location23 location24 location25 location26 location27 location28 location29 location30 location31 location32 - location
+    shed gate - location)
+  (:init
     (at bob shed)
     (at spanner1 location8)
     (useable spanner1)
@@ -147,29 +146,27 @@
     (link location28 location29)
     (link location29 location30)
     (link location30 location31)
-    (link location31 location32)
+    (link location31 location32))
+  (:goal (and
+    (tightened nut1)
+    (tightened nut2)
+    (tightened nut3)
+    (tightened nut4)
+    (tightened nut5)
+    (tightened nut6)
+    (tightened nut7)
+    (tightened nut8)
+    (tightened nut9)
+    (tightened nut10)
+    (tightened nut11)
+    (tightened nut12)
+    (tightened nut13)
+    (tightened nut14)
+    (tightened nut15)
+    (tightened nut16)
+    (tightened nut17)
+    (tightened nut18)
+    (tightened nut19)
+    (tightened nut20)
+    (tightened nut21)))
 )
- (:goal
-  (and
-   (tightened nut1)
-   (tightened nut2)
-   (tightened nut3)
-   (tightened nut4)
-   (tightened nut5)
-   (tightened nut6)
-   (tightened nut7)
-   (tightened nut8)
-   (tightened nut9)
-   (tightened nut10)
-   (tightened nut11)
-   (tightened nut12)
-   (tightened nut13)
-   (tightened nut14)
-   (tightened nut15)
-   (tightened nut16)
-   (tightened nut17)
-   (tightened nut18)
-   (tightened nut19)
-   (tightened nut20)
-   (tightened nut21)
-)))

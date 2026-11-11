@@ -1,4 +1,4 @@
-"""Values that change over training. Each schedule is a pure function of the global step and holds no state, so it can be queried at any step, in any order."""
+"""Schedules of a value over training, as functions of the global step."""
 
 from __future__ import annotations
 
@@ -18,12 +18,7 @@ class Constant:
 
 @dataclass(frozen=True)
 class Exponential:
-    """Decay from `start` toward `floor`, by `factor` every `every` steps.
-
-    ``floor + (start - floor) * factor ** (step / every)``
-
-    Rate and asymptote are independent: raising `floor` does not change how fast the value falls. ``every = 0`` is the limit as every -> 0+, written out because the general form would divide by zero.
-    """
+    """``floor + (start - floor) * factor ** (step / every)``, and `floor` from the start if ``every = 0``."""
 
     start: float = 1.0
     floor: float = 0.0
@@ -31,7 +26,6 @@ class Exponential:
     every: int = 500
 
     def __post_init__(self):
-        # The curve approaches `floor` without crossing it.
         if self.start <= self.floor:
             raise ValueError(
                 f"Expected start above floor, got start={self.start}, floor={self.floor}"
@@ -49,7 +43,7 @@ class Exponential:
 
 @dataclass(frozen=True)
 class PiecewiseLinear:
-    """Linear interpolation between `keypoints`, held flat outside their range."""
+    """Linear between `keypoints`, constant outside them."""
 
     keypoints: dict[int, float] = field(default_factory=lambda: {0: 1.0})
 
@@ -71,10 +65,7 @@ Schedule = Constant | Exponential | PiecewiseLinear
 
 
 def as_schedule(value: "Schedule | Mapping[str, object] | None") -> Schedule:
-    """Accept a schedule, the mapping a checkpoint stores it as, or None (a constant 1.0).
-
-    Callers must default to None, not to an instance: jsonargparse merges a configured schedule's fields onto the default's instead of replacing it.
-    """
+    """A schedule, given as one, as its mapping, or as None for a constant 1."""
     if value is None:
         return Constant(1.0)
     return from_mapping(value, (Constant, Exponential, PiecewiseLinear))

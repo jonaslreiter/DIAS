@@ -1,0 +1,320 @@
+{
+ "l1/blocks-3": {
+  "move": [
+   35,
+   12,
+   0
+  ],
+  "newtower": [
+   12,
+   0,
+   0
+  ],
+  "stack": [
+   9,
+   3,
+   0
+  ]
+ },
+ "l1/delivery": {
+  "drop-package": [
+   2,
+   0,
+   0
+  ],
+  "move": [
+   13,
+   0,
+   0
+  ],
+  "pick-package": [
+   1,
+   0,
+   0
+  ]
+ },
+ "l1/driverlog": {
+  "board-truck": [
+   3,
+   0,
+   0
+  ],
+  "disembark-truck": [
+   3,
+   0,
+   0
+  ],
+  "drive-truck": [
+   15,
+   65,
+   0
+  ],
+  "load-truck": [
+   15,
+   0,
+   0
+  ],
+  "unload-truck": [
+   3,
+   0,
+   0
+  ],
+  "walk": [
+   32,
+   0,
+   0
+  ]
+ },
+ "l1/gripper": {
+  "drop": [
+   10,
+   0,
+   0
+  ],
+  "move": [
+   4,
+   0,
+   0
+  ],
+  "pick": [
+   12,
+   0,
+   0
+  ]
+ },
+ "l1/hanoi": {
+  "move": [
+   12,
+   0,
+   0
+  ]
+ },
+ "l1/logistics": {
+  "drive": [
+   16,
+   96,
+   0
+  ],
+  "fly": [
+   48,
+   0,
+   0
+  ],
+  "load": [
+   6,
+   64,
+   0
+  ],
+  "unload": [
+   11,
+   0,
+   0
+  ]
+ },
+ "l1/miconic": {
+  "board": [
+   5,
+   0,
+   0
+  ],
+  "move_down": [
+   4,
+   0,
+   0
+  ],
+  "move_up": [
+   4,
+   0,
+   0
+  ],
+  "unboard": [
+   1,
+   0,
+   0
+  ]
+ },
+ "l1/n-puzzle": {
+  "move-down": [
+   3,
+   0,
+   0
+  ],
+  "move-left": [
+   4,
+   0,
+   0
+  ],
+  "move-right": [
+   4,
+   0,
+   0
+  ],
+  "move-up": [
+   4,
+   0,
+   0
+  ]
+ },
+ "l1/satellite": {
+  "calibrate": [
+   1,
+   116,
+   0
+  ],
+  "switch_off": [
+   23,
+   0,
+   0
+  ],
+  "switch_on": [
+   51,
+   0,
+   0
+  ],
+  "take_image": [
+   5,
+   531,
+   0
+  ],
+  "turn_to": [
+   1040,
+   0,
+   0
+  ]
+ },
+ "l1/sokoban": {
+  "move-player": [
+   13,
+   2,
+   0
+  ],
+  "push-box": [
+   2,
+   0,
+   0
+  ]
+ },
+ "l1/sokoban-pull": {
+  "move-player": [
+   12,
+   2,
+   0
+  ],
+  "pull-box": [
+   2,
+   0,
+   0
+  ],
+  "push-box": [
+   2,
+   0,
+   0
+  ]
+ },
+ "l1/spanner": {
+  "pickup_spanner": [
+   7,
+   0,
+   0
+  ],
+  "tighten_nut": [
+   49,
+   316,
+   0
+  ],
+  "walk": [
+   3,
+   0,
+   0
+  ]
+ },
+ "l1/visitall": {
+  "move": [
+   13,
+   0,
+   0
+  ]
+ },
+ "run/mlp": {
+  "loss_aux": 5.132976055145264,
+  "loss_main": 0.09487927705049515,
+  "noise": null,
+  "parameters": 41701.082381510714,
+  "split": "10fabe288625287e",
+  "transitions": "18990b4edc33bc2e"
+ },
+ "run/names": {
+  "loss_aux": 5.138218879699707,
+  "loss_main": 0.09538286924362183,
+  "noise": null,
+  "parameters": 38470.082850514176,
+  "split": "10fabe288625287e",
+  "transitions": "18990b4edc33bc2e"
+ },
+ "run/noise": {
+  "loss_aux": 5.14132022857666,
+  "loss_main": 0.11485884338617325,
+  "noise": "ead18ac8c30d2f12",
+  "parameters": 38462.99440827469,
+  "split": "10fabe288625287e",
+  "transitions": "18990b4edc33bc2e"
+ },
+ "run/strips": {
+  "loss_aux": 2.896522045135498,
+  "loss_main": 0.06235852465033531,
+  "noise": null,
+  "parameters": Infinity,
+  "split": "10fabe288625287e",
+  "transitions": "c8ffd9e8e8a18e05"
+ },
+ "run/strips-plus": {
+  "loss_aux": 5.143665790557861,
+  "loss_main": 0.07294698804616928,
+  "noise": null,
+  "parameters": 48442.719591583016,
+  "split": "10fabe288625287e",
+  "transitions": "48211a1dc9e6a1a9"
+ },
+ "states/blocks-3": {
+  "digest": "bb92734645dd8161"
+ },
+ "states/delivery": {
+  "digest": "d2d55d36ff82619d"
+ },
+ "states/driverlog": {
+  "digest": "930a38bc72f88d16"
+ },
+ "states/gripper": {
+  "digest": "f0ffa6d4e0c49810"
+ },
+ "states/hanoi": {
+  "digest": "cb3f88575dd70901"
+ },
+ "states/logistics": {
+  "digest": "e933f2853497c0fa"
+ },
+ "states/miconic": {
+  "digest": "4963eb9a32be74ff"
+ },
+ "states/n-puzzle": {
+  "digest": "6fd4c3305a5bf0fb"
+ },
+ "states/satellite": {
+  "digest": "2faa75755cc877ae"
+ },
+ "states/satellite-recal": {
+  "digest": "5034d2b7660d1922"
+ },
+ "states/sokoban": {
+  "digest": "a1faed47f9cfb58d"
+ },
+ "states/sokoban-pull": {
+  "digest": "8ee5d985ca315010"
+ },
+ "states/spanner": {
+  "digest": "2d68a0102e5b5b5f"
+ },
+ "states/visitall": {
+  "digest": "5924d25053b7ca1a"
+ }
+}

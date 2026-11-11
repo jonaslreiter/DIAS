@@ -1,0 +1,264 @@
+"""Scoring a learned PDDL domain against the original one."""
+
+from __future__ import annotations
+
+import hashlib
+import logging
+import re
+import tempfile
+from pathlib import Path
+
+import pymimir
+from tqdm import tqdm
+
+from dias.pddl import text as pddl_text
+from dias.pddl.states import rebuild_state, state_atoms
+from dias.pddl.untype import (
+    extract_domain_header,
+    strip_problem_types,
+    untype_action,
+    with_equality_facts,
+)
+
+from .successors import (
+    LEARNED_ACTION_PREFIX,
+    WalkSampling,
+    append_progress,
+    combine_scores,
+    read_progress,
+    resolve_sample_seed,
+    score_successors,
+    successor_sets,
+    transfer_states,
+)
+from .workers import score_states
+
+logger = logging.getLogger(__name__)
+
+# Parameter types a learned schema may give that say nothing.
+UNINFORMATIVE_TYPES = frozenset({"untyped", "object"})
+
+
+class PddlValidator:
+    """Scores a learned domain by the successors its actions generate beside the original ones, in one untyped domain holding both."""
+
+    threshold: float | None = None
+
+    def __init__(
+        self,
+        original_domain_path,
+        learned_domain_path,
+        problem_path,
+        force_injective=False,
+        num_workers: int = 1,
+        memory: int | None = None,
+    ):
+        self.num_workers = num_workers
+        self.memory = memory
+        self.learned_domain_text = Path(learned_domain_path).read_text()
+        original_domain_text = pddl_text.equality_as_predicate(
+            Path(original_domain_path).read_text()
+        )
+        learned_domain_text = pddl_text.equality_as_predicate(self.learned_domain_text)
+        if force_injective:
+            learned_domain_text = pddl_text.force_distinct_parameters(
+                learned_domain_text
+            )
+        problem_text = with_equality_facts(Path(problem_path).read_text())
+        self._check_learned_types(original_domain_text, learned_domain_text)
+
+        original_actions_text = "\n\n".join(
+            untype_action(action_block)
+            for action_block in pddl_text.extract_action_blocks(original_domain_text)
+        )
+        learned_actions_text = "\n\n".join(
+            untype_action(
+                action_block,
+                name_prefix=LEARNED_ACTION_PREFIX,
+                ignored_types=UNINFORMATIVE_TYPES,
+            )
+            for action_block in pddl_text.extract_action_blocks(learned_domain_text)
+        )
+        header = self._patch_missing_predicates(
+            extract_domain_header(original_domain_text),
+            original_actions_text + "\n\n" + learned_actions_text,
+            original_domain_text,
+        )
+
+        merged_domain_text = (
+            f"{header}\n\n{original_actions_text}\n\n{learned_actions_text}\n)\n"
+        )
+        merged_problem_text = strip_problem_types(problem_text, original_domain_text)
+        # What a state's score depends on besides the state.
+        self.scored_digest = hashlib.sha256(
+            "\0".join(
+                [
+                    original_domain_text,
+                    problem_text,
+                    merged_domain_text,
+                    merged_problem_text,
+                ]
+            ).encode()
+        ).hexdigest()
+
+        self.workspace = PddlWorkspace()
+        self.merged_domain_path = self.workspace.write(
+            "merged-domain.pddl", merged_domain_text
+        )
+        self.merged_problem_path = self.workspace.write(
+            "merged-problem.pddl", merged_problem_text
+        )
+        self.merged_domain = pymimir.Domain(Path(self.merged_domain_path))
+        self.merged_problem = pymimir.Problem(
+            self.merged_domain, Path(self.merged_problem_path)
+        )
+        self.original_domain = pymimir.Domain(
+            Path(self.workspace.write("original-domain.pddl", original_domain_text))
+        )
+        self.original_problem = pymimir.Problem(
+            self.original_domain,
+            Path(self.workspace.write("original-problem.pddl", problem_text)),
+        )
+        self.state_set = None
+
+    @staticmethod
+    def _check_learned_types(
+        original_domain_text: str, learned_domain_text: str
+    ) -> None:
+        """Refuse a learned parameter type that is neither a type nor a unary predicate of the original."""
+        known = {
+            name.lower()
+            for children, parent in pddl_text.parse_type_groups(original_domain_text)
+            for name in (*children, parent)
+        }
+        known |= {
+            name.lower()
+            for name, arity in pddl_text.declared_predicates(
+                original_domain_text
+            ).items()
+            if arity == 1
+        }
+        used = {
+            type_name.lower()
+            for block in pddl_text.extract_action_blocks(learned_domain_text)
+            for _, type_name in pddl_text.parse_typed_parameters(
+                pddl_text.find_balanced_expr(block, block.find(":parameters"))[0]
+            )[1]
+        }
+        unknown = sorted(used - known - UNINFORMATIVE_TYPES)
+        if unknown:
+            raise ValueError(
+                f"The learned domain types parameters as {', '.join(unknown)}, which the original declares neither as a type nor as a unary predicate"
+            )
+
+    def _patch_missing_predicates(
+        self, header: str, actions_text: str, original_domain_text: str
+    ) -> str:
+        """Declare the predicates the merged domain uses but does not declare, the types among them."""
+        defined_words = {
+            m.group(1).lower() for m in re.finditer(r"\(\s*([^\s()]+)", header)
+        }
+        keywords = {"and", "or", "not", "imply", "when", "forall", "exists", "-"}
+
+        missing_preds: dict[str, int] = {}
+
+        for match in re.finditer(r"\(\s*([^\s()]+)([^()]*)\)", actions_text):
+            name = match.group(1).lower()
+            if name.startswith(":") or name.startswith("?"):
+                continue
+            if name not in keywords and name not in defined_words:
+                arity = len([w for w in match.group(2).split() if w.startswith("?")])
+                missing_preds.setdefault(name, arity)
+
+        for children, parent in pddl_text.parse_type_groups(original_domain_text):
+            for name in (*children, parent):
+                name = name.lower()
+                if (
+                    name != "object"
+                    and name not in keywords
+                    and name not in defined_words
+                    and name not in missing_preds
+                ):
+                    missing_preds[name] = 1
+
+        if missing_preds:
+            declarations = "".join(
+                "\n    ({} {})".format(name, " ".join(f"?v{i}" for i in range(arity)))
+                for name, arity in missing_preds.items()
+            )
+            header = re.sub(
+                r"(\(:predicates)", rf"\1{declarations}", header, flags=re.IGNORECASE
+            )
+            logger.debug("Declared missing predicates: %s", sorted(missing_preds))
+
+        return header
+
+    def setup(
+        self,
+        sampling: WalkSampling = WalkSampling(),
+        seed: int | None = None,
+    ):
+        self.sample_seed = resolve_sample_seed(seed)
+        self.sampling = sampling
+        states = sampling.draw(self.original_problem, self.sample_seed)
+        transfer_states(
+            states, self.merged_problem, self.original_domain, self.merged_domain
+        )
+        self.state_set = [state_atoms(state) for state in states]
+
+    def validate(self, progress_path: str | Path | None = None) -> dict:
+        """Score every sampled state, recording each in `progress_path`, where a later run on the same domains, problem, sample seed and sampling finds it."""
+        if self.state_set is None:
+            raise RuntimeError("Call setup() before validate().")
+        scores: dict[int, dict] = {}
+        if progress_path is not None:
+            progress_path = Path(progress_path)
+            header = {
+                "scored": self.scored_digest,
+                "sample_seed": self.sample_seed,
+                "sampling": self.sampling.record(),
+            }
+            scores = read_progress(progress_path, header)
+        todo = {i: atoms for i, atoms in enumerate(self.state_set) if i not in scores}
+        config = {
+            "domain": self.merged_domain_path,
+            "problem": self.merged_problem_path,
+        }
+        with tqdm(
+            total=len(self.state_set), initial=len(scores), desc="Validating states"
+        ) as bar:
+            for index, score in score_states(
+                score_state, init_worker, config, todo, self.num_workers, self.memory
+            ):
+                scores[index] = score
+                if progress_path is not None:
+                    append_progress(progress_path, index, score)
+                bar.update()
+        return combine_scores(scores[i] for i in range(len(self.state_set)))
+
+
+_WORKER: dict = {}
+
+
+def init_worker(config: dict) -> None:
+    """Parse the merged domain once per worker."""
+    _WORKER.update(config, domain=pymimir.Domain(Path(config["domain"])))
+
+
+def score_state(atoms) -> dict:
+    """One state's score, on a problem of its own, since pymimir keeps every action a problem grounds."""
+    problem = pymimir.Problem(_WORKER["domain"], Path(_WORKER["problem"]))
+    state = rebuild_state(atoms, problem)
+    return score_successors([successor_sets(state, LEARNED_ACTION_PREFIX)])
+
+
+class PddlWorkspace:
+    """A temporary directory for the PDDL files a validator writes for pymimir, removed with the workspace."""
+
+    def __init__(self) -> None:
+        self._directory = tempfile.TemporaryDirectory(prefix="dias-validation-")
+
+    def write(self, name: str, text: str) -> str:
+        path = Path(self._directory.name) / name
+        path.write_text(text)
+        return str(path)

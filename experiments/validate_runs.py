@@ -1,12 +1,6 @@
-"""Validate one ``(experiment, domain, seed)`` run and write its results.
+"""Validate one ``(experiment, domain, seed)`` run on the domain's test problems. It is the validation step of experiments/launch.py.
 
-The compute-side validation step, invoked once per seed by ``slurm/validate.sh`` and by ``launch.py --backend local``. The experiment type picks the validator: dias / noise read a DIAS checkpoint, mlp an MLP-effects one. (L1 has no checkpoint and no sweep iterates over it; reach it through ``validate_checkpoint.py --validator l1``.)
-
-The run is located by its deterministic id, its problems are the domain folder's ``test-{1,2,3}.pddl`` and its sampling knobs come from ``experiments/configs/validation.yaml``. Results go to ``<logs>/validation/<experiment>/<domain>/seed<seed>.json``, and to the resumed W&B run when it is reachable.
-
-``--threshold`` re-reads the same checkpoint at another binarization threshold and ``--results-experiment`` redirects only the output directory, which together re-validate a finished experiment without touching its JSONs; see ``experiments/launch_threshold_validation.py``.
-
-The MLP-effects validator grounds its sampled states across ``--num-workers`` processes, defaulting to the CPUs the job was allocated, and ``--resume`` continues a seed from what an earlier run on the same checkpoint scored.
+The experiment type picks the validator. Results go to ``<logs>/validation/<experiment>/<domain>/seed<seed>.json``, the learned domain they scored beside it as ``seed<seed>.pddl``, and the metrics to the run's W&B run. The JSON records the sample seed the states were drawn with and is written after every problem. Each state's score is recorded as it finishes, and ``--resume`` continues from there. A state that does not fit in the job's memory ends the seed as ``out_of_memory``.
 """
 
 from __future__ import annotations
@@ -20,10 +14,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))  # for `import pipeline`
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from pipeline import configure_logging  # noqa: E402
 from pipeline import (
+    CHECKPOINTS,
     EXPERIMENT_TYPES,
     EXPERIMENT_VALIDATOR,
     VALIDATORS,
@@ -31,7 +26,8 @@ from pipeline import (
     WANDB_PROJECT,
     add_logging_arguments,
     add_path_arguments,
-    allocated_cpus,
+    domain_pddl,
+    l1_domain,
     load_yaml,
     select_domains,
     validation_problems,
@@ -42,7 +38,7 @@ logger = logging.getLogger("dias.validate")
 
 
 def run_id_for(experiment: str, domain: str, seed: int) -> str:
-    """Deterministic, filesystem/W&B-safe run id shared by train and validate."""
+    """The id of a run, as experiments/slurm/train.sh writes it."""
     raw = f"{experiment}-{domain}-s{seed}"
     return re.sub(r"[^0-9A-Za-z_-]", "-", raw)
 
@@ -56,92 +52,120 @@ def validate_run(
     logs_dir: Path,
     run_id: str | None = None,
     log_wandb: bool = True,
-    threshold: float = 0.5,
+    threshold: float | None = None,
     results_experiment: str | None = None,
     num_workers: int | None = None,
-    states_per_worker: int | None = None,
     resume: bool = False,
+    checkpoint: str = "final",
 ) -> dict:
-    """Validate a single run over its held-out problems; write and return the results.
-
-    The checkpoint is always found via *experiment*; *results_experiment* only picks the directory the JSON goes to. With *resume*, problems an earlier run on the same checkpoint scored are kept, and the rest use its sample seed.
-    """
-    # Imported here, not at module scope: submitting jobs must not need torch or pymimir.
-    from dias.validation.checkpoint import resolve_best_checkpoint
-    from dias.validation.successors import resolve_sample_seed
+    """Validate the run of `experiment` on its domain's test problems and write the results under `results_experiment`. With `resume`, the problems already scored on the same checkpoint are kept, and the others drawn with the same sample seed."""
+    from dias.validation.checkpoint import resolve_checkpoint
+    from dias.validation.successors import resolve_sample_seed, sampling_from_record
+    from dias.validation.workers import StateDoesNotFit, available_cpus
 
     run_id = run_id or run_id_for(experiment, domain, seed)
     results_experiment = results_experiment or experiment
     val_problems = validation_problems(domain)
     out = _result_path(logs_dir, results_experiment, domain, seed)
-    checkpoint = resolve_best_checkpoint(logs_dir / "dias" / run_id / "checkpoints")
 
     validator = VALIDATORS[EXPERIMENT_VALIDATOR[experiment_type]]
     validation = validator_class(validator.name)
-    if not validator.binarizes_schema and threshold != 0.5:
-        raise SystemExit(
-            f"--threshold applies to a validator that reads a lifted schema; {validator.summary}"
+    if validator.from_checkpoint:
+        checkpoint_path = resolve_checkpoint(
+            logs_dir / "dias" / run_id / "checkpoints", checkpoint
         )
-    num_samples = int(val_cfg["num_samples"])
-    sample_population = int(val_cfg["sample_population"])
+        learned = {
+            "model_id": run_id,
+            "logs_path": str(logs_dir.resolve()),
+            "threshold": threshold,
+            "checkpoint": checkpoint,
+        }
+    else:
+        if threshold is not None or checkpoint != "final":
+            raise SystemExit(
+                f"--threshold and --checkpoint pick a training run's learned domain; {validator.summary}"
+            )
+        checkpoint_path = None
+        log_wandb = False
+        learned = {
+            "original_domain_path": str(domain_pddl(domain)),
+            "learned_domain_path": str(l1_domain(domain)),
+        }
+    learned["num_workers"] = available_cpus() if num_workers is None else num_workers
+    sampling = sampling_from_record(val_cfg["sampling"])
+    force_injective = bool(val_cfg.get("force_injective", False))
 
     per_problem: dict[str, dict[str, Any]] = {}
+    scored_threshold = threshold
     if resume and out.exists():
         previous = json.loads(out.read_text())
-        refusal = _resume_refusal(previous, out, checkpoint, threshold)
+        refusal = _resume_refusal(
+            previous, out, checkpoint_path, threshold, force_injective, sampling
+        )
         if refusal is not None:
             raise SystemExit(f"--resume {out}: {refusal}")
         sample_seed = previous["sample_seed"]
+        scored_threshold = previous["threshold"]
         per_problem = {
             stem: result
             for stem, result in previous["per_problem"].items()
             if "error" not in result
         }
     else:
-        # Resolved once, so every problem of a seed shares one draw.
         configured_seed = val_cfg.get("sample_seed")
         sample_seed = resolve_sample_seed(
             None if configured_seed is None else int(configured_seed)
         )
 
-    extra_kwargs = {"threshold": threshold} if validator.binarizes_schema else {}
-    if validator.grounds_in_parallel:
-        workers = allocated_cpus() if num_workers is None else num_workers
-        logger.info("Grounding states across %d worker processes.", workers)
-        extra_kwargs["num_workers"] = workers
-        if states_per_worker is not None:
-            extra_kwargs["states_per_worker"] = states_per_worker
+    def record() -> None:
+        """Write the results so far."""
+        _write_json(
+            logs_dir,
+            results_experiment,
+            domain,
+            seed,
+            run_id,
+            {
+                p.stem: per_problem[p.stem]
+                for p in val_problems
+                if p.stem in per_problem
+            },
+            scored_threshold,
+            sample_seed,
+            expected=[p.stem for p in val_problems],
+            checkpoint=checkpoint_path,
+            force_injective=force_injective,
+            sampling=sampling.record(),
+        )
 
+    record()
     for problem in val_problems:
         stem = problem.stem
         if stem in per_problem:
             logger.info("%s is already scored.", stem)
             continue
         logger.info(
-            "Validating %s seed %d on %s (%d states of at most %d reachable).",
+            "Validating %s seed %d on %s, sampling %s.",
             domain,
             seed,
             stem,
-            num_samples,
-            sample_population,
+            sampling.record(),
         )
         try:
             v = validation(
-                model_id=run_id,
-                logs_path=str(logs_dir.resolve()),
                 problem_path=str(problem.resolve()),
-                **extra_kwargs,
+                force_injective=force_injective,
+                **learned,
             )
-            v.setup(
-                num_samples=num_samples,
-                sample_population=sample_population,
-                seed=sample_seed,
-            )
-            if validator.grounds_in_parallel:
-                result = v.validate(out.with_name(f"seed{seed}.{stem}.states.jsonl"))
-            else:
-                result = v.validate()
-        except Exception as e:  # noqa: BLE001 - one bad problem shouldn't sink the rest
+            scored_threshold = v.threshold
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.with_suffix(".pddl").write_text(v.learned_domain_text)
+            v.setup(sampling, seed=sample_seed)
+            result = v.validate(out.with_name(f"seed{seed}.{stem}.states.jsonl"))
+        except StateDoesNotFit as e:
+            logger.error("%s: %s, so the seed is left out.", stem, e)
+            per_problem[stem] = {"error": str(e), "out_of_memory": True}
+        except Exception as e:  # noqa: BLE001
             logger.exception("Validation of %s failed.", stem)
             per_problem[stem] = {"error": str(e)}
         else:
@@ -155,23 +179,9 @@ def validate_run(
                 result.get("fp", "?"),
                 result.get("fn", "?"),
             )
-        # After every problem, so a job killed partway keeps what it finished.
-        _write_json(
-            logs_dir,
-            results_experiment,
-            domain,
-            seed,
-            run_id,
-            {
-                p.stem: per_problem[p.stem]
-                for p in val_problems
-                if p.stem in per_problem
-            },
-            threshold,
-            sample_seed,
-            expected=[p.stem for p in val_problems],
-            checkpoint=checkpoint,
-        )
+        record()
+        if per_problem[stem].get("out_of_memory"):
+            break
 
     if log_wandb:
         _log_to_wandb(results_experiment, domain, seed, run_id, logs_dir, per_problem)
@@ -179,7 +189,7 @@ def validate_run(
 
 
 def _plain(value: Any) -> Any:
-    """Coerce numpy scalars to Python numbers: _write_json falls back to str(), so a numpy int would land in the JSON as a string."""
+    """`value`, a numpy number as a Python one."""
     if isinstance(value, bool):
         return value
     if isinstance(value, numbers.Integral):
@@ -194,16 +204,26 @@ def _result_path(logs_dir: Path, experiment: str, domain: str, seed: int) -> Pat
 
 
 def _resume_refusal(
-    previous: dict, path: Path, checkpoint: Path, threshold: float
+    previous: dict,
+    path: Path,
+    checkpoint: Path | None,
+    threshold: float | None,
+    force_injective: bool,
+    sampling,
 ) -> str | None:
     """Why the results in `path` cannot be resumed, or None if they can."""
-    if previous["threshold"] != threshold:
+    from dias.validation.successors import sampling_from_record
+
+    if threshold is not None and previous["threshold"] != threshold:
         return f"scored at threshold {previous['threshold']}, not {threshold}"
-    if "checkpoint" not in previous:
-        # Written before results recorded their checkpoint.
-        if checkpoint.stat().st_mtime >= path.stat().st_mtime:
-            return f"{checkpoint} is newer than the results"
-    elif (previous["checkpoint"], previous["checkpoint_mtime"]) != (
+    if previous.get("force_injective") != force_injective:
+        return f"scored with force_injective {previous.get('force_injective')}, not {force_injective}"
+    previous_sampling = previous["sampling"]
+    if sampling_from_record(previous_sampling) != sampling:
+        return f"states sampled as {previous_sampling}, not {sampling.record()}"
+    if checkpoint is None:
+        return None
+    if (previous["checkpoint"], previous["checkpoint_mtime"]) != (
         str(checkpoint),
         checkpoint.stat().st_mtime,
     ):
@@ -218,32 +238,36 @@ def _write_json(
     seed: int,
     run_id: str,
     per_problem: dict,
-    threshold: float = 0.5,
+    threshold: float | None = None,
     sample_seed: int | None = None,
     expected: list[str] | None = None,
     checkpoint: Path | None = None,
+    force_injective: bool = False,
+    sampling: dict | None = None,
 ) -> None:
     out = _result_path(logs_dir, experiment, domain, seed)
     out.parent.mkdir(parents=True, exist_ok=True)
-    # A seed is one number per held-out problem: `collect_results` aggregates `ok` only.
     expected = list(per_problem) if expected is None else expected
     scored = sum(
         stem in per_problem and "error" not in per_problem[stem] for stem in expected
     )
-    status = (
-        "ok"
-        if expected and scored == len(expected)
-        else "partial" if scored else "validation_failed"
-    )
+    failed = any("error" in result for result in per_problem.values())
+    if any(result.get("out_of_memory") for result in per_problem.values()):
+        status = "out_of_memory"
+    elif expected and scored == len(expected):
+        status = "ok"
+    else:
+        status = "partial" if scored or not failed else "validation_failed"
     payload = {
         "experiment": experiment,
         "domain": domain,
         "seed": seed,
         "run_id": run_id,
         "threshold": threshold,
-        # Passing this back as validation.yaml's sample_seed reproduces these exact states.
         "sample_seed": sample_seed,
         "status": status,
+        "force_injective": force_injective,
+        "sampling": sampling,
         "per_problem": per_problem,
     }
     if checkpoint is not None:
@@ -263,7 +287,7 @@ def _log_to_wandb(
     logs_dir: Path,
     per_problem: dict,
 ) -> None:
-    """Log numeric metrics to the resumed W&B run (best-effort)."""
+    """Log the numeric results to the run's W&B run, if it can be reached."""
     try:
         import wandb
 
@@ -275,16 +299,13 @@ def _log_to_wandb(
             group=experiment,
             dir=str(logs_dir),
         )
-        # Tagged with domain/seed so collect_results.py can group by domain.
         wandb.config.update({"domain": domain, "seed": seed}, allow_val_change=True)
         for stem, result in per_problem.items():
             for k, val in result.items():
                 if isinstance(val, (int, float)) and not isinstance(val, bool):
                     wandb.log({f"validation/{stem}/{k}": float(val)})
         wandb.finish()
-    except (
-        Exception
-    ) as e:  # noqa: BLE001 - W&B is optional; JSON is the source of truth
+    except Exception as e:  # noqa: BLE001
         logger.warning("W&B logging skipped: %s", e)
 
 
@@ -302,13 +323,19 @@ def main() -> int:
     p.add_argument(
         "--threshold",
         type=float,
-        default=0.5,
-        help="Binarization threshold for slot activations and the learned precondition/effect tensors (DIAS validator only). Default 0.5.",
+        default=None,
+        help="Derive the learned domain at this threshold instead of scoring the one beside the checkpoint (dias and mlp).",
+    )
+    p.add_argument(
+        "--checkpoint",
+        default="final",
+        choices=CHECKPOINTS,
+        help="The checkpoint to score: final (at the end of training, default) or best (at the lowest validation loss).",
     )
     p.add_argument(
         "--results-experiment",
         default=None,
-        help="Write results under logs/validation/<this>/ instead of <experiment>/. The checkpoint is still located via --experiment, so a re-validation at another --threshold leaves the original JSONs alone.",
+        help="Write the results under logs/validation/<this>/ instead of <experiment>/.",
     )
     add_path_arguments(p)
     add_logging_arguments(p)
@@ -316,18 +343,12 @@ def main() -> int:
         "--num-workers",
         type=int,
         default=None,
-        help="Processes the MLP-effects validator grounds states across. Default: the CPUs this job was allocated. Ignored by the other validators, which ground nothing in parallel.",
-    )
-    p.add_argument(
-        "--states-per-worker",
-        type=int,
-        default=None,
-        help="States an MLP-effects grounding worker handles before it is replaced, releasing the ground actions pymimir keeps until a process exits.",
+        help="Worker processes. Default: one per CPU.",
     )
     p.add_argument(
         "--resume",
         action="store_true",
-        help="Keep the problems an earlier run on the same checkpoint scored, and continue the rest with its sample seed from their last scored state.",
+        help="Continue from the problems and states already scored.",
     )
     p.add_argument("--no-wandb", action="store_true", help="Skip W&B logging.")
     args = p.parse_args()
@@ -347,12 +368,16 @@ def main() -> int:
         threshold=args.threshold,
         results_experiment=args.results_experiment,
         num_workers=args.num_workers,
-        states_per_worker=args.states_per_worker,
         resume=args.resume,
+        checkpoint=args.checkpoint,
     )
-    failed = all("error" in v for v in per_problem.values()) if per_problem else True
-    return 1 if failed else 0
+    failed = [
+        v for v in per_problem.values() if "error" in v and not v.get("out_of_memory")
+    ]
+    return 1 if not per_problem or len(failed) == len(per_problem) else 0
 
 
 if __name__ == "__main__":
+    import shardguard  # noqa: F401
+
     sys.exit(main())

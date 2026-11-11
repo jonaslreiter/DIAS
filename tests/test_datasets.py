@@ -1,15 +1,11 @@
-"""Tests for the three datasets a problem instance is read through."""
+"""The transition dataset and the stratified stream of graph pairs."""
 
 import unittest
 
 import torch
 from torch_geometric.loader import DataLoader as PyGDataLoader
 
-from dias.data.datasets import (
-    PddlGraphDataset,
-    PddlTransitionDataset,
-    StratifiedActionIterableDataset,
-)
+from dias.data.datasets import PddlTransitionDataset, StratifiedActionIterableDataset
 
 
 def make_data():
@@ -48,7 +44,7 @@ class GraphDatasetTest(unittest.TestCase):
 
     def sample(self, **kwargs):
         base = PddlTransitionDataset(make_data())
-        return PddlGraphDataset(base, [0], **kwargs)[0]
+        return next(iter(StratifiedActionIterableDataset(base, [0], 1, **kwargs)))
 
     def test_a_clean_sample_encodes_the_stored_transition(self):
         _, _, _, state, _, _, _ = self.sample()
@@ -65,15 +61,17 @@ class GraphDatasetTest(unittest.TestCase):
         self.assertEqual(state_graph.edge_index.size(1), int(noisy_states[0].sum()))
 
     def test_the_action_label_survives_collation(self):
-        """PyG offsets any Data attribute whose name contains "index" by num_nodes per graph, so the label is `y_action`. Renaming it to `action_index` would corrupt it here and nowhere else."""
+        """PyG offsets a Data attribute whose name contains "index" per graph."""
         base = PddlTransitionDataset(make_data())
-        graphs = [PddlGraphDataset(base, [index])[0][0] for index in (0, 1)]
+        graphs = [
+            next(iter(StratifiedActionIterableDataset(base, [index], 1)))[0]
+            for index in (0, 1)
+        ]
         batch = next(iter(PyGDataLoader(graphs, batch_size=2)))
         self.assertEqual(batch.y_action.tolist(), [0, 1])
 
 
 class StratifiedStreamTest(unittest.TestCase):
-    """The stream is endless and balanced; training length comes from max_steps."""
 
     def stream(self, batch_size: int, indices=(0, 1)):
         return StratifiedActionIterableDataset(

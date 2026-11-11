@@ -1,4 +1,4 @@
-"""Tests for `--validate-only`, which submits the validation array over an already trained run instead of training first. Two things make it correct: no training array goes out and the validation array waits on no dependency, and a run that stopped short of `max_steps` is refused rather than scored."""
+"""What `launch.py` submits: validation alone over finished runs, the Slurm resources, the overlays, the sweeps and L1."""
 
 import sys
 import unittest
@@ -8,7 +8,8 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "experiments"))
 
 import launch
-from support import temp_dir
+import pipeline
+from support import temp_dir, write_run
 
 
 def plan_args(log_dir, **overrides):
@@ -28,19 +29,6 @@ def plan_args(log_dir, **overrides):
         if value is not True:
             argv.append(str(value))
     return launch.parse_args(argv)
-
-
-MAX_STEPS = 10000
-
-
-def write_run(log_dir, run_id, step=MAX_STEPS, max_steps=MAX_STEPS):
-    """A run directory as training leaves it: the config it resolved to, and both checkpoints at `step`."""
-    run_dir = log_dir / "dias" / run_id
-    checkpoints = run_dir / "checkpoints"
-    checkpoints.mkdir(parents=True)
-    run_dir.joinpath("config.yaml").write_text(f"trainer:\n  max_steps: {max_steps}\n")
-    (checkpoints / f"final-epoch=0-step={step}.ckpt").touch()
-    (checkpoints / f"best-epoch=0-step={step - 50}.ckpt").touch()
 
 
 def submitted(plan):
@@ -91,6 +79,158 @@ class ValidateOnlyTest(unittest.TestCase):
     def test_training_is_not_skipped_without_the_flag(self):
         plan = launch.build_plan(plan_args(self.log_dir))
         self.assertFalse(plan.validate_only)
+
+
+class ValidationThresholdTest(unittest.TestCase):
+    def exported(self, **overrides) -> str:
+        plan = launch.build_plan(plan_args(temp_dir(self), **overrides))
+        return next(opt for opt in submitted(plan)[-1] if opt.startswith("--export"))
+
+    def test_by_default_validation_scores_the_domain_the_run_wrote(self):
+        self.assertNotIn("THRESHOLD", self.exported())
+
+    def test_validation_scores_the_final_checkpoint_unless_asked_for_the_best(self):
+        self.assertNotIn("CHECKPOINT", self.exported())
+        self.assertIn("CHECKPOINT=best", self.exported(validation_checkpoint="best"))
+
+
+class ResourcesTest(unittest.TestCase):
+    def setUp(self):
+        self.log_dir = temp_dir(self)
+
+    def test_each_experiment_type_takes_its_sections_of_the_slurm_config(self):
+        config = launch.load_yaml(pipeline.SLURM_CONFIG)
+        for experiment_type, train, validation in (
+            ("dias", "train", "validate"),
+            ("noise", "train-noise", "validate-noise"),
+            ("mlp", "train", "validate-mlp"),
+        ):
+            plan = launch.build_plan(
+                plan_args(self.log_dir, experiment_type=experiment_type)
+            )
+            self.assertEqual(plan.train_resources, config[train])
+            self.assertEqual(plan.validation_resources, config[validation])
+
+    def test_the_validation_array_asks_for_its_resources(self):
+        plan = launch.build_plan(plan_args(self.log_dir, experiment_type="mlp"))
+        validation = submitted(plan)[-1]
+        for option in launch.sbatch_resource_opts(
+            launch.resolve_resources(plan.validation_resources, "gripper")
+        ):
+            self.assertIn(option, validation)
+
+
+class ThresholdSweepTest(unittest.TestCase):
+    def setUp(self):
+        self.log_dir = temp_dir(self)
+        write_run(self.log_dir, "exp-gripper-s0")
+        write_run(self.log_dir, "exp-gripper-s1")
+
+    def plan(self, **overrides):
+        return launch.build_plan(
+            plan_args(self.log_dir, sweep="threshold", sweep_values="0.25", **overrides)
+        )
+
+    def test_it_validates_the_existing_runs_into_an_experiment_per_threshold(self):
+        (validate,) = submitted(self.plan())
+        export = next(opt for opt in validate if opt.startswith("--export"))
+        for variable in (
+            "EXPERIMENT=exp,",
+            "RESULTS_EXPERIMENT=exp-thr0.25",
+            "THRESHOLD=0.25",
+            "NO_WANDB=1",
+        ):
+            self.assertIn(variable, export)
+        self.assertFalse([opt for opt in validate if opt.startswith("--dependency")])
+
+    def test_runs_that_did_not_finish_are_refused(self):
+        self.log_dir = temp_dir(self)
+        write_run(self.log_dir, "exp-gripper-s0")
+        write_run(self.log_dir, "exp-gripper-s1", step=5000)
+        with self.assertRaisesRegex(SystemExit, "did not train"):
+            self.plan()
+
+    def test_an_override_is_refused(self):
+        with self.assertRaisesRegex(SystemExit, "--set"):
+            self.plan(set="model.init_args.num_slots=3")
+
+
+class LabelsTest(unittest.TestCase):
+    def test_a_label_setting_composes_its_overlay_after_the_experiment_type(self):
+        for labels, overlays in (
+            ("names", ["experiment-noise.yaml"]),
+            ("strips", ["experiment-noise.yaml", "labels-strips.yaml"]),
+            ("strips-plus", ["experiment-noise.yaml", "labels-strips-plus.yaml"]),
+        ):
+            with self.subTest(labels=labels):
+                plan = launch.build_plan(
+                    plan_args(temp_dir(self), labels=labels, experiment_type="noise")
+                )
+                self.assertEqual([path.name for path in plan.overlays], overlays)
+
+
+class NoiseSweepTest(unittest.TestCase):
+    def test_flips_per_transition_set_a_quarter_added_and_a_quarter_removed(self):
+        plan = launch.build_plan(
+            plan_args(temp_dir(self), experiment_type="noise", sweep="noise")
+        )
+        self.assertEqual(
+            [point.experiment for point in plan.points],
+            ["exp-f1", "exp-f2", "exp-f4", "exp-f8"],
+        )
+        self.assertIn(
+            "--data.init_args.noise.added_atoms=0.5", plan.points[1].overrides
+        )
+        self.assertIn(
+            "--data.init_args.noise.removed_atoms=0.5", plan.points[1].overrides
+        )
+
+    def test_it_needs_the_noise_experiment_type(self):
+        with self.assertRaisesRegex(SystemExit, "--experiment-type noise"):
+            launch.build_plan(plan_args(temp_dir(self), sweep="noise"))
+
+
+class L1LaunchTest(unittest.TestCase):
+    def args(self, *extra, domains=("gripper",)):
+        return launch.parse_args(
+            [
+                "--experiment-type",
+                "l1",
+                "--experiment",
+                "l1",
+                *(["--domains", *domains] if domains else []),
+                "--log-dir",
+                str(temp_dir(self)),
+                *extra,
+            ]
+        )
+
+    def test_l1_only_validates_once_per_domain(self):
+        (validate,) = submitted(launch.build_plan(self.args()))
+        self.assertIn("--array=0", validate)
+        self.assertFalse([opt for opt in validate if opt.startswith("--dependency")])
+        self.assertTrue([opt for opt in validate if "EXP_TYPE=l1" in opt])
+
+    def test_without_domains_it_validates_every_domain_l1_learned(self):
+        # L1 learned no domain for satellite-recal.
+        plan = launch.build_plan(self.args(domains=None))
+        self.assertIn("satellite", plan.domains)
+        self.assertNotIn("satellite-recal", plan.domains)
+
+    def test_a_domain_l1_never_learned_is_refused_by_name(self):
+        with self.assertRaisesRegex(SystemExit, "no domain for satellite-recal"):
+            launch.build_plan(self.args(domains=("gripper", "satellite-recal")))
+
+    def test_options_for_a_training_run_are_refused(self):
+        for extra in (
+            ["--labels", "strips"],
+            ["--ablation", "no-pcgrad"],
+            ["--set", "model.init_args.num_slots=3"],
+            ["--validation-checkpoint", "best"],
+        ):
+            with self.subTest(extra=extra):
+                with self.assertRaisesRegex(SystemExit, extra[0]):
+                    launch.build_plan(self.args(*extra))
 
 
 class FinishedTrainingTest(unittest.TestCase):

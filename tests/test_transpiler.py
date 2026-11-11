@@ -87,35 +87,41 @@ class TranspilerTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "one action name per action"):
             PDDLTranspiler(**{**kwargs, "action_names": []})
 
-    def test_add_unreachable_action_references_original_predicates(self):
-        valid = np.zeros((1, 1, 1, 1), dtype=np.int64)
+    def test_distinct_parameters_are_required_pairwise_and_declared(self):
+        on = np.zeros((1, 1, 3, 3), dtype=np.int64)
+        on[0, 0, 0, 1] = 1
+        on[0, 0, 1, 2] = 1
         transpiler = PDDLTranspiler(
-            valid,
-            valid.copy(),
-            valid.copy(),
-            valid.copy(),
-            ["ready"],
-            [1],
-            ["go"],
+            on,
+            np.zeros_like(on),
+            np.zeros_like(on),
+            np.zeros_like(on),
+            ["on"],
+            [2],
+            ["a"],
         )
-        schema = transpiler.add_unreachable_action()
-        self.assertEqual(str(schema.preconditions[0]), "(dummy_guard)")
+        transpiler.generate_action_schemas()
+        transpiler.require_distinct("=")
+        transpiler.require_distinct("=")
         self.assertEqual(
-            [str(atom) for atom in schema.effects],
-            ["(ready ?x0)", "(dummy_guard)"],
+            [str(atom) for atom in transpiler.action_schemas[0].preconditions],
+            ["(not (= ?x0 ?x1))", "(not (= ?x0 ?x2))", "(not (= ?x1 ?x2))"],
         )
-        self.assertIn("dummy_action_unreachable", str(transpiler))
+        self.assertEqual(transpiler.predicate_names, ["on", "="])
 
-    def test_add_unreachable_action_leaves_the_caller_lists_alone(self):
-        valid = np.zeros((1, 1, 1, 1), dtype=np.int64)
-        names, arities = ["ready"], [1]
+    def test_distinct_parameters_follow_parameters_no_atom_mentions(self):
+        empty = np.zeros((1, 1, 3, 3), dtype=np.int64)
         transpiler = PDDLTranspiler(
-            valid, valid.copy(), valid.copy(), valid.copy(), names, arities, ["go"]
+            empty, empty.copy(), empty.copy(), empty.copy(), ["on"], [2], ["a"]
         )
-        transpiler.add_unreachable_action()
-        self.assertEqual(transpiler.predicate_names, ["ready", "dummy_guard"])
-        self.assertEqual(names, ["ready"])
-        self.assertEqual(arities, [1])
+        transpiler.generate_action_schemas()
+        transpiler.action_schemas[0].parameters = [0, 2]
+        transpiler.require_distinct("=")
+        self.assertEqual(
+            [str(atom) for atom in transpiler.action_schemas[0].preconditions],
+            ["(not (= ?x0 ?x2))"],
+        )
+        self.assertIn(":parameters (?x0 ?x2)", str(transpiler.action_schemas[0]))
 
 
 if __name__ == "__main__":

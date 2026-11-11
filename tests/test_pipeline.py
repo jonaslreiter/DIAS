@@ -51,6 +51,17 @@ class SeedTest(unittest.TestCase):
         args = SimpleNamespace(seeds=None, num_runs=3, validation_config=None)
         self.assertEqual(resolve_seeds(args), [0, 1, 2])
 
+    def test_no_runs_at_all_is_refused(self):
+        args = SimpleNamespace(seeds=None, num_runs=0, validation_config=None)
+        with self.assertRaisesRegex(SystemExit, "--num-runs"):
+            resolve_seeds(args)
+
+    def test_a_launcher_with_seeds_of_its_own_falls_back_to_them(self):
+        args = SimpleNamespace(seeds=None, num_runs=None, validation_config=None)
+        self.assertEqual(resolve_seeds(args, default=[2, 0, 1]), [0, 1, 2])
+        args.seeds = ["0-4"]
+        self.assertEqual(resolve_seeds(args, default=[0, 1, 2]), [0, 1, 2, 3, 4])
+
 
 class ArrayTest(unittest.TestCase):
     def test_consecutive_seeds_compress_to_a_range(self):
@@ -112,7 +123,7 @@ class SlurmLogTest(unittest.TestCase):
 
 
 class DomainTest(unittest.TestCase):
-    """A domain is a folder under pddl/; nothing lists them.
+    """A domain is a folder under pddl/, and nothing lists them.
 
     Every file of a domain follows from its name, so these check that the layout the whole pipeline assumes holds for all of them.
     """
@@ -151,12 +162,6 @@ class ValidatorRegistryTest(unittest.TestCase):
         for experiment_type, validator in EXPERIMENT_VALIDATOR.items():
             with self.subTest(experiment_type=experiment_type):
                 self.assertIn(validator, VALIDATORS)
-
-    def test_only_a_lifted_schema_can_be_binarized(self):
-        """The threshold is a property of reading a schema off a model, so the two validators that produce no lifted schema must refuse one."""
-        self.assertTrue(VALIDATORS["dias"].binarizes_schema)
-        self.assertFalse(VALIDATORS["mlp"].binarizes_schema)
-        self.assertFalse(VALIDATORS["l1"].binarizes_schema)
 
     def test_l1_is_the_one_validator_without_a_checkpoint(self):
         self.assertFalse(VALIDATORS["l1"].from_checkpoint)

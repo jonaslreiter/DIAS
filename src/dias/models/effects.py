@@ -1,4 +1,4 @@
-"""What an action changes about a state: one learned tensor per action (DIAS), or predicted from the state by an MLP."""
+"""The effect parameters `P_eff`: one learned tensor per action, or predicted from the state by an MLP (paper, App. C.5)."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ HIDDEN_DIM = 64
 
 
 class EffectSource(nn.Module):
-    """Per-action effect logits over ignore / add / delete. Subclasses supply the raw logits; the arity mask is applied here, so no source can skip it."""
+    """Per-action effect logits over ignore / add / delete, arity-masked."""
 
     def __init__(self, relation_arities: Sequence[int], num_slots: int):
         super().__init__()
@@ -41,12 +41,12 @@ class EffectSource(nn.Module):
         raise NotImplementedError
 
     def action_logits(self) -> torch.Tensor | None:
-        """Masked logits for every action, or None if they depend on the state."""
+        """Masked logits for every action, or None for effects that depend on the state."""
         raise NotImplementedError
 
 
 class StaticEffects(EffectSource):
-    """One learned effect tensor per action: the DIAS model."""
+    """One learned effect tensor per action."""
 
     def __init__(
         self, num_actions: int, relation_arities: Sequence[int], num_slots: int
@@ -64,8 +64,8 @@ class StaticEffects(EffectSource):
         return forbid(self.logits, self.mask)
 
 
-class StateDependentEffects(EffectSource):
-    """Effects predicted from the current state by an MLP. The state is projected onto the action's slots first, so the network sees a lifted state rather than the instance."""
+class MlpEffects(EffectSource):
+    """Effects predicted by an MLP from the state restricted to the action's slots, ``S A S^T``."""
 
     def __init__(
         self, num_actions: int, relation_arities: Sequence[int], num_slots: int

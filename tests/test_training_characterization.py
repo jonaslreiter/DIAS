@@ -1,12 +1,6 @@
-"""Golden tests pinning the DIAS training path.
+"""Golden of the model: forward passes, losses and three training steps against tests/fixtures/golden.pt.
 
-A full forward pass and a full three-step training trajectory against a stored fixture, which is the guard for "this change computes the same thing". The training-step golden sees what a forward-only one cannot: RNG order during construction, loss-term order, drift in the PCGrad projection.
-
-To regenerate after an intended change:
-
-    DIAS_REGENERATE_GOLDEN=1 pytest tests/test_training_characterization.py
-
-and review the resulting fixture diff.
+Regenerate after an intended change with ``DIAS_REGENERATE_GOLDEN=1 pytest tests/test_training_characterization.py`` and review the fixture diff.
 """
 
 import os
@@ -18,19 +12,17 @@ import torch
 from torch.utils.data import DataLoader
 from torch_geometric.data import Batch, Data
 
-from checkpoints import pre_split_name
 from dias.models.dias import DIAS
 
 FIXTURE = Path(__file__).parent / "fixtures" / "golden.pt"
 REGENERATE = os.environ.get("DIAS_REGENERATE_GOLDEN") == "1"
 
-# Above float32 accumulation error, below anything a real behaviour change moves.
 TOLERANCE = 1e-6
 
-# Two orders wider than the forward golden, because Adam hands a relative gradient perturbation to the parameter at roughly `lr` times its size, so two CPUs dispatching different kernels part by ~1e-6 over three steps.
+# Wider: Adam scales a CPU's round-off by the learning rate per step.
 TRAJECTORY_TOLERANCE = 1e-4
 
-# `torch.use_deterministic_algorithms` does not replace this: the thread count decides how a parallel reduction is split, and float addition is not associative. A golden has to hold on machines with different core counts.
+# The thread count decides how reductions are split.
 torch.set_num_threads(1)
 
 
@@ -44,23 +36,20 @@ MODEL_DEFAULTS = dict(
     relation_arities=ARITY_RELATIONS,
     num_actions=NUM_ACTIONS,
     object_dim=8,
-    # Pinned, not left to the class default, which would move the trajectory with it.
     aux_loss_alpha=1.0,
+    use_applicability_loss=False,
     learning_rate=0.01,
     num_slots=NUM_SLOTS,
     action_arities=[2, 2],
     action_arg_positions=[[0, 1], [0]],
-    successor_relations=True,
-    # Narrow layers exercise the same code without megabytes of stored encoder weights.
     encoder_hidden_dims=[4, 8, 8],
 )
 
-# The four combinations that exercise structurally different code paths.
 FLAG_CASES = {
     "full": {},
-    "mlp_effects": {"state_dependent_effects": True},
+    "mlp_effects": {"mlp_effects": True},
     "no_slot_weights": {"use_slot_weights": False},
-    "no_random_embeddings": {"random_node_embeddings": False},
+    "no_random_features": {"random_node_features": False},
 }
 
 
@@ -143,7 +132,6 @@ class ForwardCharacterizationTest(unittest.TestCase):
                 torch.manual_seed(29)
                 prediction = model(*make_batch())
 
-                # The golden keys predate SchemaPrediction and are kept as they were.
                 for label, value in (
                     ("adjacency_out", prediction.adjacency),
                     ("ignore_effects", prediction.effects.ignore),
@@ -162,27 +150,25 @@ class ForwardCharacterizationTest(unittest.TestCase):
 
                 torch.manual_seed(29)
                 losses = model.step(make_batch())
-                # The stored keys predate the Losses dataclass and the renaming of loss_mse.
                 for key, value in (
-                    ("loss_adjacency", losses.adjacency),
-                    ("loss_aux", losses.auxiliary),
-                    ("loss_mse", losses.hamming_distance),
+                    ("loss_main", losses.main),
+                    ("loss_aux", losses.aux),
+                    ("hamming_distance", losses.hamming_distance),
                 ):
                     GOLDEN.check(self, f"step/{name}/{key}", value)
 
 
 def trained_values(model: DIAS) -> dict[str, torch.Tensor]:
-    """Every parameter, under the name the fixture stored it as. The schema tensors are compared as the model applies them, since the arity mask lives in the forward pass."""
+    """Every parameter, the schema tensors arity-masked."""
     schema = model.schema_logits()
     masked = {
-        "graph_edit.preconditions": schema.preconditions,
-        "graph_edit.effects": schema.effects,
+        "predictor.preconditions.logits": schema.preconditions,
+        "predictor.effects.logits": schema.effects,
     }
-    values = {}
-    for name, parameter in model.named_parameters():
-        key = pre_split_name(name)
-        values[key] = masked.get(key, parameter)
-    return values
+    return {
+        name: masked.get(name, parameter)
+        for name, parameter in model.named_parameters()
+    }
 
 
 class TrainingTrajectoryTest(unittest.TestCase):
@@ -192,10 +178,8 @@ class TrainingTrajectoryTest(unittest.TestCase):
         torch.manual_seed(11)
         model = DIAS(**(MODEL_DEFAULTS | flags))
         self.addCleanup(model.teardown, "test")
-        # Lightning's `deterministic` sets a *global* torch flag and never unsets it.
         self.addCleanup(torch.use_deterministic_algorithms, False)
 
-        # batch_size=None disables collation, so each item arrives as the tuple DIAS.step expects.
         batches = DataLoader([make_batch(shift=i) for i in range(3)], batch_size=None)
         trainer = L.Trainer(
             deterministic=True,

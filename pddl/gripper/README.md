@@ -6,5 +6,3 @@
 | `test-1.pddl` | 6     | 4        | 2     | 12            |
 | `test-2.pddl` | 12    | 8        | 2     | 22            |
 | `test-3.pddl` | 24    | 16       | 2     | 42            |
-
-Generated with `gripper/gripper-generator.py` from [PDDL generators](https://github.com/AI-Planning/pddl-generators).

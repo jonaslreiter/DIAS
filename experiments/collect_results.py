@@ -1,427 +1,325 @@
-"""Aggregate validation results for an experiment into a paper-style table.
+"""Collect validation results into tables of P, R, N_S, N_C, N_SC and n per domain.
 
-Reads per-run results (written by ``experiments/validate_runs.py``) from local JSON or the W&B API, keyed by the ``--experiment`` name (= W&B group). For each domain it aggregates over seeds and reports:
+A seed's precision and recall are micro-averaged over its test problems. P and R are means over seeds, shown to two decimals and never rounded up to 1.00. N_S, N_C and N_SC count the sound, complete, and sound and complete seeds, and n the seeds. A seed that did not score every problem is counted over the problems it scored, or left out with ``--exclude-partial``, and listed after the tables either way.
 
-  P     mean precision over seeds
-  R     mean recall over seeds
-  N_S   #seeds that are sound     (precision == 1)
-  N_C   #seeds that are complete  (recall == 1)
-  N_SC  #seeds sound *and* complete
-  n     #seeds aggregated
+``--experiment`` takes several experiments, one table each. ``--sweep AXIS`` instead collects the experiments ``launch.py --sweep`` wrote into one table with a row per domain and value. A value without an experiment of its own is read from the runs of ``--experiment`` that trained at it.
 
-A seed's problems are reduced to one precision / recall by micro-averaging their tp/fp/fn, falling back to the mean of per-problem rates when the counts are absent.
-
-``--sweep AXIS`` instead reads the sub-experiments ``launch.py --sweep`` wrote and prints one domain x value matrix per metric; ``--threshold-sweep`` does the same over the thresholds of ``launch_threshold_validation.py``, whose columns share one set of checkpoints. Without a sweep, ``--experiment`` takes any number of unrelated experiments, each with its own table.
-
-Usage:
-    python experiments/collect_results.py --experiment paper-main [--source wandb] [--domains gripper hanoi]
-    python experiments/collect_results.py --experiment dias-full abl-no-pcgrad --markdown experiments/results/ablations-summary.md
-    python experiments/collect_results.py --experiment aux-sweep --sweep aux-loss-alpha --markdown experiments/results/aux-sweep.md
-    python experiments/collect_results.py --experiment dias-full --threshold-sweep --markdown experiments/results/threshold-sweep.md
+Examples:
+    python experiments/collect_results.py --experiment dias-strips dias-strips-plus dias-names l1 --markdown experiments/results/main.md
+    python experiments/collect_results.py --experiment alpha --sweep aux-loss-alpha --markdown experiments/results/alpha-sweep.md
 """
 
 from __future__ import annotations
 
 import argparse
+import collections
 import json
 import logging
+import math
 import re
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))  # for `import launch`
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from launch import SWEEP_AXES, sweep_experiment_name  # noqa: E402
-from launch_threshold_validation import (  # noqa: E402
-    THRESHOLD_TAG,
-    THRESHOLD_VALUES,
-    threshold_experiment_name,
-)
 from pipeline import configure_logging  # noqa: E402
 from pipeline import (
     LOGS_DIR,
-    WANDB_ENTITY,
-    WANDB_PROJECT,
     add_logging_arguments,
+    available_domains,
+    domain_config,
+    format_array,
+    load_yaml,
+    parse_seeds,
 )
 
 logger = logging.getLogger("dias.collect")
 
+COLUMNS = ("P", "R", "N_S", "N_C", "N_SC", "n")
 
-def _seed_precision_recall(per_problem: dict) -> tuple[float, float] | None:
-    """Reduce one seed's per-problem results to a single (precision, recall).
 
-    Micro-averaged, so a problem with many reachable successors counts for more. Summing `action_stats` is the same answer, for a result written before the totals existed; the mean of per-problem rates is a last resort for W&B summaries carrying nothing else.
-    """
-
-    def counts(result: dict) -> tuple[int, int, int] | None:
-        """The tp/fp/fn of one problem, however that result was written."""
-        values = [result.get(k) for k in ("tp", "fp", "fn")]
-        # JSON round-trips these as floats; they are counts either way.
-        if all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in values):
-            return tuple(int(v) for v in values)
-        stats = result.get("action_stats")
-        if isinstance(stats, dict):
-            return tuple(
-                sum(int(a.get(k, 0)) for a in stats.values())
-                for k in ("tp", "fp", "fn")
-            )
+def seed_precision_recall(per_problem: dict) -> tuple[float, float] | None:
+    """A seed's precision and recall over the problems it scored, or None if none."""
+    scored = [
+        r for r in per_problem.values() if isinstance(r, dict) and "error" not in r
+    ]
+    if not scored:
         return None
-
-    tp = fp = fn = 0
-    counted = False
-    precisions: list[float] = []
-    recalls: list[float] = []
-    any_ok = False
-    for result in per_problem.values():
-        if not isinstance(result, dict) or "error" in result:
-            continue
-        any_ok = True
-        pooled = counts(result)
-        if pooled is not None:
-            counted = True
-            tp += pooled[0]
-            fp += pooled[1]
-            fn += pooled[2]
-        if isinstance(result.get("precision"), (int, float)):
-            precisions.append(float(result["precision"]))
-        if isinstance(result.get("recall"), (int, float)):
-            recalls.append(float(result["recall"]))
-    if not any_ok:
-        return None
-    if counted:
-        return (
-            tp / (tp + fp) if tp + fp else 0.0,
-            tp / (tp + fn) if tp + fn else 0.0,
-        )
-    return (
-        sum(precisions) / len(precisions) if precisions else 0.0,
-        sum(recalls) / len(recalls) if recalls else 0.0,
-    )
+    tp, fp, fn = (sum(int(r[key]) for r in scored) for key in ("tp", "fp", "fn"))
+    return (tp / (tp + fp) if tp + fp else 0.0, tp / (tp + fn) if tp + fn else 0.0)
 
 
-def collect_local(
-    experiment: str, logs_dir: Path
-) -> dict[str, list[tuple[float, float]]]:
+def _results(experiment: str, logs_dir: Path, seeds: set[int] | None):
+    """(domain, payload) of every result of `experiment` among `seeds`."""
     root = logs_dir / "validation" / experiment
-    by_domain: dict[str, list[tuple[float, float]]] = {}
     for seed_json in sorted(root.glob("*/seed*.json")):
         payload = json.loads(seed_json.read_text())
-        domain = payload.get("domain", seed_json.parent.name)
-        # A seed missing some problem's score would be averaged as if it had all three.
-        if payload.get("status", "ok") != "ok":
-            logger.warning("Skipping %s: %s.", seed_json, payload["status"])
-            continue
-        pr = _seed_precision_recall(payload.get("per_problem", {}))
-        if pr is not None:
-            by_domain.setdefault(domain, []).append(pr)
-    return by_domain
+        if seeds is None or payload["seed"] in seeds:
+            yield payload["domain"], payload
 
 
-def collect_wandb(
-    experiment: str, project: str, entity: str | None
-) -> dict[str, list[tuple[float, float]]]:
-    import wandb
-
-    api = wandb.Api()
-    path = f"{entity}/{project}" if entity else project
-    by_domain: dict[str, list[tuple[float, float]]] = {}
-    key_re = re.compile(
-        r"^validation/(?P<stem>.+)/(?P<metric>precision|recall|tp|fp|fn)$"
+def _scored_problems(payload: dict) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            stem
+            for stem, result in payload.get("per_problem", {}).items()
+            if "error" not in result
+        )
     )
-    for run in api.runs(path, filters={"group": experiment}):
-        domain = run.config.get("domain")
-        if domain is None:
+
+
+def collect(
+    experiment: str,
+    logs_dir: Path,
+    seeds: set[int] | None = None,
+    exclude_partial: bool = False,
+) -> dict[str, list[tuple[float, float]]]:
+    """Per domain, a (precision, recall) per seed."""
+    by_domain: dict[str, list[tuple[float, float]]] = {}
+    for domain, payload in _results(experiment, logs_dir, seeds):
+        if exclude_partial and payload["status"] != "ok":
             continue
-        per_problem: dict[str, dict] = {}
-        for key, val in run.summary.items():
-            m = key_re.match(str(key))
-            if m and isinstance(val, (int, float)):
-                metric = m["metric"]
-                per_problem.setdefault(m["stem"], {})[metric] = (
-                    int(val) if metric in ("tp", "fp", "fn") else float(val)
-                )
-        pr = _seed_precision_recall(per_problem)
+        pr = seed_precision_recall(payload.get("per_problem", {}))
         if pr is not None:
             by_domain.setdefault(domain, []).append(pr)
     return by_domain
 
 
-def _aggregate(prs: list[tuple[float, float]]) -> dict:
-    n = len(prs)
+def coverage(
+    experiment: str, logs_dir: Path, seeds: set[int] | None = None
+) -> dict[str, collections.Counter]:
+    """Per domain, the seeds that did not score every problem, counted by the problems they scored."""
+    counts: dict[str, collections.Counter] = {}
+    for domain, payload in _results(experiment, logs_dir, seeds):
+        if payload["status"] != "ok":
+            counts.setdefault(domain, collections.Counter())[
+                _scored_problems(payload)
+            ] += 1
+    return counts
+
+
+def aggregate(prs: list[tuple[float, float]]) -> dict:
     ps = [p for p, _ in prs]
     rs = [r for _, r in prs]
     return {
-        "P": sum(ps) / n,
-        "R": sum(rs) / n,
+        "P": sum(ps) / len(prs),
+        "R": sum(rs) / len(prs),
         "N_S": sum(p == 1.0 for p in ps),
         "N_C": sum(r == 1.0 for r in rs),
         "N_SC": sum(p == 1.0 and r == 1.0 for p, r in prs),
-        "n": n,
+        "n": len(prs),
     }
 
 
-METRICS = ("P", "R", "N_S", "N_C", "N_SC")
-METRIC_LABELS = {
-    "P": "mean precision over seeds",
-    "R": "mean recall over seeds",
-    "N_S": "#seeds sound (precision == 1)",
-    "N_C": "#seeds complete (recall == 1)",
-    "N_SC": "#seeds sound and complete",
-    "n": "#seeds aggregated (< requested means runs are missing)",
-}
+def rate(value: float) -> str:
+    """Two decimals, never rounded up to 1.00."""
+    shown = f"{value:.2f}"
+    return "0.99" if shown == "1.00" and value < 1.0 else shown
 
 
-def _collect(
-    experiment: str, args: argparse.Namespace
-) -> dict[str, list[tuple[float, float]]]:
-    """Per-domain (precision, recall) pairs, from the chosen source."""
-    if args.source == "local":
-        by_domain = collect_local(experiment, args.log_dir)
-    else:
-        by_domain = collect_wandb(experiment, args.wandb_project, args.wandb_entity)
+def cells(prs: list[tuple[float, float]] | None) -> list[str]:
+    if not prs:
+        return ["-"] * len(COLUMNS)
+    values = aggregate(prs)
+    return [rate(values[c]) if c in ("P", "R") else str(values[c]) for c in COLUMNS]
+
+
+def markdown_table(header: list[str], rows: list[list[str]]) -> list[str]:
+    return [
+        "| " + " | ".join(header) + " |",
+        "|" + "---|" * len(header),
+        *("| " + " | ".join(row) + " |" for row in rows),
+    ]
+
+
+def plain_table(header: list[str], rows: list[list[str]]) -> str:
+    widths = [max(len(str(x)) for x in column) for column in zip(header, *rows)]
+    return "\n".join(
+        "  ".join(
+            str(x).rjust(w) if i else str(x).ljust(w)
+            for i, (x, w) in enumerate(zip(line, widths))
+        )
+        for line in [header, *rows]
+    )
+
+
+def coverage_rows(
+    cells_: list[tuple[str, str]], args
+) -> tuple[list[str], list[list[str]]]:
+    """A table of the seeds that did not score every problem, per (experiment, domain) in `cells_`."""
+    found = {}
+    for experiment, domain in cells_:
+        counts = coverage(experiment, args.log_dir, args.seeds).get(domain)
+        if counts and (not args.domains or domain in args.domains):
+            found[(experiment, domain)] = counts
+    problems = sorted(
+        {key for counts in found.values() for key in counts},
+        key=lambda key: (-len(key), key),
+    )
+    header = [
+        "experiment",
+        "domain",
+        *(" and ".join(p) + " only" if p else "none" for p in problems),
+    ]
+    rows = [
+        [e, d, *(str(counts.get(p, 0)) for p in problems)]
+        for (e, d), counts in found.items()
+    ]
+    return header, rows
+
+
+def report(
+    title: str, tables: list[tuple[str, list[str], list[list[str]]]], args
+) -> None:
+    """Print `tables`, each (heading, header, rows), and write them to ``--markdown``."""
+    for heading, header, rows in tables:
+        print(f"\n{heading}\n{plain_table(header, rows)}")
+    if not args.markdown:
+        return
+    lines = [f"# {title}", ""]
+    for heading, header, rows in tables:
+        lines += [f"## {heading}", "", *markdown_table(header, rows), ""]
+    args.markdown.parent.mkdir(parents=True, exist_ok=True)
+    args.markdown.write_text("\n".join(lines))
+    print(f"\nwrote {args.markdown}")
+
+
+def configured_values(param: str, domains: list[str]) -> dict[str, float]:
+    """Per domain, the value its config.yaml gives the dotted `param`, if any."""
+    configured = {}
+    for domain in domains:
+        if not domain_config(domain).is_file():
+            continue
+        node = load_yaml(domain_config(domain))
+        for key in param.split("."):
+            node = node.get(key) if isinstance(node, dict) else None
+        if isinstance(node, (int, float)) and not isinstance(node, bool):
+            configured[domain] = float(node)
+    return configured
+
+
+def trained_values(experiment: str, param: str, logs_dir: Path) -> dict[str, float]:
+    """Per domain, the value of the dotted `param` the runs of `experiment` trained with, from their saved config.yaml."""
+    values: dict[str, float] = {}
+    for domain in available_domains():
+        pattern = re.compile(rf"{re.escape(experiment)}-{re.escape(domain)}-s\d+")
+        for config in sorted(
+            (logs_dir / "dias").glob(f"{experiment}-{domain}-s*/config.yaml")
+        ):
+            if not pattern.fullmatch(config.parent.name):
+                continue
+            node = load_yaml(config)
+            for key in param.split("."):
+                if isinstance(node, dict) and key in node:
+                    node = node[key]
+                elif key != "init_args":
+                    # A dataclass-typed argument is saved without init_args.
+                    node = None
+                    break
+            if isinstance(node, (int, float)) and not isinstance(node, bool):
+                values[domain] = float(node)
+            break
+    return values
+
+
+def run_sweep(args, axis_name: str, values: list[float]) -> None:
+    axis = SWEEP_AXES[axis_name]
+    names = {v: sweep_experiment_name(args.experiment, axis, v) for v in values}
+    results = {v: collect_for(names[v], args) for v in values}
+    if axis.linked is None:
+        trained = {
+            domain: value / axis.scale
+            for domain, value in trained_values(
+                args.experiment, axis.param, args.log_dir
+            ).items()
+        }
+        base = None
+        for value in values:
+            at_value = {d for d, v in trained.items() if math.isclose(v, value)}
+            if not results[value] and at_value:
+                base = base or collect_for(args.experiment, args)
+                results[value] = {d: prs for d, prs in base.items() if d in at_value}
+                names[value] = args.experiment
+    domains = sorted(
+        {d for by_domain in results.values() for d in by_domain}
+        | {
+            d
+            for v in values
+            for d in coverage(names[v], args.log_dir, args.seeds)
+            if not args.domains or d in args.domains
+        }
+    )
+    configured = configured_values(axis.param, domains) if axis.linked is None else {}
+    rows = []
+    for domain in domains:
+        for i, value in enumerate(values):
+            shown = f"{value:g}"
+            if domain in configured and math.isclose(configured[domain], value):
+                shown = f"**{shown}**"
+            rows.append(
+                [domain if i == 0 else "", shown, *cells(results[value].get(domain))]
+            )
+    pooled = [
+        ["ALL", f"{v:g}", *cells([pr for d in domains for pr in results[v].get(d, [])])]
+        for v in values
+    ]
+    tables = [
+        (
+            f"{args.experiment}, {axis_name}",
+            ["domain", axis_name, *COLUMNS],
+            rows + pooled,
+        )
+    ]
+    header, missing = coverage_rows(
+        [(names[v], d) for v in values for d in domains], args
+    )
+    if missing:
+        tables.append(("Seeds not scored on every problem", header, missing))
+    report(f"{axis_name} sweep{seeds_note(args.seeds)}", tables, args)
+
+
+def collect_for(experiment: str, args) -> dict[str, list[tuple[float, float]]]:
+    by_domain = collect(experiment, args.log_dir, args.seeds, args.exclude_partial)
     if args.domains:
         by_domain = {d: v for d, v in by_domain.items() if d in args.domains}
     return by_domain
 
 
-def _cell_value(
-    metric: str, prs: list[tuple[float, float]] | None, missing: str = "-"
-) -> str:
-    """One matrix cell: 3-decimal rate, integer count, or `missing` if no runs."""
-    if not prs:
-        return missing
-    value = _aggregate(prs)[metric]
-    return f"{value:.3f}" if metric in ("P", "R") else f"{value:d}"
+def seeds_note(seeds: set[int] | None) -> str:
+    return f", seeds {format_array(sorted(seeds))}" if seeds else ""
 
 
-def print_sweep_matrix(
-    metric: str,
-    values: list[float],
-    domains: list[str],
-    cells: dict[tuple[float, str], list[tuple[float, float]]],
-) -> None:
-    """Print one domain x value matrix for a single metric."""
-
-    def cell(prs: list[tuple[float, float]] | None) -> str:
-        return f"{_cell_value(metric, prs):>8}"
-
-    header = f"{'domain':<16}" + "".join(f"{f'{v:g}':>8}" for v in values)
-    print(f"\n{metric}  ({METRIC_LABELS[metric]})")
-    print(header)
-    print("-" * len(header))
-    for domain in domains:
-        row = "".join(cell(cells.get((v, domain))) for v in values)
-        print(f"{domain:<16}{row}")
-    print("-" * len(header))
-    pooled = "".join(
-        cell([pr for d in domains for pr in cells.get((v, d), [])]) for v in values
+def run_experiments(args, experiments: list[str]) -> None:
+    results = {e: collect_for(e, args) for e in experiments}
+    header, missing = coverage_rows(
+        [(e, d) for e in experiments for d in available_domains()], args
     )
-    print(f"{'ALL':<16}{pooled}")
-
-
-def write_sweep_markdown(
-    path: Path,
-    axis_name: str,
-    param: str,
-    values: list[float],
-    names: dict[float, str],
-    domains: list[str],
-    cells: dict[tuple[float, str], list[tuple[float, float]]],
-    source: str,
-) -> None:
-    """Write one markdown table per metric (domains x value, raw values)."""
-    cols = [f"{v:g}" for v in values]
-    lines = [
-        f"# {axis_name} sweep",
-        "",
-        f"Rows are domains, columns are `{param}` (source: {source}); each cell aggregates over the seeds of that (domain, value) pair. `ALL` pools every seed of every domain at that value. Columns come from the sub-experiments "
-        + ", ".join(f"`{v:g}` → `{names[v]}`" for v in values)
-        + ".",
-        "",
+    domains = sorted(
+        {d for by_domain in results.values() for d in by_domain}
+        | {row[1] for row in missing}
+    )
+    tables = [
+        (
+            "Summary",
+            ["experiment", *COLUMNS],
+            [
+                [e, *cells([pr for d in domains for pr in results[e].get(d, [])])]
+                for e in experiments
+            ],
+        )
     ]
-    for metric in (*METRICS, "n"):
-        lines += [
-            f"## {metric}: {METRIC_LABELS[metric]}",
-            "",
-            "| domain | " + " | ".join(cols) + " |",
-            "|" + "---|" * (len(cols) + 1),
-        ]
-        for domain in domains:
-            row = [_cell_value(metric, cells.get((v, domain))) for v in values]
-            lines.append(f"| {domain} | " + " | ".join(row) + " |")
-        pooled = [
-            _cell_value(metric, [pr for d in domains for pr in cells.get((v, d), [])])
-            for v in values
-        ]
-        lines += ["| **ALL** | " + " | ".join(pooled) + " |", ""]
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines))
-    print(f"\nwrote {path}")
-
-
-def run_sweep(args: argparse.Namespace, axis_name: str, values: list[float]) -> None:
-    """Collect one sub-experiment per value and print/write the domain x value grid."""
-    axis = SWEEP_AXES[axis_name]
-    names = {v: sweep_experiment_name(args.experiment, axis, v) for v in values}
-    _report_matrix(args, axis_name, axis.param, values, names)
-
-
-def run_threshold_sweep(args: argparse.Namespace, values: list[float]) -> None:
-    """Collect the re-validations written by launch_threshold_validation.py, whose columns all read the same checkpoints."""
-    names = {v: threshold_experiment_name(args.experiment, v) for v in values}
-    _report_matrix(args, "threshold", "binarization threshold", values, names)
-
-
-def _report_matrix(
-    args: argparse.Namespace,
-    axis_name: str,
-    param: str,
-    values: list[float],
-    names: dict[float, str],
-) -> None:
-    """Print (and optionally write) the domain x value grid for named experiments."""
-    cells: dict[tuple[float, str], list[tuple[float, float]]] = {}
-    domains: set[str] = set()
-    missing: list[str] = []
-    for value in values:
-        by_domain = _collect(names[value], args)
-        if not by_domain:
-            missing.append(names[value])
-        for domain, prs in by_domain.items():
-            cells[(value, domain)] = prs
-            domains.add(domain)
-
-    print(f"\nexperiment: {args.experiment}  ({axis_name} sweep, {param})")
-    print(f"values    : {', '.join(f'{v:g} -> {names[v]}' for v in values)}")
+    for experiment in experiments:
+        rows = [[d, *cells(results[experiment].get(d))] for d in domains]
+        rows.append(
+            [
+                "ALL",
+                *cells([pr for d in domains for pr in results[experiment].get(d, [])]),
+            ]
+        )
+        tables.append((experiment, ["domain", *COLUMNS], rows))
     if missing:
-        print(f"no results: {', '.join(missing)}")
-    if not domains:
-        print("(no results found)")
-        return
-
-    ordered = sorted(domains)
-    for metric in (*METRICS, "n"):
-        print_sweep_matrix(metric, values, ordered, cells)
-    if args.markdown:
-        write_sweep_markdown(
-            args.markdown,
-            axis_name,
-            param,
-            values,
-            names,
-            ordered,
-            cells,
-            args.source,
-        )
-
-
-def print_table(
-    by_domain: dict[str, list[tuple[float, float]]], experiment: str
-) -> None:
-    header = (
-        f"{'domain':<16} {'P':>6} {'R':>6} {'N_S':>5} {'N_C':>5} {'N_SC':>5} {'n':>4}"
-    )
-    print(f"\nexperiment: {experiment}")
-    print(header)
-    print("-" * len(header))
-    pooled: list[tuple[float, float]] = []
-    for domain in sorted(by_domain):
-        prs = by_domain[domain]
-        pooled += prs
-        a = _aggregate(prs)
-        print(
-            f"{domain:<16} {a['P']:>6.3f} {a['R']:>6.3f} {a['N_S']:>5} {a['N_C']:>5} {a['N_SC']:>5} {a['n']:>4}"
-        )
-    if pooled:
-        print("-" * len(header))
-        a = _aggregate(pooled)
-        print(
-            f"{'ALL':<16} {a['P']:>6.3f} {a['R']:>6.3f} {a['N_S']:>5} {a['N_C']:>5} {a['N_SC']:>5} {a['n']:>4}"
-        )
-    else:
-        print("(no results found)")
-
-
-def write_experiments_markdown(
-    path: Path,
-    experiments: list[str],
-    results: dict[str, dict[str, list[tuple[float, float]]]],
-    domains: list[str],
-    source: str,
-) -> None:
-    """Write one domain table per experiment, plus a cross-experiment summary. Every table spans the union of the domains, so a missing one shows ``-`` rather than vanishing."""
-    columns = (*METRICS, "n")
-    # Per domain, the seed count of the most complete experiment in the set.
-    expected = sum(
-        max(len(results[e].get(d, [])) for e in experiments) for d in domains
-    )
-
-    def pooled_of(experiment: str) -> list[tuple[float, float]]:
-        return [pr for d in domains for pr in results[experiment].get(d, [])]
-
-    lines = [
-        "# Validation results",
-        "",
-        "Experiments: " + ", ".join(f"`{e}`" for e in experiments) + ".",
-        "",
-        f"Rows are domains (source: {source}); each cell aggregates over the seeds of that (experiment, domain) pair. `ALL` pools every seed of every domain of that experiment, `-` means no results.",
-        "",
-        "| Column | Meaning |",
-        "| --- | --- |",
-        *(f"| {c} | {METRIC_LABELS[c]} |" for c in columns),
-        "",
-        "## Summary",
-        "",
-        f"`n` is compared against {expected} seeds, the most complete experiment of this set, per domain.",
-        "",
-        "| experiment | " + " | ".join(columns) + " |",
-        "|" + "---|" * (len(columns) + 1),
-    ]
-    for experiment in experiments:
-        pooled = pooled_of(experiment)
-        cells = [_cell_value(c, pooled) for c in METRICS]
-        lines.append(
-            f"| `{experiment}` | "
-            + " | ".join(cells)
-            + f" | {len(pooled)}/{expected} |"
-        )
-    lines.append("")
-
-    for experiment in experiments:
-        lines += [
-            f"## `{experiment}`",
-            "",
-            "| domain | " + " | ".join(columns) + " |",
-            "|" + "---|" * (len(columns) + 1),
-        ]
-        for domain in domains:
-            row = [_cell_value(c, results[experiment].get(domain)) for c in columns]
-            lines.append(f"| {domain} | " + " | ".join(row) + " |")
-        pooled = pooled_of(experiment)
-        lines += [
-            "| **ALL** | " + " | ".join(_cell_value(c, pooled) for c in columns) + " |",
-            "",
-        ]
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines))
-    print(f"\nwrote {path}")
-
-
-def run_experiments(args: argparse.Namespace, experiments: list[str]) -> None:
-    """Print one table per experiment and optionally write them as markdown."""
-    results = {e: _collect(e, args) for e in experiments}
-    for experiment in experiments:
-        print_table(results[experiment], experiment)
-    if not args.markdown:
-        return
-    domains = sorted({d for by_domain in results.values() for d in by_domain})
-    if not domains:
-        raise SystemExit("--markdown: no results found, nothing written")
-    write_experiments_markdown(
-        args.markdown, experiments, results, domains, args.source
-    )
+        tables.append(("Seeds not scored on every problem", header, missing))
+    report(f"Validation results{seeds_note(args.seeds)}", tables, args)
 
 
 def main() -> int:
@@ -433,25 +331,22 @@ def main() -> int:
         required=True,
         nargs="+",
         metavar="NAME",
-        help="Experiment name(s) (= W&B group). Several names are allowed without a sweep: each gets its own table, and --markdown writes them into one document. A sweep takes exactly one (its base name).",
+        help="Experiments, or one with --sweep.",
     )
-    p.add_argument("--source", default="local", choices=["local", "wandb"])
+    p.add_argument("--domains", nargs="+", default=None, help="Only these domains.")
     p.add_argument(
-        "--domains", nargs="+", default=None, help="Restrict to these domains."
+        "--seeds",
+        nargs="+",
+        default=None,
+        metavar="SEED",
+        help="Only these seeds, e.g. '--seeds 0-4'.",
     )
     p.add_argument("--log-dir", type=Path, default=LOGS_DIR)
-    p.add_argument("--wandb-project", default=WANDB_PROJECT)
-    p.add_argument("--wandb-entity", default=WANDB_ENTITY)
     p.add_argument(
         "--sweep",
         default=None,
         choices=sorted(SWEEP_AXES),
-        help="Aggregate the sweep launched under --experiment (sub-experiments <experiment>-<tag><value>) into a domain x value matrix per metric. Default grids: "
-        + "; ".join(
-            f"{name}: {', '.join(f'{v:g}' for v in axis.values)}"
-            for name, axis in SWEEP_AXES.items()
-        )
-        + ".",
+        help="Collect the experiments launch.py --sweep wrote for --experiment.",
     )
     p.add_argument(
         "--sweep-values",
@@ -459,53 +354,36 @@ def main() -> int:
         type=float,
         default=None,
         metavar="V",
-        help="Values for --sweep instead of that axis' default grid.",
+        help="Values of --sweep instead of its defaults.",
     )
     p.add_argument(
-        "--threshold-sweep",
-        nargs="*",
-        type=float,
-        default=None,
-        metavar="T",
-        help=f"Aggregate the re-validations written by experiments/launch_threshold_validation.py (sub-experiments <experiment>-{THRESHOLD_TAG}<T>) into a domain x threshold matrix per metric. The bare flag uses the default grid "
-        + ", ".join(f"{t:g}" for t in THRESHOLD_VALUES)
-        + ".",
+        "--exclude-partial",
+        action="store_true",
+        help="Leave out seeds that did not score every problem.",
     )
     p.add_argument(
         "--markdown",
         type=Path,
         default=None,
-        help="Also write the tables to this markdown file: one table per metric with --sweep / --threshold-sweep, one table per experiment otherwise.",
+        help="Also write the tables to this file.",
     )
     add_logging_arguments(p)
     args = p.parse_args()
     configure_logging(args)
+    args.seeds = set(parse_seeds(args.seeds)) if args.seeds is not None else None
 
     experiments = list(dict.fromkeys(args.experiment))
-    sweeping = args.sweep is not None or args.threshold_sweep is not None
-    if len(experiments) > 1 and sweeping:
-        raise SystemExit(
-            f"--sweep / --threshold-sweep read the sub-experiments of a single base experiment; got {len(experiments)}: {', '.join(experiments)}"
-        )
+    if args.sweep is None:
+        if args.sweep_values:
+            raise SystemExit("--sweep-values requires --sweep")
+        run_experiments(args, experiments)
+        return 0
+    if len(experiments) > 1:
+        raise SystemExit("--sweep takes one --experiment")
     args.experiment = experiments[0]
-
-    if args.threshold_sweep is not None:
-        if args.sweep is not None:
-            raise SystemExit(
-                "--threshold-sweep varies a validation parameter and cannot be combined with the training-parameter sweeps"
-            )
-        run_threshold_sweep(args, list(args.threshold_sweep) or list(THRESHOLD_VALUES))
-        return 0
-
-    axis_name = args.sweep
-    values = list(args.sweep_values) if args.sweep_values else None
-    if axis_name is not None:
-        run_sweep(args, axis_name, values or list(SWEEP_AXES[axis_name].values))
-        return 0
-    if args.sweep_values:
-        raise SystemExit("--sweep-values requires --sweep")
-
-    run_experiments(args, experiments)
+    run_sweep(
+        args, args.sweep, list(args.sweep_values or SWEEP_AXES[args.sweep].values)
+    )
     return 0
 
 

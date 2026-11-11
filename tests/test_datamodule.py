@@ -9,7 +9,7 @@ from dias.data.noise import ExpectedCount, Ratio
 
 
 class NoiseArgumentTest(unittest.TestCase):
-    """The noise model is a dataclass, and checkpoints may hold only primitives."""
+    """The noise model is stored as primitives."""
 
     def build(self, **kwargs) -> PddlGraphDataModule:
         return PddlGraphDataModule(
@@ -29,7 +29,6 @@ class NoiseArgumentTest(unittest.TestCase):
         self.assertEqual(self.build(noise=stored).noise, Ratio(remove=0.25))
 
     def test_the_stored_form_survives_a_weights_only_load(self):
-        """A dataclass here would make torch.load refuse the whole checkpoint."""
         stored = self.build(noise=ExpectedCount(added_atoms=1.0)).hparams["noise"]
         buffer = io.BytesIO()
         torch.save(stored, buffer)
@@ -41,24 +40,7 @@ class NoiseArgumentTest(unittest.TestCase):
         self.assertIsNone(module.hparams["noise"])
 
 
-class QuotaFloorTest(unittest.TestCase):
-    def test_a_raised_minimum_does_not_reach_the_saved_hyperparameters(self):
-        """An archived run must record the value its config asked for."""
-        module = PddlGraphDataModule(
-            domain_path=str(DOMAIN),
-            problem_path=str(TRAIN_PROBLEM),
-            min_per_action_train=2,
-            min_per_action_valid=1,
-            min_per_action_train_floor=20,
-            min_per_action_valid_floor=10,
-        )
-        self.assertEqual(module.quota.split_weights, (20, 10))
-        self.assertEqual(module.hparams["min_per_action_train"], 2)
-        self.assertEqual(module.hparams["min_per_action_valid"], 1)
-
-
 class DataloaderTest(unittest.TestCase):
-    """One pass through setup and both loaders, on the smallest real domain."""
 
     def build(self, **kwargs) -> PddlGraphDataModule:
         module = PddlGraphDataModule(
@@ -77,13 +59,8 @@ class DataloaderTest(unittest.TestCase):
         self.assertEqual(batch_state.num_graphs, batch_next_state.num_graphs)
         return batch_state
 
-    def test_stratified_batches_stream_without_exhausting(self):
-        module = self.build(batch_sampling_strategy="stratified")
-        loader = module.train_dataloader()
-        self.assertEqual(self.first_batch(loader).y_action.numel(), 4)
-
-    def test_random_batches_walk_the_split(self):
-        module = self.build(batch_sampling_strategy="random")
+    def test_both_loaders_stream_batches_of_the_configured_size(self):
+        module = self.build()
         for loader in (module.train_dataloader(), module.val_dataloader()):
             self.assertEqual(self.first_batch(loader).y_action.numel(), 4)
 

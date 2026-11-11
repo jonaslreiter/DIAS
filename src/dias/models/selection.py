@@ -1,4 +1,4 @@
-"""Binding an action's slots to the objects of a state."""
+"""The selection `S̃^a` of objects into an action's slots (paper, Sec. 4.1 and App. B.4)."""
 
 from __future__ import annotations
 
@@ -18,10 +18,7 @@ def resolve_num_slots(
     action_arities: Sequence[int] | None = None,
     per_action_slots: bool = False,
 ) -> int:
-    """How many slots every action gets.
-
-    With `per_action_slots` the widest action sizes the tensors; otherwise the configured count, capped at the number of objects since a slot nothing can bind to is dead weight.
-    """
+    """The number of slots `M`: the widest action's arity with `per_action_slots`, otherwise `num_slots`, capped at the number of objects."""
     if per_action_slots:
         assert (
             action_arities is not None
@@ -50,10 +47,7 @@ def resolve_num_slots(
 
 
 class SlotSelector(nn.Module):
-    """A soft assignment of slots to objects, one per sample.
-
-    Each (action, slot) has a learned query scoring the encoded objects, which Sinkhorn turns into an assignment. The slack row and absent slack column let a slot bind to nothing while every object is still accounted for.
-    """
+    """Queries `Q^a` matched against the keys `K` by a rectangular Sinkhorn normalization, scaled by the slot weights `σ(w^a)`."""
 
     def __init__(
         self,
@@ -76,7 +70,6 @@ class SlotSelector(nn.Module):
             0.1 * torch.randn(num_actions, num_slots, object_dim)
         )
         self.slot_weight_logits = nn.Parameter(torch.zeros(num_actions, num_slots))
-        # Derived from the constructor arguments, so not checkpointed.
         self.register_buffer(
             "action_arities",
             (
@@ -105,9 +98,8 @@ class SlotSelector(nn.Module):
         y_action: torch.Tensor,
         y_action_args: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """``(B, N, D)`` embeddings to a ``(B, k, N)`` selection and the correspondence matrix behind it."""
+        """``(B, O, d)`` embeddings to a ``(B, M, O)`` selection, and the correspondence matrix ``C^a`` with its slack row."""
         batch, num_objects, _ = embeddings.shape
-        # Score every object against every slot query of this action.
         queries = self.slot_queries[y_action]  # (B, k, D)
         scores = torch.bmm(queries, embeddings.transpose(1, 2)) / self.object_dim**0.5
 
@@ -118,7 +110,6 @@ class SlotSelector(nn.Module):
         )
         correspondence[:, :-1, :] = scores
 
-        # Slots beyond the action's arity are ruled out entirely; otherwise every slot competes and its weight says how much it participates.
         unused = self.unused_slots(y_action) if self.per_action_slots else None
         row_mask = None if unused is None else F.pad(unused, (0, 1), value=False)
 
@@ -137,7 +128,7 @@ class SlotSelector(nn.Module):
     def slot_weights(
         self, y_action: torch.Tensor, y_action_args: torch.Tensor | None = None
     ) -> torch.Tensor:
-        """How strongly each slot participates, ``(B, k)``. Slots whose object the labels already name keep their full weight."""
+        """``σ(w^a)``, ``(B, M)``, with weight 1 for a slot whose object the action label names."""
         logits = self.slot_weight_logits[y_action]
         if not self.use_slot_weights:
             return torch.ones_like(logits)
@@ -152,7 +143,7 @@ class SlotSelector(nn.Module):
         return weights
 
     def applied_slot_weight_logits(self) -> torch.Tensor:
-        """``(A, k)`` logits of the weight `forward` gives each slot of every action, which is what a schema is read off. A slot the model always uses at full weight has an infinite logit, so that it decodes as active at any threshold: every slot when the weights are not learned, and every slot within the action's arity under per-action slots, whose stored logits the forward pass never consults."""
+        """``(A, M)`` logits of the weights `forward` applies: infinite for a slot always used at full weight, which is every slot without `use_slot_weights` and every slot within the arity with `per_action_slots`."""
         if self.use_slot_weights and not self.per_action_slots:
             return self.slot_weight_logits
         logits = torch.full_like(self.slot_weight_logits, torch.inf)
@@ -164,7 +155,7 @@ class SlotSelector(nn.Module):
     def _pin_known_arguments(
         correspondence: torch.Tensor, y_action_args: torch.Tensor
     ) -> None:
-        """Force slots with a known object onto it: rule out the slot's row and the object's column everywhere else, leaving Sinkhorn one admissible cell."""
+        """Bind each slot whose object the label names to that object, and to nothing else."""
         known = y_action_args >= 0  # (B, k)
         if not known.any():
             return
@@ -195,10 +186,7 @@ def batched_sinkhorn_d1d2(
     max_iter: int = 10000,
     row_mask: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """Batched Sinkhorn D1D2 in log-space (https://hal.science/hal-03768664).
-
-    `correspondence` is the slot-by-object score matrix with the slack row appended; `log_row` and `log_col` are the log-domain row and column scalings the iteration alternates between, and the slack row's is pinned to zero so it absorbs whatever column mass no real slot claimed.
-    """
+    """Sinkhorn D1D2 in log space (Brun et al., 2022) on ``C^a`` with a slack row, which absorbs the mass of objects no slot selects."""
     tol = 1.0e-2
     batch_size, num_rows, _ = correspondence.shape
     slack_row = num_rows - 1
@@ -226,13 +214,10 @@ def batched_sinkhorn_d1d2(
             log_row = log_row.masked_fill(row_mask, -torch.inf)
         log_col = -torch.logsumexp(correspondence + log_row.unsqueeze(-1), dim=-2)
 
-        if (
-            max(
-                (log_row - previous_row).abs().max(),
-                (log_col - previous_col).abs().max(),
-            )
-            < tol
-        ):
+        row_change = (log_row - previous_row).abs()
+        if row_mask is not None:
+            row_change = row_change.masked_fill(row_mask, 0.0)
+        if max(row_change.max(), (log_col - previous_col).abs().max()) < tol:
             break
 
     return torch.exp(log_row.unsqueeze(-1) + correspondence + log_col.unsqueeze(-2))

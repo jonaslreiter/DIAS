@@ -1,7 +1,4 @@
-"""Dataclass-typed arguments that have to survive a checkpoint.
-
-`torch.load` defaults to ``weights_only=True`` and refuses to unpickle a dataclass, which makes the whole checkpoint unloadable. So they are stored as the ``class_path`` / ``init_args`` mapping jsonargparse writes in a config file, and rebuilt from it on the way in.
-"""
+"""Dataclass-typed arguments stored in hyper-parameters as the ``class_path`` / ``init_args`` mapping of a config file, since a checkpoint must hold primitives only."""
 
 from __future__ import annotations
 
@@ -12,7 +9,7 @@ T = TypeVar("T")
 
 
 def to_mapping(value) -> dict:
-    """The primitive form of a dataclass-typed argument."""
+    """`value` as a ``class_path`` / ``init_args`` mapping."""
     return {
         "class_path": f"{type(value).__module__}.{type(value).__name__}",
         "init_args": asdict(value),
@@ -20,7 +17,7 @@ def to_mapping(value) -> dict:
 
 
 def from_mapping(value: T | Mapping[str, object], options: Sequence[type]) -> T:
-    """Accept one of `options`, or the mapping a checkpoint stores it as."""
+    """An instance of one of `options`, given as one or as its mapping."""
     if isinstance(value, tuple(options)):
         return value
     by_name = {option.__name__: option for option in options}

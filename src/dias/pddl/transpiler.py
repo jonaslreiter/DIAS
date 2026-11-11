@@ -1,6 +1,8 @@
-"""Binary schema tensors to lifted PDDL action schemas."""
+"""Binarized schema tensors to lifted action schemas."""
 
 from __future__ import annotations
+
+from itertools import combinations
 
 import numpy as np
 
@@ -8,10 +10,7 @@ from dias.schema.action import ActionSchema, LiftedAtom
 
 
 class PDDLTranspiler:
-    """Reads action schemas off binarized effect/precondition tensors.
-
-    Each is ``(actions, predicates, slots, slots)`` of 0/1. A set cell means action ``a`` asserts predicate ``r`` over slots ``s1``, ``s2``, truncated to the predicate's arity, which is why atoms are deduplicated: for a unary predicate the ``s2`` axis is redundant.
-    """
+    """Action schemas from 0/1 effect and precondition tensors ``(A, R, M, M)``, in which a unary predicate is on the diagonal."""
 
     def __init__(
         self,
@@ -68,7 +67,6 @@ class PDDLTranspiler:
         self.delete_effects = delete_effects
         self.positive_preconditions = positive_preconditions
         self.negative_preconditions = negative_preconditions
-        # Copied: add_unreachable_action extends these, and callers keep using their lists.
         self.predicate_names = list(predicate_names)
         self.predicate_arities = list(predicate_arities)
         self.action_names = action_names
@@ -104,29 +102,21 @@ class PDDLTranspiler:
         ]
         return self.action_schemas
 
-    def add_unreachable_action(
-        self,
-        action_name: str = "dummy_action_unreachable",
-        guard_predicate_name: str = "dummy_guard",
-    ) -> ActionSchema:
-        """Append an action that mentions every predicate but can never fire, which is what keeps every predicate fluent for pymimir.
+    def declare_predicate(self, name: str, arity: int) -> None:
+        """Declare a predicate the tensors have no channel for."""
+        if name not in self.predicate_names:
+            self.predicate_names.append(name)
+            self.predicate_arities.append(arity)
+            self.num_predicates += 1
 
-        A nullary guard nothing produces makes it unreachable, without the contradictory preconditions some PDDL compilers optimise away.
-        """
-        self.predicate_names.append(guard_predicate_name)
-        self.predicate_arities.append(0)
-        self.num_predicates += 1
-
-        schema = ActionSchema(
-            name=action_name,
-            preconditions=[LiftedAtom(guard_predicate_name, 0, [], True)],
-            effects=[
-                LiftedAtom(name, arity, list(range(arity)), True)
-                for name, arity in zip(self.predicate_names, self.predicate_arities)
-            ],
-        )
-        self.action_schemas.append(schema)
-        return schema
+    def require_distinct(self, predicate_name: str) -> None:
+        """Require every two parameters of every schema to differ, as ``(not (predicate_name ?a ?b))``."""
+        self.declare_predicate(predicate_name, 2)
+        for schema in self.action_schemas:
+            for x, y in combinations(schema.parameters, 2):
+                distinct = LiftedAtom(predicate_name, 2, [x, y], False)
+                if distinct not in schema.preconditions:
+                    schema.preconditions.append(distinct)
 
     def __str__(self):
         return "\n\n".join(str(s) for s in self.action_schemas).strip()

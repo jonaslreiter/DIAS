@@ -97,6 +97,14 @@ class TypeHierarchyTest(unittest.TestCase):
         self.assertEqual(text.parse_type_groups("(define (domain d))"), [])
         self.assertEqual(text.type_parents("(define (domain d))"), {})
 
+    def test_a_type_without_a_parent_is_a_child_of_object(self):
+        self.assertEqual(
+            text.parse_type_groups(
+                "(define (domain d) (:types satellite truck-bay - place mode))"
+            ),
+            [(["satellite", "truck-bay"], "place"), (["mode"], "object")],
+        )
+
 
 class EqualityTest(unittest.TestCase):
     def test_detects_the_equality_requirement(self):
@@ -105,11 +113,75 @@ class EqualityTest(unittest.TestCase):
             text.domain_uses_equality("(define (domain d) (:requirements :strips))")
         )
 
-    def test_rewrites_equality_atoms_as_a_predicate(self):
-        self.assertEqual(
-            text.replace_equality_with_predicate("(and (= ?a ?b) (p ?a))", "eq"),
-            "(and (eq ?a ?b) (p ?a))",
+    def test_requiring_it_adds_it_once(self):
+        domain = "(define (domain d) (:requirements :strips))"
+        required = text.require_equality(domain)
+        self.assertTrue(text.domain_uses_equality(required))
+        self.assertEqual(text.require_equality(required), required)
+        self.assertIn(
+            "(:requirements :equality)", text.require_equality("(define (domain d))")
         )
+
+
+class DeclaredPredicatesTest(unittest.TestCase):
+    def test_arities_count_variables_not_types(self):
+        self.assertEqual(text.declared_predicates(DOMAIN), {"at": 2, "clear": 1})
+
+    def test_comments_and_hyphenated_names(self):
+        domain = "(define (domain d)\n  (:predicates (on-table ?x)\n    ;; ?x (a block) is held\n    (holding ?x)))"
+        self.assertEqual(
+            text.declared_predicates(domain), {"on-table": 1, "holding": 1}
+        )
+
+
+EQUAL_DOMAIN = """(define (domain d)
+  (:requirements :strips :typing :equality)
+  (:types cell)
+  (:predicates
+    (at ?x - cell)
+    (Eq ?x - object ?y - object)
+    (equal ?x)
+  )
+  (:action move
+    :parameters (?from - cell ?to - cell)
+    :precondition (and (at ?from) (not (EQ ?from ?to)) (= ?to ?to))
+    :effect (and (at ?to) (not (at ?from))))
+)
+"""
+
+
+class EqualityPredicateTest(unittest.TestCase):
+    def test_equality_is_eq_or_equal_when_binary(self):
+        self.assertTrue(text.is_equality_predicate("=", 2))
+        self.assertTrue(text.is_equality_predicate("Equal", 2))
+        self.assertFalse(text.is_equality_predicate("eq", 1))
+        # `equal` here is unary, so it cannot be equality.
+        self.assertEqual(text.equality_predicates(EQUAL_DOMAIN), ["Eq"])
+
+    def test_every_spelling_becomes_the_predicate_equal(self):
+        rewritten = text.equality_as_predicate(EQUAL_DOMAIN)
+        self.assertIn("(not (equal ?from ?to))", rewritten)
+        self.assertIn("(equal ?to ?to)", rewritten)
+        self.assertNotIn("(eq ", rewritten.lower())
+        self.assertNotIn("(= ", rewritten)
+        self.assertFalse(text.domain_uses_equality(rewritten))
+        self.assertEqual(text.declared_predicates(rewritten), {"at": 1, "equal": 2})
+
+    def test_forced_distinct_parameters_are_pairwise(self):
+        rewritten = text.force_distinct_parameters(text.equality_as_predicate(DOMAIN))
+        push = text.extract_action_blocks(rewritten)[0]
+        for a, b in (("?p", "?c"), ("?p", "?from"), ("?c", "?to"), ("?from", "?to")):
+            self.assertEqual(push.count(f"(not (equal {a} {b}))"), 1)
+        self.assertIn("(at ?p ?from)", push)
+        move = text.extract_action_blocks(rewritten)[1]
+        self.assertIn("(and (not (equal ?p ?q)) (clear ?q))", move)
+        self.assertEqual(text.force_distinct_parameters(rewritten), rewritten)
+
+    def test_forcing_replaces_whatever_equality_was_learned(self):
+        domain = "(define (domain d)\n  (:action a :parameters (?x ?y)\n    :precondition (and (equal ?x ?x) (not(equal ?y ?y)) (p ?x))\n    :effect (and (equal ?x ?y) (not (p ?x)))))"
+        action = text.extract_action_blocks(text.force_distinct_parameters(domain))[0]
+        self.assertIn(":precondition (and (not (equal ?x ?y)) (p ?x))", action)
+        self.assertIn(":effect (and (not (p ?x)))", action)
 
 
 class InjectPreconditionsTest(unittest.TestCase):

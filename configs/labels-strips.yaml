@@ -1,0 +1,9 @@
+# Transitions are labelled with full STRIPS actions, and each action has one slot per argument.
+data:
+  init_args:
+    action_arguments: true
+model:
+  init_args:
+    force_action_args: true
+    per_action_slots: true
+    num_slots: null

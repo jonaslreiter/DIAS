@@ -1,4 +1,4 @@
-"""Reading a lifted schema off a trained model's logits."""
+"""The derivation of action schemas from a model's parameters (paper, Sec. 4.5)."""
 
 import numpy as np
 import torch
@@ -21,10 +21,7 @@ def derive_schema(
     random_flip: bool = False,
     threshold: float = 0.5,
 ):
-    """Derive each action's lifted schema by binarizing the learned tensors at *threshold*.
-
-    It applies uniformly to slot activation and all four schema tensors, so lowering it yields more active slots (higher learned arity) and more effects and preconditions. 0.5 is what the paper reports. `effect_logits` of None gives None back for the add and delete arrays.
-    """
+    """Each action's active slots and its add effects, delete effects, positive and negative preconditions over them, as 0/1 arrays ``(A, R, M, M)`` thresholded at `threshold`. Add and delete are None without `effect_logits`. `random_flip` flips one random cell of each array."""
     effects = None if effect_logits is None else Channels.from_logits(effect_logits)
     add_probabilities = None if effects is None else effects.positive
     delete_probabilities = None if effects is None else effects.negative
@@ -35,7 +32,7 @@ def derive_schema(
 
     slot_activations = F.sigmoid(slot_weight_logits)
 
-    # Slots whose object the labels already name are active by construction.
+    # A slot whose object the label names is active.
     if action_arguments and force_action_args:
         if strips_plus_actions:
             forced_slots = torch.zeros(len(action_names), num_slots, dtype=torch.bool)
@@ -51,7 +48,6 @@ def derive_schema(
 
     active_slots = slot_activations.detach().cpu().numpy() > threshold
 
-    # An inactive slot is not a parameter of the learned action, so nothing may be asserted over it.
     schema = [positive_probabilities, negative_probabilities]
     if effects is not None:
         schema += [add_probabilities, delete_probabilities]
@@ -88,7 +84,7 @@ def derive_schema(
 
 
 def _binarize(probabilities, threshold: float):
-    """0/1 array at `threshold`, or None for a schema part that does not exist."""
+    """`probabilities` thresholded to 0/1, or None."""
     if probabilities is None:
         return None
     return np.where(probabilities > threshold, 1, 0)

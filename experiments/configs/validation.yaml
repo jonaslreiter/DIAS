@@ -1,10 +1,16 @@
-# Consumed by experiments/launch.py, validate_runs.py and validate_checkpoint.py. Each domain trains on `pddl/<domain>/train.pddl` and validates on that folder's `test-1.pddl` .. `test-3.pddl`; which files those are is the folder layout, not a setting.
+# These are the validation settings, read by experiments/launch.py, validate_runs.py and validate_checkpoint.py.
 
-num_samples: 250
-sample_population: 500
+# The states of a test problem are drawn as `dias.validation.successors.WalkSampling` describes.
+sampling:
+  num_samples: 500
+  walk_length: 2000
+  min_walks: 5
 
-# Null draws a fresh sample every run, as each run also trains on its own. Unfixed is not unrecorded: the seed that was drawn is written into the result JSON, and setting it back here scores the next run on exactly those states.
+# This is the seed of the state draw. With null, every validation draws a seed and records it in its result.
 sample_seed: null
 
-# Per domain; also the default --num-runs. The paper uses 0..9.
+# A launch runs these seeds by default.
 seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+# If true, validation replaces what a learned domain says about equality with the distinctness of every two parameters.
+force_injective: false

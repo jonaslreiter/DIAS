@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 import torch
 
-from dias.validation.decoding import derive_schema
+from dias.schema.derivation import derive_schema
 
 
 class ProcessModelLogitsTest(unittest.TestCase):
@@ -60,7 +60,7 @@ class ProcessModelLogitsTest(unittest.TestCase):
         self.assertEqual(sum(array.sum() for array in result[:4]), 4)
 
     def test_a_model_without_lifted_effects_decodes_only_its_preconditions(self):
-        """The MLP-effects model predicts effects from the state; there is no tensor."""
+        """The MLP-effects model predicts effects from the state, so there is no tensor."""
         shape = (1, 1, 2, 2, 3)
         precondition_logits = torch.zeros(shape)
         precondition_logits[..., 1] = 10.0
