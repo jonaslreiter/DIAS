@@ -378,6 +378,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    import safe_slurm  # noqa: F401
+    import shardguard  # noqa: F401
 
     sys.exit(main())

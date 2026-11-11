@@ -4,7 +4,7 @@ Each experiment of the paper consists of one or more `launch.py` commands and on
 
 ## Setup
 
-The Slurm jobs use [safe-slurm](https://github.com/jonaslreiter/safe-slurm), which keeps a job within its GPU shards and its memory, so install it with `pip install safe-slurm`. Adapt the `site configuration` block at the top of `slurm/train.sh`, `slurm/validate.sh` and `scaling/slurm/benchmark.sh` to your cluster. The resources in `configs/slurm.yaml` are sized on our cluster and may need changes as well. With `--backend local`, a launch runs on the current machine instead, one run after another.
+The training and validation jobs use [shardguard](https://github.com/jonaslreiter/shardguard), which caps the GPU memory of PyTorch at the GPU shards of a job, so install it with `pip install shardguard`. Adapt the `site configuration` block at the top of `slurm/train.sh`, `slurm/validate.sh` and `scaling/slurm/benchmark.sh` to your cluster. The resources in `configs/slurm.yaml` are sized on our cluster and may need changes as well. With `--backend local`, a launch runs on the current machine instead, one run after another.
 
 ## Table 1: main results
 

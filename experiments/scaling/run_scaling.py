@@ -141,6 +141,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    import safe_slurm  # noqa: F401
-
     raise SystemExit(main())

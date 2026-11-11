@@ -3,7 +3,7 @@
 #SBATCH --job-name=dias-train
 #SBATCH --partition=rleap_gpu_24gb,rleap_gpu_48gb
 #SBATCH --output=logs/slurm/%x-%A_%a.out
-# This puts a python with dias and safe-slurm on PATH. Export DIAS_ENV_SETUP to replace it.
+# This puts a python with dias and shardguard on PATH. Export DIAS_ENV_SETUP to replace it.
 : ${DIAS_ENV_SETUP:="source ~/.zshrc && conda activate dias"}
 # ── end site configuration ────────────────────────────────────────────────────
 #

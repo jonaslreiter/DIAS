@@ -1,6 +1,6 @@
-"""Train one run, as the `dias` command does, within the Slurm job's GPU shards and memory. It is the training step of experiments/launch.py."""
+"""Train one run, as the `dias` command does, within the GPU shards of the Slurm job. It is the training step of experiments/launch.py."""
 
-import safe_slurm  # noqa: F401
+import shardguard  # noqa: F401
 
 from dias.main import main
 
