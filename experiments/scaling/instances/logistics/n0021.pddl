@@ -1,7 +1,7 @@
 (define (problem logistics-n21)
- (:domain logistics)
- (:objects a0 a1 c0 c1 c2 t0 t1 t2 l0-0 l0-1 l0-2 l1-0 l1-1 l1-2 l2-0 l2-1 l2-2 p0 p1 p2 p3)
- (:init
+  (:domain logistics)
+  (:objects a0 a1 c0 c1 c2 t0 t1 t2 l0-0 l0-1 l0-2 l1-0 l1-1 l1-2 l2-0 l2-1 l2-2 p0 p1 p2 p3)
+  (:init
     (vehicle a0)
     (vehicle a1)
     (vehicle t0)
@@ -49,4 +49,5 @@
     (at p3 l1-2)
     (at a0 l1-0)
     (at a1 l2-0))
- (:goal  (and)))
+  (:goal (and))
+)

@@ -1,11 +1,6 @@
 (define (problem simple1)
   (:domain sokoban-domain)
-  (:objects 
-    s_1_1 s_1_2 s_1_3 s_1_4
-    s_2_1 s_2_2 s_2_3 s_2_4
-    s_3_1 s_3_2 s_3_3 s_3_4
-    s_4_1 s_4_2 s_4_3 s_4_4
-  )
+  (:objects s_1_1 s_1_2 s_1_3 s_1_4 s_2_1 s_2_2 s_2_3 s_2_4 s_3_1 s_3_2 s_3_3 s_3_4 s_4_1 s_4_2 s_4_3 s_4_4)
   (:init
     (adjacent s_1_1 s_1_2)
     (adjacent s_1_2 s_1_1)
@@ -90,7 +85,8 @@
     (has_player s_4_4)
     (has_box s_2_2)
     (has_box s_3_3)
+    (has_box s_4_2))
+  (:goal (and
     (has_box s_4_2)
-    )
-  (:goal (and (has_box s_4_2) (has_box s_2_4)))
+    (has_box s_2_4)))
 )

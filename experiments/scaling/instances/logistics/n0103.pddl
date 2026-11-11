@@ -1,7 +1,7 @@
 (define (problem logistics-n103)
- (:domain logistics)
- (:objects a0 a1 a2 c0 c1 c2 c3 c4 c5 c6 c7 c8 t0 t1 t2 t3 t4 t5 t6 t7 t8 l0-0 l0-1 l0-2 l0-3 l0-4 l0-5 l0-6 l0-7 l1-0 l1-1 l1-2 l1-3 l1-4 l1-5 l1-6 l1-7 l2-0 l2-1 l2-2 l2-3 l2-4 l2-5 l2-6 l2-7 l3-0 l3-1 l3-2 l3-3 l3-4 l3-5 l3-6 l3-7 l4-0 l4-1 l4-2 l4-3 l4-4 l4-5 l4-6 l4-7 l5-0 l5-1 l5-2 l5-3 l5-4 l5-5 l5-6 l5-7 l6-0 l6-1 l6-2 l6-3 l6-4 l6-5 l6-6 l6-7 l7-0 l7-1 l7-2 l7-3 l7-4 l7-5 l7-6 l7-7 l8-0 l8-1 l8-2 l8-3 l8-4 l8-5 l8-6 l8-7 p0 p1 p2 p3 p4 p5 p6 p7 p8 p9)
- (:init
+  (:domain logistics)
+  (:objects a0 a1 a2 c0 c1 c2 c3 c4 c5 c6 c7 c8 t0 t1 t2 t3 t4 t5 t6 t7 t8 l0-0 l0-1 l0-2 l0-3 l0-4 l0-5 l0-6 l0-7 l1-0 l1-1 l1-2 l1-3 l1-4 l1-5 l1-6 l1-7 l2-0 l2-1 l2-2 l2-3 l2-4 l2-5 l2-6 l2-7 l3-0 l3-1 l3-2 l3-3 l3-4 l3-5 l3-6 l3-7 l4-0 l4-1 l4-2 l4-3 l4-4 l4-5 l4-6 l4-7 l5-0 l5-1 l5-2 l5-3 l5-4 l5-5 l5-6 l5-7 l6-0 l6-1 l6-2 l6-3 l6-4 l6-5 l6-6 l6-7 l7-0 l7-1 l7-2 l7-3 l7-4 l7-5 l7-6 l7-7 l8-0 l8-1 l8-2 l8-3 l8-4 l8-5 l8-6 l8-7 p0 p1 p2 p3 p4 p5 p6 p7 p8 p9)
+  (:init
     (vehicle a0)
     (vehicle a1)
     (vehicle a2)
@@ -220,4 +220,5 @@
     (at a0 l3-0)
     (at a1 l2-0)
     (at a2 l1-0))
- (:goal  (and)))
+  (:goal (and))
+)

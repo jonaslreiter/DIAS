@@ -1,4 +1,3 @@
-
 ;; This is a plain STRIPS formulation of the standard Logistics domain.
 
 ;; In this domain, there are six different types of objects: "package"
@@ -18,15 +17,18 @@
 (define (domain logistics)
   (:requirements :strips :negative-preconditions)
   (:predicates
-
-   ;; Static predicates:
-   (package ?o) (truck ?t) (airplane ?p) (vehicle ?v)
-   (location ?l) (airport ?a) (city ?c) (loc ?l ?c)
-
-   ;; Non-static predicates:
-   (at ?x ?l) ;; ?x (package or vehicle) is at location ?l
-   (in ?p ?v) ;; package ?p is in vehicle ?v
-   )
+    ;; Static predicates:
+    (package ?o)
+    (truck ?t)
+    (airplane ?p)
+    (vehicle ?v)
+    (location ?l)
+    (airport ?a)
+    (city ?c)
+    (loc ?l ?c)
+    ;; Non-static predicates:
+    (at ?x ?l) ;; ?x (package or vehicle) is at location ?l
+    (in ?p ?v)) ;; package ?p is in vehicle ?v
 
   ;; Actions for loading and unloading packages.
   ;; By declaring all trucks and airplanes to be also "vehicle", we
@@ -34,15 +36,27 @@
   ;; would need one for each subtype of vehicle).
   (:action load
     :parameters (?o ?v ?l)
-    :precondition (and (package ?o) (vehicle ?v) (location ?l)
-		       (at ?v ?l) (at ?o ?l))
-    :effect (and (in ?o ?v) (not (at ?o ?l))))
+    :precondition (and
+      (package ?o)
+      (vehicle ?v)
+      (location ?l)
+      (at ?v ?l)
+      (at ?o ?l))
+    :effect (and
+      (in ?o ?v)
+      (not (at ?o ?l))))
 
   (:action unload
     :parameters (?o ?v ?l)
-    :precondition (and (package ?o) (vehicle ?v) (location ?l)
-		       (at ?v ?l) (in ?o ?v))
-    :effect (and (at ?o ?l) (not (in ?o ?v))))
+    :precondition (and
+      (package ?o)
+      (vehicle ?v)
+      (location ?l)
+      (at ?v ?l)
+      (in ?o ?v))
+    :effect (and
+      (at ?o ?l)
+      (not (in ?o ?v))))
 
   ;; Drive a truck between two locations in the same city.
   ;; By declaring all locations, including airports, to be of type
@@ -52,14 +66,29 @@
   ;; unnecessay).
   (:action drive
     :parameters (?t ?l1 ?l2 ?c)
-    :precondition (and (truck ?t) (location ?l1) (location ?l2) (city ?c)
-		       (at ?t ?l1) (loc ?l1 ?c) (loc ?l2 ?c) (not (at ?t ?l2)))
-    :effect (and (at ?t ?l2) (not (at ?t ?l1))))
+    :precondition (and
+      (truck ?t)
+      (location ?l1)
+      (location ?l2)
+      (city ?c)
+      (at ?t ?l1)
+      (loc ?l1 ?c)
+      (loc ?l2 ?c)
+      (not (at ?t ?l2)))
+    :effect (and
+      (at ?t ?l2)
+      (not (at ?t ?l1))))
 
   ;; Fly an airplane between two airports.
   (:action fly
     :parameters (?p ?a1 ?a2)
-    :precondition (and (airplane ?p) (airport ?a1) (airport ?a2)
-		       (at ?p ?a1) (not (at ?p ?a2)))
-    :effect (and (at ?p ?a2) (not (at ?p ?a1))))
-  )
+    :precondition (and
+      (airplane ?p)
+      (airport ?a1)
+      (airport ?a2)
+      (at ?p ?a1)
+      (not (at ?p ?a2)))
+    :effect (and
+      (at ?p ?a2)
+      (not (at ?p ?a1))))
+)

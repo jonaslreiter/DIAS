@@ -1,13 +1,12 @@
 (define (problem prob)
- (:domain spanner)
- (:objects
-     bob - man
-     spanner1 spanner2 spanner3 spanner4 spanner5 spanner6 - spanner
-     nut1 nut2 nut3 nut4 - nut
-     location1 location2 location3 location4 location5 location6 - location
-     shed gate - location
-    )
- (:init
+  (:domain spanner)
+  (:objects
+    bob - man
+    spanner1 spanner2 spanner3 spanner4 spanner5 spanner6 - spanner
+    nut1 nut2 nut3 nut4 - nut
+    location1 location2 location3 location4 location5 location6 - location
+    shed gate - location)
+  (:init
     (at bob shed)
     (at spanner1 location6)
     (useable spanner1)
@@ -35,12 +34,10 @@
     (link location2 location3)
     (link location3 location4)
     (link location4 location5)
-    (link location5 location6)
+    (link location5 location6))
+  (:goal (and
+    (tightened nut1)
+    (tightened nut2)
+    (tightened nut3)
+    (tightened nut4)))
 )
- (:goal
-  (and
-   (tightened nut1)
-   (tightened nut2)
-   (tightened nut3)
-   (tightened nut4)
-)))

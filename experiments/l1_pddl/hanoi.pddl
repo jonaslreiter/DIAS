@@ -3,8 +3,7 @@
   (:predicates
     (clear ?x)
     (on ?x ?y)
-    (smaller ?x ?y)
-  )
+    (smaller ?x ?y))
 
   (:action move
     :parameters (?untyped1 ?untyped2 ?untyped3)
@@ -14,17 +13,14 @@
       (= ?untyped1 ?untyped1)
       (= ?untyped2 ?untyped2)
       (= ?untyped3 ?untyped3)
-      (not(clear ?untyped1))
-      (not(on ?untyped3 ?untyped2))
+      (not (clear ?untyped1))
+      (not (on ?untyped3 ?untyped2))
       (on ?untyped3 ?untyped1)
       (smaller ?untyped3 ?untyped1)
-      (smaller ?untyped3 ?untyped2)
-    )
+      (smaller ?untyped3 ?untyped2))
     :effect (and
       (clear ?untyped1)
-      (not(clear ?untyped2))
-      (not(on ?untyped3 ?untyped1))
-      (on ?untyped3 ?untyped2)
-    )
-  )
+      (not (clear ?untyped2))
+      (not (on ?untyped3 ?untyped1))
+      (on ?untyped3 ?untyped2)))
 )

@@ -1,7 +1,7 @@
 (define (problem logistics-n38)
- (:domain logistics)
- (:objects a0 a1 c0 c1 c2 c3 c4 t0 t1 t2 t3 t4 l0-0 l0-1 l0-2 l0-3 l1-0 l1-1 l1-2 l1-3 l2-0 l2-1 l2-2 l2-3 l3-0 l3-1 l3-2 l3-3 l4-0 l4-1 l4-2 l4-3 p0 p1 p2 p3 p4 p5)
- (:init
+  (:domain logistics)
+  (:objects a0 a1 c0 c1 c2 c3 c4 t0 t1 t2 t3 t4 l0-0 l0-1 l0-2 l0-3 l1-0 l1-1 l1-2 l1-3 l2-0 l2-1 l2-2 l2-3 l3-0 l3-1 l3-2 l3-3 l4-0 l4-1 l4-2 l4-3 p0 p1 p2 p3 p4 p5)
+  (:init
     (vehicle a0)
     (vehicle a1)
     (vehicle t0)
@@ -85,4 +85,5 @@
     (at p5 l1-0)
     (at a0 l0-0)
     (at a1 l4-0))
- (:goal  (and)))
+  (:goal (and))
+)

@@ -1,4 +1,3 @@
-
 ;; The npuzzle puzzle (i.e. the eight/fifteen/twentyfour puzzle).
 ;; Tile positions are encoded by the predicate (at <tile> <x> <y>), i.e.
 ;; using one object for horizontal position and one for vertical (there's
@@ -19,42 +18,65 @@
     (at ?t ?c)
     (blank ?c)
     (above ?c ?cc)
-    (right ?c ?pccp)
-  )
+    (right ?c ?pccp))
 
   (:action move-up
     :parameters (?omf ?c ?cc)
     :precondition (and
-      (tile ?omf) (cell ?c) (cell ?cc)
-      (above ?cc ?c) (blank ?cc) (at ?omf ?c))
-    :effect (and (not (blank ?cc)) (not (at ?omf ?c))
-      (blank ?c) (at ?omf ?cc))
-  )
+      (tile ?omf)
+      (cell ?c)
+      (cell ?cc)
+      (above ?cc ?c)
+      (blank ?cc)
+      (at ?omf ?c))
+    :effect (and
+      (not (blank ?cc))
+      (not (at ?omf ?c))
+      (blank ?c)
+      (at ?omf ?cc)))
 
   (:action move-down
     :parameters (?omf ?c ?cc)
     :precondition (and
-      (tile ?omf) (cell ?c) (cell ?cc)
-      (above ?c ?cc) (blank ?cc) (at ?omf ?c))
-    :effect (and (not (blank ?cc)) (not (at ?omf ?c))
-      (blank ?c) (at ?omf ?cc))
-  )
+      (tile ?omf)
+      (cell ?c)
+      (cell ?cc)
+      (above ?c ?cc)
+      (blank ?cc)
+      (at ?omf ?c))
+    :effect (and
+      (not (blank ?cc))
+      (not (at ?omf ?c))
+      (blank ?c)
+      (at ?omf ?cc)))
 
   (:action move-left
     :parameters (?omf ?c ?cc)
     :precondition (and
-      (tile ?omf) (cell ?c) (cell ?cc)
-      (right ?c ?cc) (blank ?cc) (at ?omf ?c))
-    :effect (and (not (blank ?cc)) (not (at ?omf ?c))
-      (blank ?c) (at ?omf ?cc))
-  )
+      (tile ?omf)
+      (cell ?c)
+      (cell ?cc)
+      (right ?c ?cc)
+      (blank ?cc)
+      (at ?omf ?c))
+    :effect (and
+      (not (blank ?cc))
+      (not (at ?omf ?c))
+      (blank ?c)
+      (at ?omf ?cc)))
 
   (:action move-right
     :parameters (?omf ?c ?cc)
     :precondition (and
-      (tile ?omf) (cell ?c) (cell ?cc)
-      (right ?cc ?c) (blank ?cc) (at ?omf ?c))
-    :effect (and (not (blank ?cc)) (not (at ?omf ?c))
-      (blank ?c) (at ?omf ?cc))
-  )
+      (tile ?omf)
+      (cell ?c)
+      (cell ?cc)
+      (right ?cc ?c)
+      (blank ?cc)
+      (at ?omf ?c))
+    :effect (and
+      (not (blank ?cc))
+      (not (at ?omf ?c))
+      (blank ?c)
+      (at ?omf ?cc)))
 )
