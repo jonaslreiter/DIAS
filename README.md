@@ -49,7 +49,7 @@ dias fit --config configs/main.yaml --config pddl/blocks-3/config.yaml --trainer
 python experiments/validate_checkpoint.py --validator dias --model-id quickstart --problem pddl/blocks-3/test-1.pddl
 ```
 
-The checkpoints of the run are written to `logs/dias/quickstart/checkpoints/`, each with its learned domain as a PDDL file beside it. The runs of the paper train for 10,000 steps.
+The checkpoints of the run are written to `logs/dias/quickstart/checkpoints/`, each with its learned domain as a PDDL file beside it. After 300 steps, the learned domain is still far from the original one, while the runs of the paper train for 10,000 steps.
 
 ## Domains
 
