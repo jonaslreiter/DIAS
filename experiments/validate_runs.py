@@ -1,6 +1,6 @@
-"""Validate one ``(experiment, domain, seed)`` run on the domain's test problems; the validation step of experiments/launch.py.
+"""Validate one ``(experiment, domain, seed)`` run on the domain's test problems. It is the validation step of experiments/launch.py.
 
-The experiment type picks the validator. Results go to ``<logs>/validation/<experiment>/<domain>/seed<seed>.json``, the learned domain they scored beside it as ``seed<seed>.pddl``, and the metrics to the run's W&B run. The JSON records the sample seed the states were drawn with and is written after every problem; each state's score is recorded as it finishes, and ``--resume`` continues from there. A state that does not fit in the job's memory ends the seed as ``out_of_memory``.
+The experiment type picks the validator. Results go to ``<logs>/validation/<experiment>/<domain>/seed<seed>.json``, the learned domain they scored beside it as ``seed<seed>.pddl``, and the metrics to the run's W&B run. The JSON records the sample seed the states were drawn with and is written after every problem. Each state's score is recorded as it finishes, and ``--resume`` continues from there. A state that does not fit in the job's memory ends the seed as ``out_of_memory``.
 """
 
 from __future__ import annotations

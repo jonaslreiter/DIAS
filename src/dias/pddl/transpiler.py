@@ -10,7 +10,7 @@ from dias.schema.action import ActionSchema, LiftedAtom
 
 
 class PDDLTranspiler:
-    """Action schemas from 0/1 effect and precondition tensors ``(A, R, M, M)``; a unary predicate reads its slot off the diagonal."""
+    """Action schemas from 0/1 effect and precondition tensors ``(A, R, M, M)``, in which a unary predicate is on the diagonal."""
 
     def __init__(
         self,

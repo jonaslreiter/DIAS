@@ -59,7 +59,7 @@ class SchemaPrediction:
 
 @dataclass(frozen=True)
 class SchemaLogits:
-    """A model's lifted schema logits, masked and detached; `effects` is None for MLP effects."""
+    """A model's lifted schema logits, masked and detached. `effects` is None for MLP effects."""
 
     preconditions: torch.Tensor
     effects: torch.Tensor | None

@@ -1,6 +1,6 @@
 """End-to-end coverage for the MLP-effects validator.
 
-Its effects come from an MLP over the state, so a schema cannot be planted by hand the way the DIAS validator's can; these pin the contract, the internal consistency of the counts and the worker-process path instead.
+Its effects come from an MLP over the state, so a schema cannot be planted by hand the way the DIAS validator's can. These pin the contract, the internal consistency of the counts and the worker-process path instead.
 """
 
 import json
@@ -114,7 +114,7 @@ class MlpEffectsTest(unittest.TestCase):
     def learned_groundings(
         self, equality: bool, force_injective: bool = False
     ) -> list[tuple[int, ...]]:
-        # Every slot on, so the actions have parameters to repeat; the untrained preconditions decode to none.
+        # Every slot on, so the actions have parameters to repeat. The untrained preconditions decode to none.
         directory = temp_dir(self)
         model, hparams = build_model(equality=equality, mlp_effects=True)
         with torch.no_grad():

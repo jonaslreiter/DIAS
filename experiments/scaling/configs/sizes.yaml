@@ -1,19 +1,19 @@
-# The scaling study, read by launch_scaling.py, run_scaling.py and collect_scaling.py.
+# This configures the scaling study and is read by launch_scaling.py, run_scaling.py and collect_scaling.py.
 
 seeds: [0, 1, 2, 3, 4]
 
-# Steps discarded before measuring, and steps measured.
+# The first steps are discarded, and the following ones are measured.
 warmup_steps: 20
 measure_steps: 100
 
-# Slurm resources of one task, which runs a domain's instances for one seed on a whole GPU.
+# These are the Slurm resources of one task, which runs the instances of a domain for one seed on a whole GPU.
 slurm:
   time: "01:00:00"
   mem: "8G"
   cpus: "8"
   gres: "gpu:1"
 
-# Per domain, the instance in instances/<domain>/ for each target number of objects.
+# Each domain maps a target number of objects to its instance in instances/<domain>/.
 domains:
   blocks-3: {12: n0012, 20: n0020, 40: n0040, 68: n0068, 100: n0100, 150: n0150}
   logistics: {12: n0012, 20: n0021, 40: n0038, 68: n0067, 100: n0103, 150: n0147}

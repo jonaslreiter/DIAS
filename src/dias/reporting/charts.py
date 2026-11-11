@@ -55,7 +55,7 @@ def heatmap(
     axis_labels: Sequence[Sequence[str]],
     fields: Mapping[str, str],
 ):
-    """`values` as a table drawn by the specification `spec_id`; `columns` names its axes and the value, and `fields` binds the specification's fields to them."""
+    """`values` as a table drawn by the specification `spec_id`. `columns` names its axes and the value, and `fields` binds the specification's fields to them."""
     import wandb
 
     return wandb.plot_table(

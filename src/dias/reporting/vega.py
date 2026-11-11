@@ -1,4 +1,4 @@
-"""Vega-Lite heatmap specifications for the charts a run logs; ``${field:...}`` binds to a table column and ``${string:title}`` to the title."""
+"""Vega-Lite heatmap specifications for the charts a run logs. ``${field:...}`` binds to a table column and ``${string:title}`` to the title."""
 
 from __future__ import annotations
 

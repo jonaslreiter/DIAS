@@ -1,4 +1,4 @@
-# Noisy training states, their atom counts per state, so 1.0 each is 4 flips per transition; observation noise in L_adj; smaller batches.
+# Noise experiments corrupt the training states and use observation noise in L_adj and smaller batches. The atom counts are per state, so 1.0 each is 4 flips per transition.
 model:
   init_args:
     observation_noise: 0.1

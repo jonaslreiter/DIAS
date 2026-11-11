@@ -176,7 +176,7 @@ class DIASModelTest(unittest.TestCase):
         self.assertGreater(gradients[True], 1e-4)
 
     def test_retarget_accepts_a_bigger_instance_and_refuses_a_smaller_one(self):
-        """A lifted schema transfers; the recorded instance size does not."""
+        """A lifted schema transfers, but the recorded instance size does not."""
         model = self.make_model(num_objects=4, num_slots=2, action_arities=[2])
         model.retarget(9)
         self.assertEqual(model.num_objects, 9)
@@ -200,7 +200,7 @@ class DIASModelTest(unittest.TestCase):
         self.assertTrue((successor[0, :, :2, :2] != 0).any())
 
     def test_without_slot_weights_every_slot_is_a_parameter_of_the_read_schema(self):
-        """The ablation trains every slot at full weight, so every slot must survive decoding; reading the untrained zero logits dropped them all."""
+        """The ablation trains every slot at full weight, so every slot must survive the derivation."""
         model = self.make_model(num_objects=3, num_slots=3, use_slot_weights=False)
         schema = model.schema_logits()
         *_, active = derive_schema(

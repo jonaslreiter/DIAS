@@ -3,7 +3,7 @@
 #SBATCH --job-name=dias-scaling
 #SBATCH --partition=rleap_gpu_24gb
 #SBATCH --output=logs/slurm/%x-%A_%a.out
-# See experiments/slurm/train.sh.
+# The setup is the one of experiments/slurm/train.sh.
 : ${DIAS_ENV_SETUP:="source ~/.zshrc && conda activate dias"}
 # ── end site configuration ────────────────────────────────────────────────────
 #
@@ -12,7 +12,7 @@
 eval "$DIAS_ENV_SETUP"
 set -euo pipefail
 
-# The allocator setting of the training jobs.
+# Training jobs use the same allocator setting.
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 SEED=${SLURM_ARRAY_TASK_ID:-0}

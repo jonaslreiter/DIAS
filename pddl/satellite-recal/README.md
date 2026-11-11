@@ -1,6 +1,6 @@
 # Satellite-recal
 
-Satellite in which take_image deletes `calibrated ?i` and calibrate requires `(not (calibrated ?i))`, on Satellite's instances.
+Satellite-recal is Satellite with two changes: take_image deletes `calibrated ?i`, and calibrate requires `(not (calibrated ?i))`. It uses the instances of Satellite.
 
 | File          | Satellites | Instruments | Modes | Ground stations | Targets | Total objects |
 | ------------- | ---------- | ----------- | ----- | --------------- | ------- | ------------- |
@@ -8,5 +8,3 @@ Satellite in which take_image deletes `calibrated ?i` and calibrate requires `(n
 | `test-1.pddl` | 10         | 30          | 5     | 5               | 22      | 72            |
 | `test-2.pddl` | 12         | 36          | 5     | 6               | 21      | 80            |
 | `test-3.pddl` | 13         | 39          | 5     | 7               | 25      | 89            |
-
-Generated with `satellite/satellite-generator.py` from [PDDL generators](https://github.com/AI-Planning/pddl-generators).

@@ -3,7 +3,7 @@
 #SBATCH --job-name=dias-val
 #SBATCH --partition=rleap_gpu_24gb,rleap_gpu_48gb,rleap_cpu,rleap_cpu_modern
 #SBATCH --output=logs/slurm/%x-%A_%a.out
-# See train.sh.
+# The setup is the one of train.sh.
 : ${DIAS_ENV_SETUP:="source ~/.zshrc && conda activate dias"}
 # ── end site configuration ────────────────────────────────────────────────────
 #

@@ -1,15 +1,14 @@
 # DIAS: Differentiable Induction of Action Schemas
 
-Code for **[Differentiable Learning of Lifted Action Schemas for Classical Planning](https://arxiv.org/abs/2605.13282)** by Jonas Reiter, Jakob Elias Gebler and Hector Geffner.
+This repository holds the code of **[Differentiable Learning of Lifted Action Schemas for Classical Planning](https://arxiv.org/abs/2605.13282)** by Jonas Reiter, Jakob Elias Gebler and Hector Geffner.
 
-DIAS learns lifted STRIPS action schemas (preconditions, add effects and delete effects) from state transitions of a single planning problem, labelled with action names, STRIPS+ actions or full STRIPS actions. A relational GNN embeds the objects, a Sinkhorn assignment selects them into the action's parameter slots, and the lifted schema predicts the successor state. After training, the schemas are derived as a PDDL domain and evaluated by the successor states they generate on larger held-out problems.
+DIAS learns lifted STRIPS action schemas (preconditions, add effects and delete effects) from the state transitions of a single planning problem, labelled with action names, STRIPS+ actions or full STRIPS actions. A relational GNN embeds the objects of a state, a Sinkhorn assignment selects them into the parameter slots of the action, and the lifted schema predicts the successor state. After training, the schemas are derived as a PDDL domain, which is evaluated by the successor states it generates on larger held-out problems.
 
 ## Example
 
-Blocks-3's `move` and the schema DIAS learns from action names (seed 0):
+On the left is the `move` action of Blocks-3, and on the right is the schema DIAS learns from action names alone (seed 0):
 
 ```lisp
-;; original                         ;; learned
 (:action move                       (:action move
   :parameters (?bm ?bf ?bt)           :parameters (?x1 ?x2 ?x3)
   :precondition (and                  :precondition (and
@@ -29,7 +28,7 @@ Blocks-3's `move` and the schema DIAS learns from action names (seed 0):
     (clear ?bf)))                       (clear ?x3)))
 ```
 
-The learned schema generates exactly the original's successors on the held-out problems; its extra preconditions hold wherever the original's do.
+The learned schema generates exactly the successors of the original one on the held-out problems, since its extra preconditions hold wherever the original ones do.
 
 ## Install
 
@@ -39,34 +38,34 @@ cd DIAS
 pip install -e .
 ```
 
-Python 3.10 or later, and a CUDA GPU for full runs. Every command below runs from the repository root.
+DIAS needs Python 3.10 or later. A CUDA GPU is optional, but it makes full training runs much faster. All commands below run from the root of the repository.
 
 ## Quickstart
 
-Train on Blocks-3 for 300 steps on the CPU, without Weights & Biases, and score the learned domain on a held-out problem:
+The following commands train on Blocks-3 for 300 steps on the CPU without Weights & Biases, and then score the learned domain on a held-out problem:
 
 ```bash
 dias fit --config configs/main.yaml --config pddl/blocks-3/config.yaml --trainer.accelerator=cpu --trainer.max_steps=300 --trainer.val_check_interval=100 --trainer.logger=false --trainer.default_root_dir=logs/dias/quickstart
 python experiments/validate_checkpoint.py --validator dias --model-id quickstart --problem pddl/blocks-3/test-1.pddl
 ```
 
-The run's checkpoints and, beside each, its learned domain as PDDL are in `logs/dias/quickstart/checkpoints/`. The paper's runs train for 10,000 steps.
+The checkpoints of the run are written to `logs/dias/quickstart/checkpoints/`, each with its learned domain as a PDDL file beside it. The runs of the paper train for 10,000 steps.
 
 ## Domains
 
-`pddl/` holds the 14 domains: `blocks-3`, `delivery`, `driverlog`, `gripper`, `hanoi`, `logistics`, `miconic`, `n-puzzle`, `satellite`, `satellite-recal`, `sokoban`, `sokoban-pull`, `spanner` and `visitall`. Each folder holds `domain.pddl`, the training problem `train.pddl`, the held-out problems `test-1.pddl` to `test-3.pddl`, the STRIPS+ argument positions in `strips+.yaml`, and `config.yaml`, the domain's training config:
+The folder `pddl/` holds the 14 domains of the paper: `blocks-3`, `delivery`, `driverlog`, `gripper`, `hanoi`, `logistics`, `miconic`, `n-puzzle`, `satellite`, `satellite-recal`, `sokoban`, `sokoban-pull`, `spanner` and `visitall`. The domains and their instances come from [PDDL generators](https://github.com/AI-Planning/pddl-generators), some domains with minor changes. Each folder holds `domain.pddl`, the training problem `train.pddl`, the held-out problems `test-1.pddl` to `test-3.pddl`, the STRIPS+ argument positions in `strips+.yaml`, and the training config `config.yaml` of the domain:
 
 ```bash
 dias fit --config configs/main.yaml --config pddl/hanoi/config.yaml
 ```
 
-A domain of your own needs unary and binary predicates, STRIPS actions and injective parameter bindings; a folder with the same files makes it available to the experiment scripts. `dias fit --model.help dias.models.DIAS` and `--data.help dias.data.datamodule.PddlGraphDataModule` list every argument.
+A domain of your own needs unary and binary predicates, STRIPS actions and injective parameter bindings. A folder with the same files makes it available to the experiment scripts. The commands `dias fit --model.help dias.models.DIAS` and `dias fit --data.help dias.data.datamodule.PddlGraphDataModule` list every argument.
 
-W&B is the default logger, logging to the account you are logged into or to `$WANDB_ENTITY`, including heatmaps of the learned schema. `--trainer.logger=false` trains without it, and `WANDB_MODE=offline` logs locally.
+Weights & Biases is the default logger. It logs to the account you are logged into, or to `$WANDB_ENTITY`, and includes heatmaps of the learned schema. The option `--trainer.logger=false` trains without it, and `WANDB_MODE=offline` logs locally.
 
 ## Reproducing the paper
 
-[experiments/README.md](experiments/README.md) lists the commands for every experiment.
+The file [experiments/README.md](experiments/README.md) lists the commands of every experiment of the paper.
 
 ## Layout
 

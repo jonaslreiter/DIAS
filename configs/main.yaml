@@ -1,4 +1,4 @@
-# The training setup of every run; pddl/<domain>/config.yaml adds the domain:
+# This is the training setup of every run. The config of a domain adds the domain:
 #   dias fit --config configs/main.yaml --config pddl/gripper/config.yaml
 
 model:
@@ -22,7 +22,7 @@ data:
     max_per_action_valid: 500
 
 trainer:
-  # The logged-in W&B account, or $WANDB_ENTITY.
+  # W&B logs to the account you are logged into, or to $WANDB_ENTITY.
   logger:
     class_path: lightning.pytorch.loggers.WandbLogger
     init_args:

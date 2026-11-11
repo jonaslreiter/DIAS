@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Collect the scaling study into tables of each metric per domain and number of objects, mean ± standard deviation over the seeds; ``oom`` marks an instance that did not fit on the GPU.
+"""Collect the scaling study into tables of each metric per domain and number of objects, mean ± standard deviation over the seeds. ``oom`` marks an instance that did not fit on the GPU.
 
 Example:
     python experiments/scaling/collect_scaling.py --experiment scaling --markdown experiments/results/scaling.md

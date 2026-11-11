@@ -141,7 +141,7 @@ class DiasObjectiveTest(unittest.TestCase):
         self.assertTrue(torch.equal(plain.main, explicit.main))
 
     def test_observation_noise_bounds_what_a_contradicted_cell_costs(self):
-        """A cell observed true against a certain prediction of false costs -log(noise), not the clamp's -log(1e-7); the agreeing cells cost -log(1 - noise) each."""
+        """A cell observed true against a certain prediction of false costs -log(noise), not the clamp's -log(1e-7), and the agreeing cells cost -log(1 - noise) each."""
         adjacency = torch.zeros(1, 2, 2, 2)
         target = torch.zeros(1, 2, 2, 2)
         target[0, 0, 0, 0] = 1.0

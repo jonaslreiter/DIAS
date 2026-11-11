@@ -128,7 +128,7 @@ class SlotSelector(nn.Module):
     def slot_weights(
         self, y_action: torch.Tensor, y_action_args: torch.Tensor | None = None
     ) -> torch.Tensor:
-        """``σ(w^a)``, ``(B, M)``; a slot whose object the action label names has weight 1."""
+        """``σ(w^a)``, ``(B, M)``, with weight 1 for a slot whose object the action label names."""
         logits = self.slot_weight_logits[y_action]
         if not self.use_slot_weights:
             return torch.ones_like(logits)

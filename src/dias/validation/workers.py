@@ -143,7 +143,7 @@ def score_states(
     workers: int | None = None,
     memory: int | None = None,
 ) -> Iterator[tuple[int, Any]]:
-    """``(index, task(payload))`` for every payload, in the order they finish. Each worker runs `initializer(config)` once; both functions are imported by name. `workers` and `memory` default to the CPUs and bytes available."""
+    """``(index, task(payload))`` for every payload, in the order they finish. Each worker runs `initializer(config)` once, and both functions are imported by name. `workers` and `memory` default to the CPUs and bytes available."""
     if not payloads:
         return
     workers = available_cpus() if workers is None else workers
@@ -219,7 +219,7 @@ def score_states(
 
 
 def _serve(connection: Connection) -> None:
-    """Initialize, then score payloads until told to stop; a state that does not fit ends the worker."""
+    """Initialize, then score payloads until told to stop. A state that does not fit ends the worker."""
     # Pickled while there is memory to pickle with.
     out_of_memory = ForkingPickler.dumps(("memory", None, 0))
     task, initializer, config = connection.recv()

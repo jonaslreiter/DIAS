@@ -10,9 +10,6 @@
 ;; the appropriate typing predicates in the initial state.
 
 ;; The package predicate is called "object" in the standard formulation.
-;; It is renamed here because "object" is also the name of PDDL's root
-;; type, and DIAS leaves static predicates of that name out of the state,
-;; so packages would have no predicate of their own.
 
 ;; A binary static predicate called "loc" describes the topology of the
 ;; problem instance: "(loc ?l ?c)" is true iff the location ?l is in city

@@ -123,7 +123,7 @@ class SlurmLogTest(unittest.TestCase):
 
 
 class DomainTest(unittest.TestCase):
-    """A domain is a folder under pddl/; nothing lists them.
+    """A domain is a folder under pddl/, and nothing lists them.
 
     Every file of a domain follows from its name, so these check that the layout the whole pipeline assumes holds for all of them.
     """

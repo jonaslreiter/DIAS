@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Benchmark one domain's instances for one seed, each in a ``benchmark.py`` subprocess, so that an out-of-memory error costs one point; the task of a scaling array.
+"""Benchmark one domain's instances for one seed, each in a ``benchmark.py`` subprocess, so that an out-of-memory error costs one point. It is the task of a scaling array.
 
 Example:
     python experiments/scaling/run_scaling.py --domain blocks-3 --seed 0

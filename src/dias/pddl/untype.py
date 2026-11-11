@@ -11,7 +11,7 @@ def strip_problem_types(
     problem_text: str,
     domain_text: str | None = None,
 ) -> str:
-    """The problem without types in ``:objects``; with `domain_text`, each object's types and their ancestors asserted in ``:init``."""
+    """The problem without types in ``:objects``, and with `domain_text` each object's types and their ancestors asserted in ``:init``."""
     type_atoms: list[str] = []
 
     if domain_text is not None:

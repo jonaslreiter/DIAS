@@ -74,7 +74,7 @@ class ScheduleConfigTest(unittest.TestCase):
                 self.assertIsInstance(value, (int, float, dict))
 
     def test_int_keyed_keypoints_survive(self):
-        """JSON would stringify them; the config form must not."""
+        """JSON would stringify them, and the config form must not."""
         config = to_mapping(PiecewiseLinear({0: 1.0, 500: 0.1}))
         self.assertEqual(list(config["init_args"]["keypoints"]), [0, 500])
 

@@ -8,7 +8,7 @@ from typing import Mapping, Sequence
 
 from dias.pddl.text import is_equality_predicate
 
-# Unary predicates pymimir gives every object; they get no channel.
+# Unary predicates pymimir gives every object, which get no channel.
 OMITTED_PREDICATES = ("number", "object")
 
 # PDDL's equality, as pymimir names it.
@@ -105,7 +105,7 @@ class DomainSchema:
     def from_run(
         cls, hparams: Mapping, relation_arities: Sequence[int] | None = None
     ) -> "DomainSchema":
-        """From a run's datamodule hyper-parameters; given the model's `relation_arities`, refused if the domain file no longer gives them."""
+        """From a run's datamodule hyper-parameters. Given the model's `relation_arities`, it is refused if the domain file no longer gives them."""
         schema = cls.from_pddl(
             hparams["domain_path"],
             hparams["problem_path"],

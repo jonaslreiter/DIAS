@@ -324,7 +324,7 @@ class PddlGraphDataModule(L.LightningDataModule):
 
 @dataclass(frozen=True)
 class SampleQuota:
-    """How many transitions the walk samples: at least ``min_per_action_*`` per action, or ``num_*`` in total, or both with the same train-to-validation ratio; at most ``max_per_action_*`` per action are kept."""
+    """How many transitions the walk samples: at least ``min_per_action_*`` per action, or ``num_*`` in total, or both with the same train-to-validation ratio. At most ``max_per_action_*`` per action are kept."""
 
     min_per_action_train: int | None = None
     min_per_action_valid: int | None = None

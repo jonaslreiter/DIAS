@@ -72,7 +72,7 @@ class SuccessorPredictorTest(unittest.TestCase):
         self.assertTrue(torch.equal(gated_output.delta, ungated_output.delta))
 
     def test_tau_reaches_the_precondition_gate(self):
-        """Tau arrives as a plain value; the floor is the schedule's business."""
+        """Tau arrives as a plain value, and the floor is the schedule's business."""
         torch.manual_seed(11)
         module = SuccessorPredictor([2], 1, 1, 2, action_arities=[1])
         kwargs = {

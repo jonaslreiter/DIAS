@@ -1,4 +1,4 @@
-# The overlay of the scaling study, composed after configs/main.yaml and pddl/<domain>/config.yaml: the same number of transitions and batch size in every domain, and no validation, logging or checkpoints.
+# This overlay of the scaling study is composed after configs/main.yaml and pddl/<domain>/config.yaml. It sets the same number of transitions and the same batch size in every domain, and turns off validation, logging and checkpoints.
 
 data:
   init_args:
@@ -16,5 +16,5 @@ trainer:
   enable_checkpointing: false
   enable_progress_bar: false
   enable_model_summary: false
-  # benchmark.py sets it to the warm-up and measured steps.
+  # benchmark.py sets this to the number of warm-up and measured steps.
   max_steps: 120

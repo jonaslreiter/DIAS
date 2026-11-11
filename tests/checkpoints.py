@@ -15,7 +15,7 @@ MODEL_SEED = 5
 
 
 def datamodule_hparams(equality: bool = False) -> dict:
-    """What a run stores of its datamodule; `equality` gives `=` a channel."""
+    """What a run stores of its datamodule, where `equality` gives `=` a channel."""
     return {
         "domain_path": str(DOMAIN),
         "problem_path": str(TRAIN_PROBLEM),

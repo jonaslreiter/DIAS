@@ -1,16 +1,16 @@
-# Validation settings, read by experiments/launch.py, validate_runs.py and validate_checkpoint.py.
+# These are the validation settings, read by experiments/launch.py, validate_runs.py and validate_checkpoint.py.
 
-# How a test problem's states are drawn: `dias.validation.successors.WalkSampling`.
+# The states of a test problem are drawn as `dias.validation.successors.WalkSampling` describes.
 sampling:
   num_samples: 500
   walk_length: 2000
   min_walks: 5
 
-# The seed of the state draw; null draws one per validation and records it in the result.
+# This is the seed of the state draw. With null, every validation draws a seed and records it in its result.
 sample_seed: null
 
-# The seeds a launch runs by default.
+# A launch runs these seeds by default.
 seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 
-# Replace what a learned domain says about equality with the distinctness of every two parameters.
+# If true, validation replaces what a learned domain says about equality with the distinctness of every two parameters.
 force_injective: false

@@ -1,8 +1,8 @@
 """Collect validation results into tables of P, R, N_S, N_C, N_SC and n per domain.
 
-A seed's precision and recall are micro-averaged over its test problems. P and R are means over seeds, shown to two decimals and never rounded up to 1.00; N_S, N_C and N_SC count the sound, complete, and sound and complete seeds, and n the seeds. A seed that did not score every problem is counted over the problems it scored, or left out with ``--exclude-partial``, and listed after the tables either way.
+A seed's precision and recall are micro-averaged over its test problems. P and R are means over seeds, shown to two decimals and never rounded up to 1.00. N_S, N_C and N_SC count the sound, complete, and sound and complete seeds, and n the seeds. A seed that did not score every problem is counted over the problems it scored, or left out with ``--exclude-partial``, and listed after the tables either way.
 
-``--experiment`` takes several experiments, one table each. ``--sweep AXIS`` instead collects the experiments ``launch.py --sweep`` wrote into one table with a row per domain and value; a value without an experiment of its own is read from the runs of ``--experiment`` that trained at it.
+``--experiment`` takes several experiments, one table each. ``--sweep AXIS`` instead collects the experiments ``launch.py --sweep`` wrote into one table with a row per domain and value. A value without an experiment of its own is read from the runs of ``--experiment`` that trained at it.
 
 Examples:
     python experiments/collect_results.py --experiment dias-strips dias-strips-plus dias-names l1 --markdown experiments/results/main.md
@@ -331,7 +331,7 @@ def main() -> int:
         required=True,
         nargs="+",
         metavar="NAME",
-        help="Experiments; one with --sweep.",
+        help="Experiments, or one with --sweep.",
     )
     p.add_argument("--domains", nargs="+", default=None, help="Only these domains.")
     p.add_argument(

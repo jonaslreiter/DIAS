@@ -77,7 +77,7 @@ class L1ValidationTest(unittest.TestCase):
         self.assertEqual(result["fn"], 0)
 
     def test_dropping_a_precondition_costs_precision(self):
-        # `stack` requires the moved block to be clear; without that it applies in states it should not, producing successors the original cannot.
+        # `stack` requires the moved block to be clear. Without that it applies in states it should not, producing successors the original cannot.
         weakened = re.sub(r"\(clear \?bm\)\s*", "", DOMAIN.read_text(), count=1)
         self.assertNotEqual(weakened, DOMAIN.read_text())
         result = self.validate(weakened)
@@ -122,7 +122,7 @@ class L1ValidationTest(unittest.TestCase):
         self.assertNotIn("(=", learned)
         self.assertGreater(self.validate(learned)["fp"], 0)
         self.assertPerfect(self.validate(learned, force_injective=True))
-        # A learned (= ?bm ?bt) makes stack inapplicable; forcing replaces it too.
+        # A learned (= ?bm ?bt) makes stack inapplicable, and forcing replaces it too.
         contradicted = DOMAIN.read_text().replace("(not (= ?bm ?bt))", "(= ?bm ?bt)", 1)
         self.assertLess(self.validate(contradicted)["recall"], 1.0)
         self.assertPerfect(self.validate(contradicted, force_injective=True))

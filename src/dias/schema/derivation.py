@@ -21,7 +21,7 @@ def derive_schema(
     random_flip: bool = False,
     threshold: float = 0.5,
 ):
-    """Each action's active slots and its add effects, delete effects, positive and negative preconditions over them, as 0/1 arrays ``(A, R, M, M)`` thresholded at `threshold`; add and delete are None without `effect_logits`. `random_flip` flips one random cell of each array."""
+    """Each action's active slots and its add effects, delete effects, positive and negative preconditions over them, as 0/1 arrays ``(A, R, M, M)`` thresholded at `threshold`. Add and delete are None without `effect_logits`. `random_flip` flips one random cell of each array."""
     effects = None if effect_logits is None else Channels.from_logits(effect_logits)
     add_probabilities = None if effects is None else effects.positive
     delete_probabilities = None if effects is None else effects.negative

@@ -52,7 +52,7 @@ def extract_action_blocks(domain_text: str) -> list[str]:
 
 
 def parse_typed_list(body: str) -> list[tuple[list[str], str | None]]:
-    """A PDDL typed list (``a b - t c``) as ``(names, type)`` groups, in order; names after the last type get ``None``."""
+    """A PDDL typed list (``a b - t c``) as ``(names, type)`` groups, in order, with ``None`` for the names after the last type."""
     groups: list[tuple[list[str], str | None]] = []
     pending: list[str] = []
     tokens = body.split()

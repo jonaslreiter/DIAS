@@ -159,7 +159,7 @@ def transfer_states(states: list, target_problem, source_domain, target_domain) 
 
 
 def score_successors(per_state: Iterable[SuccessorSets]) -> dict:
-    """tp, fp and fn of the produced successors against the expected ones, per action and summed; a successor reached by the wrong action counts against both. ``matches`` counts the states whose successor sets agree."""
+    """tp, fp and fn of the produced successors against the expected ones, per action and summed. A successor reached by the wrong action counts against both. ``matches`` counts the states whose successor sets agree."""
     states = 0
     matches = 0
     action_tp: dict[str, int] = defaultdict(int)
@@ -217,7 +217,7 @@ def successor_sets(state, learned_action_prefix: str) -> SuccessorSets:
 
 
 def read_progress(path: Path, header: dict) -> dict[int, dict]:
-    """The state scores recorded in `path` under `header`; a file with another header is started over."""
+    """The state scores recorded in `path` under `header`. A file with another header is started over."""
     lines = path.read_text().splitlines() if path.exists() else []
     scores: dict[int, dict] = {}
     if lines and lines[0] == json.dumps(header):

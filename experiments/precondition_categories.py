@@ -1,6 +1,6 @@
 """Count the precondition literals of an experiment's learned schemas and of the original schemas by class, per domain: equalities, unary and binary static literals, and positive and negative fluent literals.
 
-Learned schemas are derived from each run's checkpoint, without the distinctness of parameters the learned domain adds; the original ones are parsed off ``pddl/<domain>/domain.pddl``, without the parameter types. A static predicate is one no action changes. Literals are counted as distinct lifted atoms, learned ones as a mean over seeds.
+Learned schemas are derived from each run's checkpoint, without the distinctness of parameters the learned domain adds. The original ones are parsed off ``pddl/<domain>/domain.pddl``, without the parameter types. A static predicate is one no action changes. Literals are counted as distinct lifted atoms, learned ones as a mean over seeds.
 
 Example:
     python experiments/precondition_categories.py --experiment dias-names --markdown experiments/results/precondition-categories.md

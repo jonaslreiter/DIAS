@@ -27,7 +27,7 @@ class SinkhornTest(unittest.TestCase):
         row_mask = torch.tensor([False, True, False, True, False]).expand(4, 5)
         masked = batched_sinkhorn_d1d2(logits, row_mask=row_mask)
         absent = batched_sinkhorn_d1d2(logits[:, [0, 2, 4]])
-        # Up to round-off, since the masked call reduces over the masked rows too; left iterating to max_iter, it lands farther than that from where its absence stops.
+        # Up to round-off, since the masked call reduces over the masked rows too. Left iterating to max_iter, it lands farther than that from where its absence stops.
         torch.testing.assert_close(masked[:, [0, 2, 4]], absent, rtol=0.0, atol=1e-6)
 
 

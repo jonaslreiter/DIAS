@@ -1,4 +1,4 @@
-# Slurm resources per job kind, read by experiments/launch.py: `defaults` plus per-domain overrides, each field an sbatch flag (`time`, `mem`, `cpus`, `gres`) or a list of extra flags (`sbatch_extra`). They are sized on our cluster's A10 and L40S GPUs, where a GPU shard is a 24th of 24 GB.
+# These are the Slurm resources per job kind, read by experiments/launch.py. Each kind has `defaults` and overrides per domain, and each field is an sbatch flag (`time`, `mem`, `cpus`, `gres`) or a list of extra flags (`sbatch_extra`). The values are sized on our cluster's A10 and L40S GPUs, where a GPU shard is a 24th of 24 GB.
 
 train:
   defaults: {time: "03:00:00", mem: "4G", cpus: "8", gres: "shard:4"}

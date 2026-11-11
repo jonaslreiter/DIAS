@@ -1,4 +1,4 @@
-# Transitions labelled with STRIPS+ actions: the arguments at the positions in pddl/<domain>/strips+.yaml.
+# Transitions are labelled with STRIPS+ actions, whose arguments are those at the positions in pddl/<domain>/strips+.yaml.
 data:
   init_args:
     action_arguments: true

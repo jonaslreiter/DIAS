@@ -51,7 +51,7 @@ class VegaSpecTest(unittest.TestCase):
                 )
 
     def test_nothing_names_the_axis_it_sits_on(self):
-        """The values say what they are; a title would repeat it per panel."""
+        """The values say what they are, so a title would repeat it per panel."""
         for name, spec in SPECS.items():
             panel = spec.get("spec", spec)
             titled = [
@@ -68,7 +68,7 @@ class VegaSpecTest(unittest.TestCase):
                 self.assertEqual(titled, [])
 
     def test_no_panel_carries_a_colour_bar(self):
-        """Every cell is labelled with its value; a legend repeats it.
+        """Every cell is labelled with its value, so a legend would repeat it.
 
         `false`, not the schema's `null`, which W&B draws a bar for anyway.
         """
@@ -236,7 +236,7 @@ class ImportLayeringTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_matplotlib_left_the_package(self):
-        """It went with the rendered heatmaps; the charts are drawn in the browser."""
+        """The charts are drawn in the browser."""
         root = Path(dias.__file__).parent
         offenders = [
             str(path.relative_to(root))

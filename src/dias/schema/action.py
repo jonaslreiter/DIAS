@@ -40,7 +40,7 @@ class LiftedAtom:
 
 
 class ActionSchema:
-    """An action schema; its parameters are the slots its atoms use unless given."""
+    """An action schema, whose parameters are the slots its atoms use unless given."""
 
     def __init__(
         self,

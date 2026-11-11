@@ -95,7 +95,7 @@ def l1_domains() -> list[str]:
 
 
 def run_command(cmd: list[str], dry_run: bool, capture: bool = True) -> str | None:
-    """Print `cmd` and run it unless `dry_run`; with `capture`, return its output."""
+    """Print `cmd` and run it unless `dry_run`. With `capture`, return its output."""
     print("  " + shlex.join(cmd), flush=True)
     if dry_run:
         return None
@@ -108,7 +108,7 @@ def run_command(cmd: list[str], dry_run: bool, capture: bool = True) -> str | No
 
 @dataclass(frozen=True)
 class Validator:
-    """A way of scoring a learned domain; `from_checkpoint` if it is a training run's."""
+    """A way of scoring a learned domain, `from_checkpoint` if it is a training run's."""
 
     name: str
     module: str

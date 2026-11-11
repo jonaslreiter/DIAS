@@ -2,7 +2,7 @@
 requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
 
-# Installed from a clone; the name `dias` on PyPI is another package.
+# DIAS is installed from a clone, since the name `dias` on PyPI belongs to another package.
 [project]
 name = "dias"
 description = "Differentiable induction of lifted STRIPS action schemas from state transitions"

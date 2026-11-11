@@ -1,6 +1,6 @@
 """Launch an experiment: per domain, a Slurm array training one run per seed, and a validation array whose task i waits for training task i.
 
-A run's config is ``configs/main.yaml``, ``pddl/<domain>/config.yaml``, the ``--experiment-type``, ``--labels`` and ``--ablation`` overlays and the ``--set`` and sweep overrides, in this order; its id is ``<experiment>-<domain>-s<seed>``. ``--sweep AXIS`` launches every value of an axis as an experiment ``<experiment>-<tag><value>``; the ``threshold`` axis validates the existing runs of ``--experiment`` at each derivation threshold. ``--validate-only`` validates runs that finished training, and ``--backend local`` runs everything here.
+A run's config is ``configs/main.yaml``, ``pddl/<domain>/config.yaml``, the ``--experiment-type``, ``--labels`` and ``--ablation`` overlays and the ``--set`` and sweep overrides, in this order, and its id is ``<experiment>-<domain>-s<seed>``. ``--sweep AXIS`` launches every value of an axis as an experiment ``<experiment>-<tag><value>``, and the ``threshold`` axis validates the existing runs of ``--experiment`` at each derivation threshold. ``--validate-only`` validates runs that finished training, and ``--backend local`` runs everything here.
 
 Examples:
     python experiments/launch.py --experiment dias-names
@@ -110,7 +110,7 @@ SWEEP_AXES: dict[str, SweepAxis] = {
         tag="slots",
         values=(5, 7, 9),
     ),
-    # T in tau = 0.1^(t/T); T = 0 is the plain product from the start.
+    # T in tau = 0.1^(t/T). T = 0 is the plain product from the start.
     "tau": SweepAxis(
         param=f"{SCHEDULE_KEY}.init_args.every",
         tag="tau",
@@ -240,7 +240,7 @@ def run_directory_args(run_id: str, logs_dir: Path, log_wandb: bool) -> list[str
 
 
 def _sweep_points(args: argparse.Namespace) -> tuple:
-    """``(points, axis, axis_name, values)``; without ``--sweep``, the one point of ``--experiment``."""
+    """``(points, axis, axis_name, values)``, or without ``--sweep`` the one point of ``--experiment``."""
     overrides = []
     for override in args.overrides:
         if "=" not in override:
@@ -357,7 +357,7 @@ def build_plan(args: argparse.Namespace) -> LaunchPlan:
             raise SystemExit(
                 f"L1 learned no domain for {', '.join(unlearned)}; experiments/l1_pddl/ holds {', '.join(learned)}"
             )
-    # L1 has one learned domain per domain; a seed only draws other test states.
+    # L1 has one learned domain per domain, so a seed only draws other test states.
     seeds = (
         resolve_seeds(args)
         if trains or args.seeds is not None or args.num_runs is not None
